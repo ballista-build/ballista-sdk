@@ -1,0 +1,17 @@
+[project]
+name = "ballista-cli"
+version = "0.1.0"
+description = "Ballista Command Line Interface"
+readme = "README.md"
+authors = [
+    { name = "August Bigelow", email = "dev@atbigelow.com" }
+]
+requires-python = ">=3.10"
+dependencies = []
+
+[project.scripts]
+ballista-cli = "ballista_cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
