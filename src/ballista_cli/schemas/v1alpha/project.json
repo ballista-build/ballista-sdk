@@ -1,0 +1,144 @@
+{
+    "$id": "https://somedomain.com/schemas/v1alpha/",
+    "$schema": "http://json-schema.org/draft-04/schema#",
+    "additionalProperties": false,
+    "definitions": {
+        "artifact": {
+            "additionalProperties": false,
+            "description": "Ballista artifact. Valid artifact types are dynamically generated based on enabled plugins.",
+            "properties": {
+                "dockerfile": {
+                    "description": "Name of Dockerfile, relative to project root, to find the indicated `dockerfile_stage`. Defaults to \"Dockerfile\" when not specified.",
+                    "type": "string"
+                },
+                "dockerfile_stage": {
+                    "description": "Name of stage inside Dockerfile that will contain the artifact.",
+                    "type": "string"
+                },
+                "execution": {
+                    "additionalProperties": false,
+                    "description": "Execution parameters.",
+                    "properties": {
+                        "local_resources": {
+                            "additionalProperties": false,
+                            "description": "Local resources required for execution.",
+                            "properties": {
+                                "max_cpu_cores": {
+                                    "description": "Maximum number of CPU cores.",
+                                    "type": "number"
+                                },
+                                "max_memory_mb": {
+                                    "description": "Maximum amount of memory in megabytes.",
+                                    "type": "integer"
+                                },
+                                "min_cpu_cores": {
+                                    "description": "Minimum number of CPU cores.",
+                                    "type": "number"
+                                },
+                                "min_memory_mb": {
+                                    "description": "Minimum amount of memory in megabytes.",
+                                    "type": "integer"
+                                }
+                            },
+                            "type": "object"
+                        },
+                        "platform_resources": {
+                            "description": "List of platform resources needed.",
+                            "items": {
+                                "$ref": "#/definitions/platform_resource"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "type": "object"
+                },
+                "name": {
+                    "description": "Unique name key of artifact.",
+                    "type": "string"
+                },
+                "type": {
+                    "additionalProperties": false,
+                    "description": "Type of artifact.",
+                    "properties": {
+                        "docker": {
+                            "description": "Docker image artifact.",
+                            "type": "object"
+                        },
+                        "test-report": {
+                            "additionalProperties": false,
+                            "description": "Test Report",
+                            "items": {
+                                "additionalProperties": false,
+                                "properties": {
+                                    "format": {
+                                        "description": "Format of test report.",
+                                        "type": "string"
+                                    },
+                                    "path": {
+                                        "description": "Path to report file.",
+                                        "type": "string"
+                                    }
+                                },
+                                "type": "object"
+                            },
+                            "type": "array"
+                        }
+                    },
+                    "type": "object"
+                }
+            },
+            "required": [
+                "dockerfile_stage",
+                "name",
+                "type"
+            ],
+            "type": "object"
+        },
+        "platform_resource": {
+            "additionalProperties": false,
+            "description": "A platform resource need.",
+            "properties": {
+                "postgres": {
+                    "$ref": "#/definitions/postgres_platform_resource"
+                }
+            },
+            "type": "object"
+        },
+        "postgres_platform_resource": {
+            "additionalProperties": false,
+            "description": "Postgres database.",
+            "properties": {
+                "database_id": {
+                    "description": "Name of postgres database.",
+                    "type": "string"
+                }
+            },
+            "required": ["database_id"],
+            "type": "object"
+        }
+    },
+    "description": "Ballista Project V1 alpha.",
+    "properties": {
+        "api_version": {
+            "description": "Ballista Project API version.",
+            "type": "string"
+        },
+        "artifacts": {
+            "description": "List of artifacts.",
+            "items": {
+                "$ref": "#/definitions/artifact"
+            },
+            "type": "array"
+        },
+        "name": {
+            "description": "Name of project.",
+            "type": "string"
+        },
+        "version": {
+            "description": "Semantic version of project.",
+            "type": "string"
+        }
+    },
+    "required": ["api_version", "name"],
+    "type": "object"
+}

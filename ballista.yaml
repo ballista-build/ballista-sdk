@@ -1,0 +1,27 @@
+api_version: v1alpha
+artifacts:
+  - name: api
+    dockerfile: Dockerfile
+    dockerfile_stage: api-server
+    execution:
+      local_resources:
+        max_cpu_cores: 2
+      platform_resources:
+        - postgres:
+            database_id: test
+    type:
+      docker: {}
+  - name: tests
+    dockerfile_stage: tests
+    type:
+      test_report:
+        - format: junit
+          path: junit.xml
+        - format: cobertura
+          path: covertura.xml
+  - name: worker
+    dockerfile_stage: worker
+    type:
+      docker: {}
+name: nautilus
+version: 1.0.0

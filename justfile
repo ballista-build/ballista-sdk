@@ -1,0 +1,2 @@
+generate_models:
+    uv run datamodel-codegen --input-file-type jsonschema --input src/ballista_cli/schemas/v1alpha/project.json --output models.py --output-model-type dataclasses.dataclass --target-python-version 3.11 --use-standard-collections --use-union-operator --use-field-description --use-schema-description
