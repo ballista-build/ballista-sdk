@@ -1,5 +1,7 @@
 from dataclasses import dataclass
 
+# TODO: I believe these can ALL be generated from the Ballista API
+
 
 @dataclass
 class TestReportArtifactType:
