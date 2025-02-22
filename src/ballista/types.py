@@ -1,63 +1,42 @@
-from dataclasses import dataclass
-
-# TODO: I believe these can ALL be generated from the Ballista API
+from typing import Protocol
 
 
-@dataclass
-class TestReportArtifactType:
-    format: str
-    path: str
-
-
-@dataclass
-class DockerArtifactType:
-    pass
-
-
-@dataclass
-class AvailableArtifactTypes:
-    docker: DockerArtifactType | None = None
-    test_report: list[TestReportArtifactType] | None = None
-
-    def which(self) -> DockerArtifactType | list[TestReportArtifactType] | None:
-        if self.docker:
-            return self.docker
-        elif self.test_report:
-            return self.test_report
-        else:
-            return None
-
-
-@dataclass
-class LocalResources:
+class BallistaArtifactLocalResourceNeeds(Protocol):
     max_cpu_cores: float | None = None
     max_memory_mb: int | None = None
     min_cpu_cores: float | None = None
     min_memory_mb: int | None = None
 
-@dataclass
-class ArtifactExecution:
-    local_resources: LocalResources | None = None
-    platform_resources: list | None = None
+
+class BallistaPlatformResource(Protocol):
+    pass
 
 
-@dataclass
-class BallistaArtifact:
+class BallistaArtifactExecution(Protocol):
+    local_resources: BallistaArtifactLocalResourceNeeds
+    platform_resources: list[BallistaPlatformResource]
+
+
+class BallistaArtifactType(Protocol):
     name: str
-    dockerfile_stage: str
-    type: AvailableArtifactTypes
+    key: str
+
+
+class BallistaArtifact(Protocol):
+    name: str
+    type: BallistaArtifactType
     dockerfile: str | None = None
-    execution: ArtifactExecution | None = None
+    dockerfile_stage: str | None = None
+    execution: BallistaArtifactExecution | None = None
 
 
-@dataclass
-class BallistaProject:
+class BallistaProject(Protocol):
+    key: str
+    name: str
+
+
+class BallistaBolt(Protocol):
     api_version: str
     artifacts: list[BallistaArtifact]
-    name: str
+    project: str
     version: str
-
-
-@dataclass
-class LaunchTarget:
-    pass

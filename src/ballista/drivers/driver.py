@@ -1,11 +1,11 @@
 from typing import Protocol
 
-from ..types import BallistaProject
+from ..types import BallistaBolt
 
 
 class BallistaEnvironmentDriver(Protocol):
-    def startup(self, project: BallistaProject):
+    def startup(self, bolt: BallistaBolt):
         pass
 
-    def shutdown(self, project: BallistaProject):
+    def shutdown(self, bolt: BallistaBolt):
         pass

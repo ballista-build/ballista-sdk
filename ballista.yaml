@@ -1,27 +1,20 @@
+# yaml-language-server: $schema=http://localhost:8000/api/v1alpha/schema
 api_version: v1alpha
 artifacts:
-  - name: api
+  - name: python-package
     dockerfile: Dockerfile
+    dockerfile_stage: python-wheel
+    type:
+      python_wheel:
+        folder_path: path
+# Test artifact
+  - name: api
     dockerfile_stage: api-server
     execution:
       local_resources:
-        max_cpu_cores: 2
-      platform_resources:
-        - postgres:
-            database_id: test
+        min_cpu_cores: 0.1
+        min_memory_mb: 128
     type:
-      docker: {}
-  - name: tests
-    dockerfile_stage: tests
-    type:
-      test_report:
-        - format: junit
-          path: junit.xml
-        - format: cobertura
-          path: covertura.xml
-  - name: worker
-    dockerfile_stage: worker
-    type:
-      docker: {}
-name: nautilus
-version: 1.0.0
+      docker_image: {}
+project: nautilus
+version: 0.0.1

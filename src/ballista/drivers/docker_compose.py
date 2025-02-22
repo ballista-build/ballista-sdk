@@ -1,7 +1,22 @@
-from ..types import BallistaProject, BallistaArtifact
+from typing import TypedDict
+
+from ..types import BallistaArtifact, BallistaArtifactExecution, BallistaBolt
 
 
-def _generate_docker_service(artifact: BallistaArtifact) -> dict:
+class DockerComposeService(TypedDict):
+    build: dict
+    deploy: dict
+    develop: dict
+    networks: list[str]
+    ports: list[int]
+
+
+class DockerComposeProject(TypedDict):
+    networks: dict[str, dict]
+    services: dict[str, DockerComposeService]
+
+
+def _generate_docker_service(artifact: BallistaArtifact, execution: BallistaArtifactExecution) -> DockerComposeService:
     context = "."
     dockerfile = artifact.dockerfile or "Dockerfile"
     if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
@@ -9,10 +24,8 @@ def _generate_docker_service(artifact: BallistaArtifact) -> dict:
 
     deploy = {}
 
-    # Local Resources
-    local_resources = (
-        artifact.execution.local_resources if artifact.execution and artifact.execution.local_resources else None
-    )
+    local_resources = execution.local_resources
+
     if local_resources:
         resource_max = {}
         resource_min = {}
@@ -38,8 +51,10 @@ def _generate_docker_service(artifact: BallistaArtifact) -> dict:
     }
 
 
-def _generate_docker_compose(project: BallistaProject) -> dict:
-    services = {f"{project.name}-{a.name}": _generate_docker_service(a) for a in project.artifacts if a.type.docker}
+def _generate_docker_compose(bolt: BallistaBolt) -> DockerComposeProject:
+    services = {
+        f"{bolt.project}-{a.name}": _generate_docker_service(a, a.execution) for a in bolt.artifacts if a.execution
+    }
 
     # Add dependencies
 
@@ -47,12 +62,12 @@ def _generate_docker_compose(project: BallistaProject) -> dict:
 
 
 class DockerComposeBallistaEnvironment:
-    def start(self, project: BallistaProject):
-        compose = _generate_docker_compose(project)
+    def start(self, bolt: BallistaBolt):
+        compose = _generate_docker_compose(bolt)
 
         # TODO: Run docker compose up --watch
 
         print(compose)
 
-    def shutdown(self, project: BallistaProject):
+    def shutdown(self, bolt: BallistaBolt):
         pass

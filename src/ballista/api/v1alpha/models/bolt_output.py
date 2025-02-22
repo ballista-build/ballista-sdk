@@ -17,7 +17,7 @@ import pprint
 import re  # noqa: F401
 import json
 
-from pydantic import BaseModel, ConfigDict, Field, StrictStr
+from pydantic import BaseModel, ConfigDict, Field, StrictStr, field_validator
 from typing import Any, ClassVar, Dict, List, Optional
 from typing_extensions import Annotated
 from ballista.api.v1alpha.models.artifact_output import ArtifactOutput
@@ -28,11 +28,18 @@ class BoltOutput(BaseModel):
     """
     BoltOutput
     """ # noqa: E501
-    api_version: Optional[StrictStr] = Field(default='v1alpha', description="API version the Bolt is adhering to.")
+    api_version: StrictStr = Field(description="API version the Bolt is adhering to.")
     artifacts: Annotated[List[ArtifactOutput], Field(min_length=1)] = Field(description="List of artifacts.")
     project: StrictStr = Field(description="Project key")
     version: Optional[StrictStr] = None
     __properties: ClassVar[List[str]] = ["api_version", "artifacts", "project", "version"]
+
+    @field_validator('api_version')
+    def api_version_validate_enum(cls, value):
+        """Validates the enum"""
+        if value not in set(['v1alpha']):
+            raise ValueError("must be one of enum values ('v1alpha')")
+        return value
 
     model_config = ConfigDict(
         populate_by_name=True,
@@ -97,7 +104,7 @@ class BoltOutput(BaseModel):
             return cls.model_validate(obj)
 
         _obj = cls.model_validate({
-            "api_version": obj.get("api_version") if obj.get("api_version") is not None else 'v1alpha',
+            "api_version": obj.get("api_version"),
             "artifacts": [ArtifactOutput.from_dict(_item) for _item in obj["artifacts"]] if obj.get("artifacts") is not None else None,
             "project": obj.get("project"),
             "version": obj.get("version")

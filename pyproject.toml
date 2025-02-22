@@ -3,22 +3,20 @@ name = "ballista"
 version = "0.1.0"
 description = "Ballista SDK"
 readme = "README.md"
-authors = [
-    { name = "August Bigelow", email = "dev@atbigelow.com" }
-]
+authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 requires-python = ">=3.11"
 dependencies = [
-    "cattrs>=24.1.2",
+    "pydantic>=2",
+    "python-dateutil>=2.8.2",
     "pyyaml>=6.0.2",
+    "urllib3>=1.25.3,<3.0.0",
 ]
 
 [project.optional-dependencies]
-cli = [
-    "typer>=0.15.1"
-]
+cli = ["typer>=0.15.1"]
 
 [project.scripts]
-ballista = "ballista:cli"
+ballista = "ballista.cli:cli"
 
 [build-system]
 requires = ["hatchling"]
@@ -29,10 +27,8 @@ line-length = 120
 target-version = "py311"
 
 [dependency-groups]
-dev = [
-    "ruff>=0.9.0",
-]
+dev = ["ruff>=0.9.0"]
 generation = [
-    {include-group = "dev"},
+    { include-group = "dev" },
     "openapi-generator-cli[jdk4py]>=7.11.0.post0",
 ]
