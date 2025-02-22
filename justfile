@@ -1,2 +1,9 @@
-generate_models:
-    uv run datamodel-codegen --input-file-type jsonschema --input src/ballista_cli/schemas/v1alpha/project.json --output models.py --output-model-type dataclasses.dataclass --target-python-version 3.11 --use-standard-collections --use-union-operator --use-field-description --use-schema-description
+generate_openapi_clients:
+    uv run openapi-generator-cli generate -g python -i openapi/v1alpha.json -o generated/openapi_clients/v1alpha --package-name ballista.api.v1alpha
+    cp -r generated/openapi_clients/v1alpha/ballista/api/ src/ballista/
+
+generate:
+    just generate_openapi_clients
+
+clean:
+    rm -rf generated/openapi_clients

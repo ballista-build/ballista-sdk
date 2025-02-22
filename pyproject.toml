@@ -1,7 +1,7 @@
 [project]
-name = "ballista-cli"
+name = "ballista"
 version = "0.1.0"
-description = "Ballista Command Line Interface"
+description = "Ballista SDK"
 readme = "README.md"
 authors = [
     { name = "August Bigelow", email = "dev@atbigelow.com" }
@@ -10,11 +10,15 @@ requires-python = ">=3.11"
 dependencies = [
     "cattrs>=24.1.2",
     "pyyaml>=6.0.2",
-    "typer>=0.15.1",
+]
+
+[project.optional-dependencies]
+cli = [
+    "typer>=0.15.1"
 ]
 
 [project.scripts]
-ballista = "ballista_cli:cli"
+ballista = "ballista:cli"
 
 [build-system]
 requires = ["hatchling"]
@@ -26,6 +30,9 @@ target-version = "py311"
 
 [dependency-groups]
 dev = [
-    "datamodel-code-generator>=0.26.4",
     "ruff>=0.9.0",
+]
+generation = [
+    {include-group = "dev"},
+    "openapi-generator-cli[jdk4py]>=7.11.0.post0",
 ]

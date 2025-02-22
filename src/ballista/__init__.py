@@ -1,11 +1,12 @@
 import os.path
+from enum import StrEnum
 
 import cattrs
-import yaml
 import typer
+import yaml
 
-from .types import BallistaProject
 from .drivers.docker_compose import DockerComposeBallistaEnvironment
+from .types import BallistaProject
 
 
 def _get_ballista_project() -> BallistaProject:
@@ -48,6 +49,15 @@ def up():
 @cli.command(short_help="teardown ballista environment")
 def down():
     print("BALLISTA DOWN")
+
+
+class GenerationTypes(StrEnum):
+    LAUNCH = "launch"
+    SETTINGS = "settings"
+
+@cli.command(short_help="generate files from ballista dependencies")
+def generate(type: GenerationTypes):
+    print("GENERATE")
 
 
 @cli.command(short_help="launch")
