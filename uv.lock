@@ -34,11 +34,12 @@ cli = [
 
 [package.dev-dependencies]
 dev = [
+    { name = "openapi-generator-cli", extra = ["jdk4py"] },
     { name = "ruff" },
+    { name = "typer" },
 ]
 generation = [
     { name = "openapi-generator-cli", extra = ["jdk4py"] },
-    { name = "ruff" },
 ]
 
 [package.metadata]
@@ -52,11 +53,12 @@ requires-dist = [
 provides-extras = ["cli"]
 
 [package.metadata.requires-dev]
-dev = [{ name = "ruff", specifier = ">=0.9.0" }]
-generation = [
+dev = [
     { name = "openapi-generator-cli", extras = ["jdk4py"], specifier = ">=7.11.0.post0" },
     { name = "ruff", specifier = ">=0.9.0" },
+    { name = "typer", specifier = ">=0.15.1" },
 ]
+generation = [{ name = "openapi-generator-cli", extras = ["jdk4py"], specifier = ">=7.11.0.post0" }]
 
 [[package]]
 name = "click"

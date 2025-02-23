@@ -1,1 +1,1048 @@
-{"openapi":"3.1.0","info":{"title":"Ballista API","version":"v1alpha"},"servers":[{"url":"/api/v1alpha"}],"paths":{"/schema":{"get":{"tags":["Schema"],"summary":"Get Schema","operationId":"GetSchema","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"object","title":"Response Getschema"}}}}}}},"/artifact_types/":{"get":{"tags":["Artifacts"],"summary":"List Artifact Types","description":"List all Artifact Types available in Bolts.","operationId":"ListArtifactTypes","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"items":{"$ref":"#/components/schemas/ArtifactType"},"type":"array","title":"Response Listartifacttypes"}}}}}}},"/launches/":{"put":{"tags":["Bolts","Launches"],"summary":"Launch","description":"Launch a Bolt to specified Launch Target.","operationId":"Launch","parameters":[{"name":"bolt","in":"path","required":true,"schema":{"$ref":"#/components/schemas/Bolt-Input","description":"Bill of Materials to launch. Describes multiple artifacts with types and dependencies."},"description":"Bill of Materials to launch. Describes multiple artifacts with types and dependencies."},{"name":"launch_target_key","in":"path","required":true,"schema":{"type":"string","description":"Launch Target Key","examples":["dev"],"title":"Launch Target Key"},"description":"Launch Target Key"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}},"get":{"tags":["Bolts","Launches"],"summary":"List Launches","description":"List Launches.","operationId":"ListLaunches","parameters":[{"name":"project_key","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"Filter launches by project","title":"Project Key"},"description":"Filter launches by project"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Launch"},"title":"Response Listlaunches"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/launch_targets/":{"get":{"tags":["Launch Targets"],"summary":"List Launch Targets","description":"List all targets available to Launch a Bolt.","operationId":"ListLaunchTargets","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"items":{"$ref":"#/components/schemas/LaunchTarget"},"type":"array","title":"Response Listlaunchtargets"}}}}}}},"/launch_targets/{launch_target_key}":{"get":{"tags":["Launch Targets"],"summary":"Get Launch Target","description":"Get existing Launch Target","operationId":"GetLaunchTarget","parameters":[{"name":"launch_target_key","in":"path","required":true,"schema":{"type":"string","title":"Launch Target Key"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/LaunchTarget"}}}},"404":{"description":"Not Found"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/launch_target_types/":{"get":{"tags":["Launch Target Types"],"summary":"List Launch Target Types","description":"List all types of Launch Targets.","operationId":"ListLaunchTargetTypes","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"items":{"$ref":"#/components/schemas/LaunchTargetType"},"type":"array","title":"Response Listlaunchtargettypes"}}}}}}},"/launch_target_types/{launch_target_type_key}/schema":{"get":{"tags":["Launch Target Types"],"summary":"Get Launch Target Type Configuration Schema","description":"Get JSON Schema of Launch Target Type's configuration.","operationId":"GetLaunchTargetTypeConfigurationSchema","parameters":[{"name":"launch_target_type_key","in":"path","required":true,"schema":{"type":"string","title":"Launch Target Type Key"}}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"object","title":"Response Getlaunchtargettypeconfigurationschema"}}}},"404":{"description":"Not Found"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/platform_resources/":{"get":{"tags":["Platform Resources"],"summary":"List Platform Resources","description":"List Platform Resources available to Executable artifacts.","operationId":"ListPlatformResources","parameters":[{"name":"launch_target_key","in":"query","required":false,"schema":{"anyOf":[{"type":"string"},{"type":"null"}],"description":"Existing LaunchTarget reference key","title":"Launch Target Key"},"description":"Existing LaunchTarget reference key"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/PlatformResource"},"title":"Response Listplatformresources"}}}},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/projects/":{"get":{"tags":["Projects"],"summary":"List Projects","operationId":"ListProjects","responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"type":"array","items":{"$ref":"#/components/schemas/Project"},"title":"Response Listprojects"}}}}}},"put":{"tags":["Projects"],"summary":"Create Project","description":"Create new Project.","operationId":"CreateProject","parameters":[{"name":"key","in":"path","required":true,"schema":{"type":"string","description":"Reference key","title":"Key"},"description":"Reference key"},{"name":"name","in":"path","required":true,"schema":{"type":"string","description":"Human-readable name","title":"Name"},"description":"Human-readable name"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{}}}},"409":{"description":"Cannot Create"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}},"/projects/{project_key}":{"get":{"tags":["Projects"],"summary":"Get Project","description":"Get existing Project.","operationId":"GetProject","parameters":[{"name":"project_key","in":"path","required":true,"schema":{"type":"string","description":"Existing project key","title":"Project Key"},"description":"Existing project key"}],"responses":{"200":{"description":"Successful Response","content":{"application/json":{"schema":{"$ref":"#/components/schemas/Project"}}}},"404":{"description":"Not Found"},"422":{"description":"Validation Error","content":{"application/json":{"schema":{"$ref":"#/components/schemas/HTTPValidationError"}}}}}}}},"components":{"schemas":{"Artifact-Input":{"properties":{"dockerfile":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Dockerfile","description":"Name of Dockerfile, relative to project root, to find the indicated `dockerfile_stage`."},"dockerfile_stage":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Dockerfile Stage","description":"Name of stage inside Dockerfile that will contain the artifact. Required for building."},"execution":{"anyOf":[{"$ref":"#/components/schemas/ArtifactExecution"},{"type":"null"}],"description":"Resources artifact requires for execution."},"name":{"type":"string","title":"Name","description":"Name of artifact."},"type":{"type":"null","title":"Type","description":"Type of artifact."}},"additionalProperties":false,"type":"object","required":["name"],"title":"Artifact"},"Artifact-Output":{"properties":{"dockerfile":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Dockerfile","description":"Name of Dockerfile, relative to project root, to find the indicated `dockerfile_stage`."},"dockerfile_stage":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Dockerfile Stage","description":"Name of stage inside Dockerfile that will contain the artifact. Required for building."},"execution":{"anyOf":[{"$ref":"#/components/schemas/ArtifactExecution"},{"type":"null"}],"description":"Resources artifact requires for execution."},"name":{"type":"string","title":"Name","description":"Name of artifact."},"type":{"type":"null","title":"Type","description":"Type of artifact."}},"additionalProperties":false,"type":"object","required":["name"],"title":"Artifact"},"ArtifactExecution":{"properties":{"local_resources":{"anyOf":[{"$ref":"#/components/schemas/ArtifactExecutionLocalResources"},{"type":"null"}],"title":"Local Resources","description":"Local environment resources required for execution."},"platform_resources":{"items":{"$ref":"#/components/schemas/PlatformResourceNeed"},"type":"array","title":"Platform Resources","description":"List of platform resources needed.","default":[]}},"additionalProperties":false,"type":"object","title":"ArtifactExecution"},"ArtifactExecutionLocalResources":{"properties":{"max_cpu_cores":{"anyOf":[{"type":"number","exclusiveMinimum":0.0},{"type":"null"}],"title":"Max CPU Scores","description":"Maximum number of CPU cores.","examples":[1.0,0.05]},"max_memory_mb":{"anyOf":[{"type":"integer","exclusiveMinimum":0.0},{"type":"null"}],"title":"Max Memory MB","description":"Maximum amount of memory in megabytes.","examples":[128,1024]},"min_cpu_cores":{"anyOf":[{"type":"number","exclusiveMinimum":0.0},{"type":"null"}],"title":"Max CPU Scores","description":"Minimum number of CPU cores.","examples":[1.0,0.05]},"min_memory_mb":{"anyOf":[{"type":"integer","exclusiveMinimum":0.0},{"type":"null"}],"title":"Max Memory MB","description":"Minimum amount of memory in megabytes.","examples":[128,1024]}},"additionalProperties":false,"type":"object","title":"ArtifactExecutionLocalResources"},"ArtifactType":{"properties":{"key":{"type":"string","title":"Key","description":"Reference key"},"name":{"type":"string","title":"Name","description":"Human-readable name"}},"type":"object","required":["key","name"],"title":"ArtifactType"},"Bolt-Input":{"properties":{"api_version":{"type":"string","const":"v1alpha","title":"API Version","description":"API version the Bolt is adhering to."},"artifacts":{"items":{"$ref":"#/components/schemas/Artifact-Input"},"type":"array","minItems":1,"title":"Artifacts","description":"List of artifacts."},"project":{"type":"string","title":"Project","description":"Project key"},"version":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Version","description":"Semantic version of Bolt."}},"additionalProperties":false,"type":"object","required":["api_version","artifacts","project"],"title":"Bolt"},"Bolt-Output":{"properties":{"api_version":{"type":"string","const":"v1alpha","title":"API Version","description":"API version the Bolt is adhering to."},"artifacts":{"items":{"$ref":"#/components/schemas/Artifact-Output"},"type":"array","minItems":1,"title":"Artifacts","description":"List of artifacts."},"project":{"type":"string","title":"Project","description":"Project key"},"version":{"anyOf":[{"type":"string"},{"type":"null"}],"title":"Version","description":"Semantic version of Bolt."}},"additionalProperties":false,"type":"object","required":["api_version","artifacts","project"],"title":"Bolt"},"HTTPValidationError":{"properties":{"detail":{"items":{"$ref":"#/components/schemas/ValidationError"},"type":"array","title":"Detail"}},"type":"object","title":"HTTPValidationError"},"Launch":{"properties":{"bolt":{"$ref":"#/components/schemas/Bolt-Output","description":"Bill of Materials to launch. Describes multiple artifacts with types and dependencies."},"launch_target_key":{"type":"string","title":"Launch Target Key","description":"Launch Target Key","examples":["dev"]}},"additionalProperties":false,"type":"object","required":["bolt","launch_target_key"],"title":"Launch"},"LaunchTarget":{"properties":{"artifact_types":{"items":{"type":"string"},"type":"array","title":"Artifact Types","description":"List of Artifact Type keys receivable."},"configuration":{"type":"object","title":"Configuration","description":"Configuration data based on LaunchTargetType."},"key":{"type":"string","title":"Key","description":"Reference key of Launch Target"},"launch_target_type_key":{"type":"string","title":"Launch Target Type Key","description":"Launch Target Type key","examples":["gitops"]},"name":{"type":"string","title":"Name","description":"Human-readable name of Launch Target","examples":["Development Environment"]}},"additionalProperties":false,"type":"object","required":["artifact_types","configuration","key","launch_target_type_key","name"],"title":"LaunchTarget"},"LaunchTargetType":{"properties":{"artifact_types":{"items":{"type":"string"},"type":"array","title":"Artifact Types","description":"List of Artifact Type keys receivable.","default":[]},"configuration_schema":{"type":"object","title":"Configuration Schema","description":"JSON Schema for configuration data."},"key":{"type":"string","title":"Key","examples":["gitops"]},"name":{"type":"string","title":"Name","examples":["GitOps Deployment Repository"]}},"additionalProperties":false,"type":"object","required":["configuration_schema","key","name"],"title":"LaunchTargetType"},"PlatformResource":{"properties":{"key":{"type":"string","title":"Key","description":"Reference key"},"name":{"type":"string","title":"Name","description":"Human-readable name"},"launch_target_key":{"type":"string","title":"Launch Target Key","description":"Launch Target platform resource exists"}},"additionalProperties":false,"type":"object","required":["key","name","launch_target_key"],"title":"PlatformResource"},"PlatformResourceNeed":{"properties":{},"additionalProperties":false,"type":"object","title":"PlatformResourceNeed"},"Project":{"properties":{"key":{"type":"string","title":"Key","description":"Reference key"},"name":{"type":"string","title":"Name","description":"Human-readable name"}},"additionalProperties":false,"type":"object","required":["key","name"],"title":"Project"},"ValidationError":{"properties":{"loc":{"items":{"anyOf":[{"type":"string"},{"type":"integer"}]},"type":"array","title":"Location"},"msg":{"type":"string","title":"Message"},"type":{"type":"string","title":"Error Type"}},"type":"object","required":["loc","msg","type"],"title":"ValidationError"}}},"tags":[{"name":"Artifacts"},{"name":"Bolts"},{"name":"Launches"},{"name":"Launch Targets"},{"name":"Launch Target Types"},{"name":"Platform Resources"},{"name":"Projects"}]}
+{
+    "openapi": "3.1.0",
+    "info": {
+        "title": "Ballista API v1 (alpha)",
+        "version": "1.0.0"
+    },
+    "servers": [
+        {
+            "url": "/api/v1alpha"
+        }
+    ],
+    "paths": {
+        "/schema": {
+            "get": {
+                "tags": [
+                    "Schema"
+                ],
+                "summary": "Get Schema",
+                "operationId": "GetSchema",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "title": "Response Getschema"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/artifact_types/": {
+            "get": {
+                "tags": [
+                    "Artifacts"
+                ],
+                "summary": "List Artifact Types",
+                "description": "List all Artifact Types available in Bolts.",
+                "operationId": "ListArtifactTypes",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/ArtifactType"
+                                    },
+                                    "type": "array",
+                                    "title": "Response Listartifacttypes"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/launches/": {
+            "put": {
+                "tags": [
+                    "Bolts",
+                    "Launches"
+                ],
+                "summary": "Launch",
+                "description": "Launch a Bolt to specified Launch Target.",
+                "operationId": "Launch",
+                "parameters": [
+                    {
+                        "name": "bolt",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "$ref": "#/components/schemas/Bolt-Input",
+                            "description": "Bill of Materials to launch. Describes multiple artifacts with types and dependencies."
+                        },
+                        "description": "Bill of Materials to launch. Describes multiple artifacts with types and dependencies."
+                    },
+                    {
+                        "name": "launch_target_key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "Launch Target Key",
+                            "examples": [
+                                "dev"
+                            ],
+                            "title": "Launch Target Key"
+                        },
+                        "description": "Launch Target Key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "get": {
+                "tags": [
+                    "Bolts",
+                    "Launches"
+                ],
+                "summary": "List Launches",
+                "description": "List Launches.",
+                "operationId": "ListLaunches",
+                "parameters": [
+                    {
+                        "name": "project_key",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "description": "Filter launches by project",
+                            "title": "Project Key"
+                        },
+                        "description": "Filter launches by project"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Launch"
+                                    },
+                                    "title": "Response Listlaunches"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/launch_targets/": {
+            "get": {
+                "tags": [
+                    "Launch Targets"
+                ],
+                "summary": "List Launch Targets",
+                "description": "List all targets available to Launch a Bolt.",
+                "operationId": "ListLaunchTargets",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/LaunchTarget"
+                                    },
+                                    "type": "array",
+                                    "title": "Response Listlaunchtargets"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/launch_targets/{launch_target_key}": {
+            "get": {
+                "tags": [
+                    "Launch Targets"
+                ],
+                "summary": "Get Launch Target",
+                "description": "Get existing Launch Target",
+                "operationId": "GetLaunchTarget",
+                "parameters": [
+                    {
+                        "name": "launch_target_key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Launch Target Key"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/LaunchTarget"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/launch_target_types/": {
+            "get": {
+                "tags": [
+                    "Launch Target Types"
+                ],
+                "summary": "List Launch Target Types",
+                "description": "List all types of Launch Targets.",
+                "operationId": "ListLaunchTargetTypes",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "items": {
+                                        "$ref": "#/components/schemas/LaunchTargetType"
+                                    },
+                                    "type": "array",
+                                    "title": "Response Listlaunchtargettypes"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/launch_target_types/{launch_target_type_key}/schema": {
+            "get": {
+                "tags": [
+                    "Launch Target Types"
+                ],
+                "summary": "Get Launch Target Type Configuration Schema",
+                "description": "Get JSON Schema of Launch Target Type's configuration.",
+                "operationId": "GetLaunchTargetTypeConfigurationSchema",
+                "parameters": [
+                    {
+                        "name": "launch_target_type_key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "title": "Launch Target Type Key"
+                        }
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "object",
+                                    "title": "Response Getlaunchtargettypeconfigurationschema"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/platform_resources/": {
+            "get": {
+                "tags": [
+                    "Platform Resources"
+                ],
+                "summary": "List Platform Resources",
+                "description": "List Platform Resources available to Executable artifacts.",
+                "operationId": "ListPlatformResources",
+                "parameters": [
+                    {
+                        "name": "launch_target_key",
+                        "in": "query",
+                        "required": false,
+                        "schema": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "null"
+                                }
+                            ],
+                            "description": "Existing LaunchTarget reference key",
+                            "title": "Launch Target Key"
+                        },
+                        "description": "Existing LaunchTarget reference key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/PlatformResource"
+                                    },
+                                    "title": "Response Listplatformresources"
+                                }
+                            }
+                        }
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/projects/": {
+            "get": {
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "List Projects",
+                "operationId": "ListProjects",
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "type": "array",
+                                    "items": {
+                                        "$ref": "#/components/schemas/Project"
+                                    },
+                                    "title": "Response Listprojects"
+                                }
+                            }
+                        }
+                    }
+                }
+            },
+            "put": {
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Create Project",
+                "description": "Create new Project.",
+                "operationId": "CreateProject",
+                "parameters": [
+                    {
+                        "name": "key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "Reference key",
+                            "title": "Key"
+                        },
+                        "description": "Reference key"
+                    },
+                    {
+                        "name": "name",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "Human-readable name",
+                            "title": "Name"
+                        },
+                        "description": "Human-readable name"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {}
+                            }
+                        }
+                    },
+                    "409": {
+                        "description": "Cannot Create"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        },
+        "/projects/{project_key}": {
+            "get": {
+                "tags": [
+                    "Projects"
+                ],
+                "summary": "Get Project",
+                "description": "Get existing Project.",
+                "operationId": "GetProject",
+                "parameters": [
+                    {
+                        "name": "project_key",
+                        "in": "path",
+                        "required": true,
+                        "schema": {
+                            "type": "string",
+                            "description": "Existing project key",
+                            "title": "Project Key"
+                        },
+                        "description": "Existing project key"
+                    }
+                ],
+                "responses": {
+                    "200": {
+                        "description": "Successful Response",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/Project"
+                                }
+                            }
+                        }
+                    },
+                    "404": {
+                        "description": "Not Found"
+                    },
+                    "422": {
+                        "description": "Validation Error",
+                        "content": {
+                            "application/json": {
+                                "schema": {
+                                    "$ref": "#/components/schemas/HTTPValidationError"
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+    },
+    "components": {
+        "schemas": {
+            "Artifact-Input": {
+                "properties": {
+                    "dockerfile": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Dockerfile",
+                        "description": "Name of Dockerfile, relative to project root, to find the indicated `dockerfile_stage`."
+                    },
+                    "dockerfile_stage": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Dockerfile Stage",
+                        "description": "Name of stage inside Dockerfile that will contain the artifact. Required for building."
+                    },
+                    "execution": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/ArtifactExecution"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "Resources artifact requires for execution."
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "description": "Name of artifact."
+                    },
+                    "type": {
+                        "type": "object",
+                        "title": "Type",
+                        "description": "Type of artifact."
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "name",
+                    "type"
+                ],
+                "title": "Artifact"
+            },
+            "Artifact-Output": {
+                "properties": {
+                    "dockerfile": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Dockerfile",
+                        "description": "Name of Dockerfile, relative to project root, to find the indicated `dockerfile_stage`."
+                    },
+                    "dockerfile_stage": {
+                        "anyOf": [
+                            {
+                                "type": "string"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Dockerfile Stage",
+                        "description": "Name of stage inside Dockerfile that will contain the artifact. Required for building."
+                    },
+                    "execution": {
+                        "anyOf": [
+                            {
+                                "$ref": "#/components/schemas/ArtifactExecution"
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "description": "Resources artifact requires for execution."
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "description": "Name of artifact."
+                    },
+                    "type": {
+                        "type": "object",
+                        "title": "Type",
+                        "description": "Type of artifact."
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "name",
+                    "type"
+                ],
+                "title": "Artifact"
+            },
+            "ArtifactExecution": {
+                "properties": {
+                    "local_resources": {
+                        "$ref": "#/components/schemas/ArtifactExecutionLocalResources",
+                        "title": "Local Resources",
+                        "description": "Local environment resources required for execution.",
+                        "default": {}
+                    },
+                    "platform_resources": {
+                        "items": {
+                            "$ref": "#/components/schemas/PlatformResourceNeed"
+                        },
+                        "type": "array",
+                        "title": "Platform Resources",
+                        "description": "List of platform resources needed.",
+                        "default": []
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "title": "ArtifactExecution"
+            },
+            "ArtifactExecutionLocalResources": {
+                "properties": {
+                    "max_cpu_cores": {
+                        "anyOf": [
+                            {
+                                "type": "number",
+                                "exclusiveMinimum": 0.0
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Max CPU Scores",
+                        "description": "Maximum number of CPU cores.",
+                        "examples": [
+                            1.0,
+                            0.05
+                        ]
+                    },
+                    "max_memory_mb": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "exclusiveMinimum": 0.0
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Max Memory MB",
+                        "description": "Maximum amount of memory in megabytes.",
+                        "examples": [
+                            128,
+                            1024
+                        ]
+                    },
+                    "min_cpu_cores": {
+                        "anyOf": [
+                            {
+                                "type": "number",
+                                "exclusiveMinimum": 0.0
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Max CPU Scores",
+                        "description": "Minimum number of CPU cores.",
+                        "examples": [
+                            1.0,
+                            0.05
+                        ]
+                    },
+                    "min_memory_mb": {
+                        "anyOf": [
+                            {
+                                "type": "integer",
+                                "exclusiveMinimum": 0.0
+                            },
+                            {
+                                "type": "null"
+                            }
+                        ],
+                        "title": "Max Memory MB",
+                        "description": "Minimum amount of memory in megabytes.",
+                        "examples": [
+                            128,
+                            1024
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "title": "ArtifactExecutionLocalResources"
+            },
+            "ArtifactType": {
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "title": "Key",
+                        "description": "Reference key"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "description": "Human-readable name"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "key",
+                    "name"
+                ],
+                "title": "ArtifactType"
+            },
+            "Bolt-Input": {
+                "properties": {
+                    "api_version": {
+                        "type": "string",
+                        "const": "v1alpha",
+                        "title": "API Version",
+                        "description": "API version the Bolt is adhering to."
+                    },
+                    "artifacts": {
+                        "items": {
+                            "$ref": "#/components/schemas/Artifact-Input"
+                        },
+                        "type": "array",
+                        "minItems": 1,
+                        "title": "Artifacts",
+                        "description": "List of artifacts."
+                    },
+                    "project": {
+                        "type": "string",
+                        "title": "Project",
+                        "description": "Project key"
+                    },
+                    "version": {
+                        "type": "string",
+                        "title": "Version",
+                        "description": "Semantic version of Bolt."
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "api_version",
+                    "artifacts",
+                    "project",
+                    "version"
+                ],
+                "title": "BallistaBolt",
+                "description": "A bundle of artifact definitions."
+            },
+            "Bolt-Output": {
+                "properties": {
+                    "api_version": {
+                        "type": "string",
+                        "const": "v1alpha",
+                        "title": "API Version",
+                        "description": "API version the Bolt is adhering to."
+                    },
+                    "artifacts": {
+                        "items": {
+                            "$ref": "#/components/schemas/Artifact-Output"
+                        },
+                        "type": "array",
+                        "minItems": 1,
+                        "title": "Artifacts",
+                        "description": "List of artifacts."
+                    },
+                    "project": {
+                        "type": "string",
+                        "title": "Project",
+                        "description": "Project key"
+                    },
+                    "version": {
+                        "type": "string",
+                        "title": "Version",
+                        "description": "Semantic version of Bolt."
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "api_version",
+                    "artifacts",
+                    "project",
+                    "version"
+                ],
+                "title": "BallistaBolt",
+                "description": "A bundle of artifact definitions."
+            },
+            "HTTPValidationError": {
+                "properties": {
+                    "detail": {
+                        "items": {
+                            "$ref": "#/components/schemas/ValidationError"
+                        },
+                        "type": "array",
+                        "title": "Detail"
+                    }
+                },
+                "type": "object",
+                "title": "HTTPValidationError"
+            },
+            "Launch": {
+                "properties": {
+                    "bolt": {
+                        "$ref": "#/components/schemas/Bolt-Output",
+                        "description": "Bill of Materials to launch. Describes multiple artifacts with types and dependencies."
+                    },
+                    "launch_target_key": {
+                        "type": "string",
+                        "title": "Launch Target Key",
+                        "description": "Launch Target Key",
+                        "examples": [
+                            "dev"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "bolt",
+                    "launch_target_key"
+                ],
+                "title": "Launch"
+            },
+            "LaunchTarget": {
+                "properties": {
+                    "artifact_types": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Artifact Types",
+                        "description": "List of Artifact Type keys receivable."
+                    },
+                    "configuration": {
+                        "type": "object",
+                        "title": "Configuration",
+                        "description": "Configuration data based on LaunchTargetType."
+                    },
+                    "key": {
+                        "type": "string",
+                        "title": "Key",
+                        "description": "Reference key of Launch Target"
+                    },
+                    "launch_target_type_key": {
+                        "type": "string",
+                        "title": "Launch Target Type Key",
+                        "description": "Launch Target Type key",
+                        "examples": [
+                            "gitops"
+                        ]
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "description": "Human-readable name of Launch Target",
+                        "examples": [
+                            "Development Environment"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "artifact_types",
+                    "configuration",
+                    "key",
+                    "launch_target_type_key",
+                    "name"
+                ],
+                "title": "LaunchTarget"
+            },
+            "LaunchTargetType": {
+                "properties": {
+                    "artifact_types": {
+                        "items": {
+                            "type": "string"
+                        },
+                        "type": "array",
+                        "title": "Artifact Types",
+                        "description": "List of Artifact Type keys receivable.",
+                        "default": []
+                    },
+                    "configuration_schema": {
+                        "type": "object",
+                        "title": "Configuration Schema",
+                        "description": "JSON Schema for configuration data."
+                    },
+                    "key": {
+                        "type": "string",
+                        "title": "Key",
+                        "examples": [
+                            "gitops"
+                        ]
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "examples": [
+                            "GitOps Deployment Repository"
+                        ]
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "configuration_schema",
+                    "key",
+                    "name"
+                ],
+                "title": "LaunchTargetType"
+            },
+            "PlatformResource": {
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "title": "Key",
+                        "description": "Reference key"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "description": "Human-readable name"
+                    },
+                    "launch_target_key": {
+                        "type": "string",
+                        "title": "Launch Target Key",
+                        "description": "Launch Target platform resource exists"
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "key",
+                    "name",
+                    "launch_target_key"
+                ],
+                "title": "PlatformResource"
+            },
+            "PlatformResourceNeed": {
+                "properties": {},
+                "additionalProperties": false,
+                "type": "object",
+                "title": "PlatformResourceNeed"
+            },
+            "Project": {
+                "properties": {
+                    "key": {
+                        "type": "string",
+                        "title": "Key",
+                        "description": "Reference key"
+                    },
+                    "name": {
+                        "type": "string",
+                        "title": "Name",
+                        "description": "Human-readable name"
+                    }
+                },
+                "additionalProperties": false,
+                "type": "object",
+                "required": [
+                    "key",
+                    "name"
+                ],
+                "title": "Project"
+            },
+            "ValidationError": {
+                "properties": {
+                    "loc": {
+                        "items": {
+                            "anyOf": [
+                                {
+                                    "type": "string"
+                                },
+                                {
+                                    "type": "integer"
+                                }
+                            ]
+                        },
+                        "type": "array",
+                        "title": "Location"
+                    },
+                    "msg": {
+                        "type": "string",
+                        "title": "Message"
+                    },
+                    "type": {
+                        "type": "string",
+                        "title": "Error Type"
+                    }
+                },
+                "type": "object",
+                "required": [
+                    "loc",
+                    "msg",
+                    "type"
+                ],
+                "title": "ValidationError"
+            }
+        }
+    },
+    "tags": [
+        {
+            "name": "Artifacts"
+        },
+        {
+            "name": "Bolts"
+        },
+        {
+            "name": "Launches"
+        },
+        {
+            "name": "Launch Targets"
+        },
+        {
+            "name": "Launch Target Types"
+        },
+        {
+            "name": "Platform Resources"
+        },
+        {
+            "name": "Projects"
+        }
+    ]
+}

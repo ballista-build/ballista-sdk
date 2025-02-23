@@ -1,18 +1,21 @@
-from typing import TypedDict
+from typing import Any
+
+from pydantic import BaseModel
 
 from ..types import BallistaArtifact, BallistaArtifactExecution, BallistaBolt
 
 
-class DockerComposeService(TypedDict):
-    build: dict
-    deploy: dict
-    develop: dict
+class DockerComposeService(BaseModel):
+    build: dict[str, Any]
+    deploy: dict[str, Any]
+    develop: dict[str, Any]
     networks: list[str]
-    ports: list[int]
+    ports: list[str | dict[str, Any]]
 
 
-class DockerComposeProject(TypedDict):
-    networks: dict[str, dict]
+class DockerComposeProject(BaseModel):
+    name: str
+    networks: dict[str, dict[str, Any]]
     services: dict[str, DockerComposeService]
 
 
@@ -24,9 +27,7 @@ def _generate_docker_service(artifact: BallistaArtifact, execution: BallistaArti
 
     deploy = {}
 
-    local_resources = execution.local_resources
-
-    if local_resources:
+    if local_resources := execution.local_resources:
         resource_max = {}
         resource_min = {}
         if max_cpu_cores := local_resources.max_cpu_cores:
@@ -41,14 +42,13 @@ def _generate_docker_service(artifact: BallistaArtifact, execution: BallistaArti
         deploy["resources"] = {"limits": resource_max, "reservations": resource_min}
 
     # TODO: Way to create the proper watch values
-
-    return {
-        "build": {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage},
-        "deploy": deploy,
-        "develop": {"watch": {}},
-        "ports": [],
-        "networks": ["platform", "services"],
-    }
+    return DockerComposeService(
+        build={"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage},
+        deploy=deploy,
+        develop={},
+        ports=[],
+        networks=["platform", "services"],
+    )
 
 
 def _generate_docker_compose(bolt: BallistaBolt) -> DockerComposeProject:
@@ -58,7 +58,7 @@ def _generate_docker_compose(bolt: BallistaBolt) -> DockerComposeProject:
 
     # Add dependencies
 
-    return {"services": services, "networks": {"platform": {}, "services": {}}}
+    return DockerComposeProject(name=bolt.project, networks={}, services=services)
 
 
 class DockerComposeBallistaEnvironment:
@@ -67,7 +67,7 @@ class DockerComposeBallistaEnvironment:
 
         # TODO: Run docker compose up --watch
 
-        print(compose)
+        print(compose.model_dump())
 
     def shutdown(self, bolt: BallistaBolt):
         pass
