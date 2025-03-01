@@ -51,6 +51,10 @@ class BallistaBolt(Protocol):
     project: str
     version: str
 
+    def to_dict(self) -> dict[str, Any]:
+        """Get Bolt data in dictionary form."""
+        ...
+
 
 class BoltService(Protocol):
     def create_bolt(self, project: str) -> BallistaBolt:

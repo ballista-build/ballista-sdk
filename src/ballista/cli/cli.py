@@ -46,12 +46,18 @@ cli = typer.Typer()
 
 @cli.command(short_help="initialize a new ballista powered project")
 def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
-    # Need to pick an api, so just use v1alpha for now
+    # TODO: Need to pick an api, so just use v1alpha for now. We'll probably want a default version with compatibility for old ones up to a certain date.
     if True:
         bolt_service = v1alpha_service.BoltService()
 
+    # Check if that project (folder) already exists
+    if os.path.exists(project):
+        raise ValueError(f'Path "{project}" already exists.')
+
+    os.makedirs(project)
     new_bolt = bolt_service.create_bolt(project=project)
-    print(new_bolt)
+    with open(os.path.join(project, "ballista.yaml"), "w") as f:
+        yaml.dump(new_bolt.to_dict(), f)
 
 
 @cli.command(
@@ -118,5 +124,5 @@ def generate(type: GenerationTypes):
 
 @cli.command(short_help="launch")
 def launch(launch_target_url: str):
-    bolt = get_local_bolt()
     origin = get_origin()
+    bolt = get_local_bolt(origin)
