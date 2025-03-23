@@ -3,6 +3,8 @@ from typing import Any, Protocol
 
 
 class BallistaArtifactLocalResourceNeeds(Protocol):
+    """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
+
     max_cpu_cores: float | int | None
     max_memory_mb: int | None
     min_cpu_cores: float | int | None
@@ -10,15 +12,15 @@ class BallistaArtifactLocalResourceNeeds(Protocol):
 
 
 class BallistaPlatformResource(Protocol):
-    pass
+    key: str
+    name: str
 
 
-class BallistaArtifactExecution(Protocol):
-    @property
-    def local_resources(self) -> BallistaArtifactLocalResourceNeeds | None: ...
+class BallistaPlatformResourceDependency(Protocol):
+    """An execution dependency for a specific Platform Resource."""
 
-    @property
-    def platform_resources(self) -> Sequence[Mapping[str, Any]] | None: ...
+    key: str
+    """Reference key to Platform Resource."""
 
 
 class BallistaArtifactType(Protocol):
@@ -28,13 +30,31 @@ class BallistaArtifactType(Protocol):
 
 class BallistaArtifact(Protocol):
     dockerfile: str | None
+    """Name of local Dockerfile used to build artifact."""
     dockerfile_stage: str | None
-
-    @property
-    def execution(self) -> BallistaArtifactExecution | None: ...
+    """Dockerfile target used when building artifact."""
 
     name: str
     type: dict[str, Any]
+
+
+class BallistaArtifactExecution(Protocol):
+    @property
+    def local_resources(self) -> BallistaArtifactLocalResourceNeeds | None:
+        """Local, machine-level resources for execution."""
+        ...
+
+    @property
+    def platform_resources(self) -> Sequence[Mapping[str, Any]] | None:
+        """Platform Resource dependencies required for execution."""
+        ...
+
+
+class BallistaExecutableArtifact(BallistaArtifact, Protocol):
+    """An artifact that can be executed."""
+
+    @property
+    def execution(self) -> BallistaArtifactExecution: ...
 
 
 class BallistaProject(Protocol):

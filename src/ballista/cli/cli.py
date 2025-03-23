@@ -5,20 +5,15 @@ from typing import Annotated
 import typer
 import yaml
 
+from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
+from ballista.adapters.types import ExecutionEnvironment
 from ballista.bolts import v1alpha_service
-from ballista.drivers.docker_compose import DockerComposeBallistaEnvironment
 from ballista.types import BallistaBolt
 
 
 def get_local_bolt(origin: str) -> BallistaBolt:
-    """Get a Bolt from the current directory."""
-    filename = (
-        "ballista.yaml"
-        if os.path.isfile("ballista.yaml")
-        else "ballista.yml"
-        if os.path.isfile("ballista.yml")
-        else None
-    )
+    """Get a Bolt from local path."""
+    filename = "./ballista.yaml" if os.path.isfile("./ballista.yaml") else None
     if not filename:
         raise ValueError("NO BALLISTA.YAML")
 
@@ -34,6 +29,15 @@ def get_local_bolt(origin: str) -> BallistaBolt:
         return bolt_service.get_bolt(ballista_yaml)
 
     raise ValueError()
+
+
+def get_local_environment() -> ExecutionEnvironment:
+    # Create ephemeral DockerCompose environment for local development
+    local_adapter = DockerComposeExecutionEnvironmentAdapter()
+
+    env = ExecutionEnvironment(adapter=local_adapter, cluster="local", name="local", namespace="local")
+
+    return env
 
 
 def get_origin() -> str:
@@ -61,15 +65,15 @@ def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
 
 
 @cli.command(
-    short_help="Build ballista.yaml into artifacts",
+    short_help="Build artifacts defined in ballista.yaml",
     help="""Build a path containing a ballista.yaml into a Launch-able Bolt.
 
 Defined artifacts contained in a ballista.yaml will be built and ready to be Launched.
 """,
 )
 def build(
+    artifacts: Annotated[list[str] | None, typer.Argument(help="List of artifacts to buid.")] = None,
     artifact_types: Annotated[list[str] | None, typer.Option(help="List of specified Artifact Types to build.")] = None,
-    # path: Annotated[str, typer.Option(help="Path containing a ballista.yaml.")] = "./ballista.yaml",
 ):
     origin = get_origin()
     ballista_bolt = get_local_bolt(origin)
@@ -81,6 +85,9 @@ def build(
             continue
 
         artifact_name = artifact.name
+        if artifacts and artifact_name not in artifacts:
+            continue
+
         image_name = f"build_{artifact_name}:{version}"
 
         path = "."
@@ -103,8 +110,7 @@ def up():
     origin = get_origin()
     ballista_bolt = get_local_bolt(origin)
 
-    driver = DockerComposeBallistaEnvironment()
-    driver.start(ballista_bolt)
+    env = get_local_environment()
 
 
 @cli.command(short_help="teardown ballista environment")

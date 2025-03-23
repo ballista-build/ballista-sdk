@@ -41,6 +41,9 @@ def _generate_docker_service(artifact: BallistaArtifact, execution: BallistaArti
 
         deploy["resources"] = {"limits": resource_max, "reservations": resource_min}
 
+    if platform_resources := execution.platform_resources:
+        pass
+
     # TODO: Way to create the proper watch values
     return DockerComposeService(
         build={"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage},

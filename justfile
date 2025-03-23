@@ -7,3 +7,6 @@ generate:
 
 clean:
     rm -rf generated/openapi_clients
+
+test:
+    uv run coverage run -m pytest -s
