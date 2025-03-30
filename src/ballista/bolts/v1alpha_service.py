@@ -10,9 +10,10 @@ from ..types import (
 
 
 class BoltService(BaseBoltService):
-    def create_bolt(self, project: str) -> BallistaBolt:
-        artifact = v1alpha.ArtifactInput(name=project, type={})
-        return v1alpha.BoltInput(api_version="v1alpha", artifacts=[artifact], project=project, version="0.0.1")
+    def create_bolt(self, project_name: str) -> BallistaBolt:
+        data = {}
+
+        return self.get_bolt(data)
 
     def get_bolt(self, bolt_data: dict[str, Any]) -> BallistaBolt:
         bolt = v1alpha.BoltInput.from_dict(bolt_data)

@@ -12,12 +12,12 @@ class ExecutionEnvironment:
 
     adapter: ExecutionEnvironmentAdapter
     """EnvironmentAdapter used for the environment."""
-    cluster: str
-    """Thing the environment exists."""
+    hostname: str
+    """Name of the environment host. Typically used for cluster name, server name, etc."""
     name: str
-    """Human-readable name."""
-    namespace: str
-    """Isolation"""
+    """Unique name."""
+    title: str
+    """Human-readable name of environment."""
 
 
 class ExecutionEnvironmentAdapter(Protocol):

@@ -2,6 +2,11 @@ from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
 
+class BallistaProject(Protocol):
+    name: str
+    title: str
+
+
 class BallistaArtifactLocalResourceNeeds(Protocol):
     """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
 
@@ -12,20 +17,22 @@ class BallistaArtifactLocalResourceNeeds(Protocol):
 
 
 class BallistaPlatformResource(Protocol):
-    key: str
     name: str
+    title: str
 
 
 class BallistaPlatformResourceDependency(Protocol):
     """An execution dependency for a specific Platform Resource."""
 
-    key: str
+    name: str
     """Reference key to Platform Resource."""
 
 
 class BallistaArtifactType(Protocol):
     name: str
-    key: str
+    """Name of type, unique to environment scope."""
+    title: str
+    """Human-readable name of type."""
 
 
 class BallistaArtifact(Protocol):
@@ -35,7 +42,17 @@ class BallistaArtifact(Protocol):
     """Dockerfile target used when building artifact."""
 
     name: str
-    type: dict[str, Any]
+    """Name of artifact, unique to project scope."""
+
+    @property
+    def project(self) -> BallistaProject:
+        """Project artifact exists."""
+        ...
+
+    @property
+    def type(self) -> BallistaArtifactType:
+        """Type of artifact."""
+        ...
 
 
 class BallistaArtifactExecution(Protocol):
@@ -57,18 +74,17 @@ class BallistaExecutableArtifact(BallistaArtifact, Protocol):
     def execution(self) -> BallistaArtifactExecution: ...
 
 
-class BallistaProject(Protocol):
-    key: str
-    name: str
-
-
 class BallistaBolt(Protocol):
-    api_version: str
+    """Multiple artifacts bundled together with a project and version."""
 
     @property
     def artifacts(self) -> Sequence[BallistaArtifact]: ...
 
-    project: str
+    @property
+    def project(self) -> BallistaProject:
+        """Project bolt is associated with."""
+        ...
+
     version: str
 
     def to_dict(self) -> dict[str, Any]:
@@ -77,7 +93,7 @@ class BallistaBolt(Protocol):
 
 
 class BoltService(Protocol):
-    def create_bolt(self, project: str) -> BallistaBolt:
+    def create_bolt(self, project_name: str) -> BallistaBolt:
         """Create a new project with an empty Bolt."""
         ...
 
