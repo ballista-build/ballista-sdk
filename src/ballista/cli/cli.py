@@ -35,7 +35,7 @@ def get_local_environment() -> ExecutionEnvironment:
     # Create ephemeral DockerCompose environment for local development
     local_adapter = DockerComposeExecutionEnvironmentAdapter()
 
-    env = ExecutionEnvironment(adapter=local_adapter, cluster="local", name="local", namespace="local")
+    env = ExecutionEnvironment(adapter=local_adapter, hostname="local", name="local", title="Local")
 
     return env
 

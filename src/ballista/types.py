@@ -25,7 +25,7 @@ class BallistaPlatformResourceDependency(Protocol):
     """An execution dependency for a specific Platform Resource."""
 
     name: str
-    """Reference key to Platform Resource."""
+    """Reference to Platform Resource."""
 
 
 class BallistaArtifactType(Protocol):
