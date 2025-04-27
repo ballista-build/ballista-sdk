@@ -1,27 +1,40 @@
 import pytest
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
-from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import BallistaArtifact, BallistaArtifactType, BallistaExecutableArtifact, BallistaProject
+
+
+class PydanticExecutionEnvironment(BaseModel):
+    hostname: str
+    id: str
+    name: str
 
 
 class PydanticBallistaArtifactType(BaseModel):
+    id: str
     name: str
-    title: str
 
 
 class PydanticBallistaProject(BaseModel):
+    id: str
     name: str
-    title: str
 
 
 class PydanticBallistaArtifact(BaseModel):
     dockerfile: str | None = None
     dockerfile_stage: str | None = None
-    name: str
+    id: str
     project: PydanticBallistaProject
     type: PydanticBallistaArtifactType
+
+
+class PydanticBallistaBolt(BaseModel):
+    artifacts: list[PydanticBallistaArtifact]
+    project: PydanticBallistaProject
+    version: str
+
+    def to_dict(self) -> dict:
+        return self.model_dump()
 
 
 class PydanticBallistaArtifactLocalResourceNeeds(BaseModel):
@@ -44,28 +57,33 @@ class PydanticBallistaExecutableArtifact(PydanticBallistaArtifact):
 
 @pytest.fixture
 def docker_image_artifact_type() -> PydanticBallistaArtifactType:
-    return PydanticBallistaArtifactType(name="docker_image", title="Docker Image")
+    return PydanticBallistaArtifactType(id="docker_image", name="Docker Image")
 
 
 @pytest.fixture
-def test_project(docker_image_artifact_type: PydanticBallistaArtifactType) -> PydanticBallistaProject:
-    return PydanticBallistaProject(name="test", title="Test Project")
+def project(docker_image_artifact_type: PydanticBallistaArtifactType) -> PydanticBallistaProject:
+    return PydanticBallistaProject(id="test", name="Test Project")
 
 
 @pytest.fixture
-def test_artifact(
-    docker_image_artifact_type: PydanticBallistaArtifactType, test_project: PydanticBallistaProject
+def executable_artifact(
+    docker_image_artifact_type: PydanticBallistaArtifactType, project: PydanticBallistaProject
 ) -> PydanticBallistaArtifact:
     return PydanticBallistaExecutableArtifact(
-        name="test",
+        id="test",
         type=docker_image_artifact_type,
         execution=PydanticBallistaArtifactExecution(),
-        project=test_project,
+        project=project,
     )
 
 
-def test_deployment(test_artifact: BallistaExecutableArtifact):
-    adapter = DockerComposeExecutionEnvironmentAdapter()
-    environment = ExecutionEnvironment(adapter=adapter, hostname="localhost", name="local", title="local")
+@pytest.fixture
+def bolt(project: PydanticBallistaProject, executable_artifact: PydanticBallistaArtifact) -> PydanticBallistaBolt:
+    return PydanticBallistaBolt(artifacts=[executable_artifact], project=project, version="1")
 
-    adapter.deploy_artifact(environment=environment, artifact=test_artifact)
+
+def test_deployment(bolt: PydanticBallistaBolt):
+    adapter = DockerComposeExecutionEnvironmentAdapter()
+    environment = PydanticExecutionEnvironment(hostname="localhost", id="local", name="local")
+
+    adapter.deploy(bolt=bolt, environment=environment, artifacts=[bolt.artifacts[0]])

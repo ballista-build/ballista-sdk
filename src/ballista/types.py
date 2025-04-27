@@ -3,8 +3,8 @@ from typing import Any, Protocol
 
 
 class BallistaProject(Protocol):
+    id: str
     name: str
-    title: str
 
 
 class BallistaArtifactLocalResourceNeeds(Protocol):
@@ -17,21 +17,21 @@ class BallistaArtifactLocalResourceNeeds(Protocol):
 
 
 class BallistaPlatformResource(Protocol):
+    id: str
     name: str
-    title: str
 
 
 class BallistaPlatformResourceDependency(Protocol):
     """An execution dependency for a specific Platform Resource."""
 
-    name: str
+    id: str
     """Reference to Platform Resource."""
 
 
 class BallistaArtifactType(Protocol):
-    name: str
+    id: str
     """Name of type, unique to environment scope."""
-    title: str
+    name: str
     """Human-readable name of type."""
 
 
@@ -41,8 +41,8 @@ class BallistaArtifact(Protocol):
     dockerfile_stage: str | None
     """Dockerfile target used when building artifact."""
 
-    name: str
-    """Name of artifact, unique to project scope."""
+    id: str
+    """Identifier of artifact, unique to project scope."""
 
     @property
     def project(self) -> BallistaProject:
@@ -75,7 +75,7 @@ class BallistaExecutableArtifact(BallistaArtifact, Protocol):
 
 
 class BallistaBolt(Protocol):
-    """Multiple artifacts bundled together with a project and version."""
+    """Multiple artifacts bundled together with a version and organized under a project."""
 
     @property
     def artifacts(self) -> Sequence[BallistaArtifact]: ...
@@ -93,7 +93,7 @@ class BallistaBolt(Protocol):
 
 
 class BoltService(Protocol):
-    def create_bolt(self, project_name: str) -> BallistaBolt:
+    def create_bolt(self, project_id: str) -> BallistaBolt:
         """Create a new project with an empty Bolt."""
         ...
 

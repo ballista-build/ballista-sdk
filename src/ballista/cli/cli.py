@@ -2,13 +2,20 @@ import os.path
 from enum import StrEnum
 from typing import Annotated
 
+from pydantic import BaseModel
 import typer
 import yaml
 
 from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
-from ballista.adapters.types import ExecutionEnvironment
+from ballista.adapters.types import ExecutionEnvironmentWithAdapter
 from ballista.bolts import v1alpha_service
 from ballista.types import BallistaBolt
+
+
+class LocalEnvironment(BaseModel):
+    hostname: str
+    id: str
+    name: str
 
 
 def get_local_bolt(origin: str) -> BallistaBolt:
@@ -31,13 +38,13 @@ def get_local_bolt(origin: str) -> BallistaBolt:
     raise ValueError()
 
 
-def get_local_environment() -> ExecutionEnvironment:
+def get_local_environment() -> ExecutionEnvironmentWithAdapter:
     # Create ephemeral DockerCompose environment for local development
     local_adapter = DockerComposeExecutionEnvironmentAdapter()
 
-    env = ExecutionEnvironment(adapter=local_adapter, hostname="local", name="local", title="Local")
+    env = LocalEnvironment(hostname="local", id="local", name="Local")
 
-    return env
+    return local_adapter, env
 
 
 def get_origin() -> str:
@@ -110,7 +117,7 @@ def up():
     origin = get_origin()
     ballista_bolt = get_local_bolt(origin)
 
-    env = get_local_environment()
+    adapter, env = get_local_environment()
 
 
 @cli.command(short_help="teardown ballista environment")

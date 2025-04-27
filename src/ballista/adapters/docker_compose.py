@@ -1,9 +1,9 @@
-from typing import Any
+from typing import Any, Collection
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import BallistaArtifact, BallistaArtifactType, BallistaExecutableArtifact, BallistaPlatformResource
+from ballista.types import BallistaArtifactType, BallistaExecutableArtifact, BallistaPlatformResource, BallistaBolt
 
 
 class DockerComposeService(BaseModel):
@@ -66,8 +66,15 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
             networks=["platform", "services"],
         )
 
-    def deploy_artifact(self, environment: ExecutionEnvironment, artifact: BallistaExecutableArtifact):
-        print(self._translate_artifact_to_docker_compose_service(artifact))
+    def deploy(
+        self,
+        bolt: BallistaBolt,
+        artifacts: Collection[BallistaExecutableArtifact],
+        environment: ExecutionEnvironment,
+    ):
+        docker_compose_services = {a.id: self._translate_artifact_to_docker_compose_service(a) for a in artifacts}
+        docker_compose_project = DockerComposeProject(name="test", networks={}, services=docker_compose_services)
+        print(docker_compose_project)
 
     def fulfill_platform_resource_dependency(
         self, environment: ExecutionEnvironment, artifact: BallistaExecutableArtifact
