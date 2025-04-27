@@ -1,20 +1,9 @@
 # yaml-language-server: $schema=http://localhost:8000/api/v1alpha/schema
 api_version: v1alpha
 artifacts:
-  - name: python-package
-    dockerfile: Dockerfile
-    dockerfile_stage: python-wheel
+  - id: python-package
+    dockerfile_stage: python-package
     type:
-      python_wheel:
-        folder_path: path
-# Test artifact
-  - name: api
-    dockerfile_stage: api-server
-    execution:
-      local_resources:
-        min_cpu_cores: 0.1
-        min_memory_mb: 128
-    type:
-      docker_image: {}
-project: nautilus
+      python_wheel: {}
+project_id: nautilus
 version: 0.0.1

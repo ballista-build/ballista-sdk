@@ -52,7 +52,7 @@ requires-dist = [
     { name = "typer", marker = "extra == 'cli'", specifier = ">=0.15.1" },
     { name = "urllib3", specifier = ">=1.25.3,<3.0.0" },
 ]
-provides-extras = ["cli"]
+provides-extras = ["cli", "kubernetes"]
 
 [package.metadata.requires-dev]
 dev = [

@@ -3,7 +3,7 @@ from typing import Any, Collection
 from pydantic import BaseModel
 
 from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import BallistaArtifactType, BallistaExecutableArtifact, BallistaPlatformResource, BallistaBolt
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
 
 
 class DockerComposeService(BaseModel):
@@ -22,11 +22,11 @@ class DockerComposeProject(BaseModel):
 
 
 class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
-    def add_platform_resource(self, platform_resource: BallistaPlatformResource):
+    def add_platform_resource(self, platform_resource: PlatformResource):
         pass
 
     @staticmethod
-    def _translate_artifact_to_docker_compose_service(artifact: BallistaExecutableArtifact) -> DockerComposeService:
+    def _translate_artifact_to_docker_compose_service(bolt: Bolt, artifact: ExecutableArtifact) -> DockerComposeService:
         build = {}
         image = None
 
@@ -37,6 +37,8 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
                 context, dockerfile = pieces
 
             build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
+        else:
+            image = f"{artifact.id}:{bolt.version}"
 
         deploy = {}
 
@@ -68,29 +70,27 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
 
     def deploy(
         self,
-        bolt: BallistaBolt,
-        artifacts: Collection[BallistaExecutableArtifact],
+        bolt: Bolt,
+        artifacts: Collection[ExecutableArtifact],
         environment: ExecutionEnvironment,
     ):
-        docker_compose_services = {a.id: self._translate_artifact_to_docker_compose_service(a) for a in artifacts}
+        docker_compose_services = {a.id: self._translate_artifact_to_docker_compose_service(bolt, a) for a in artifacts}
         docker_compose_project = DockerComposeProject(name="test", networks={}, services=docker_compose_services)
         print(docker_compose_project)
 
-    def fulfill_platform_resource_dependency(
-        self, environment: ExecutionEnvironment, artifact: BallistaExecutableArtifact
-    ):
+    def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass
 
-    def list_artifact_types(self, environment: ExecutionEnvironment) -> list[BallistaArtifactType]:
+    def list_artifact_types(self, environment: ExecutionEnvironment) -> list[ArtifactType]:
         return []
 
-    def list_platform_resources(self, environment: ExecutionEnvironment) -> list[BallistaPlatformResource]:
+    def list_platform_resources(self, environment: ExecutionEnvironment) -> list[PlatformResource]:
         return []
 
-    def list_services(self, environment: ExecutionEnvironment) -> list[BallistaExecutableArtifact]:
+    def list_services(self, environment: ExecutionEnvironment) -> list[ExecutableArtifact]:
         return []
 
-    def _make_yaml(self, environment: ExecutionEnvironment, artifact: BallistaExecutableArtifact) -> dict:
+    def _make_yaml(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact) -> dict:
         d = {}
 
         return d

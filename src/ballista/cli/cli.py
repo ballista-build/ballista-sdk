@@ -2,14 +2,14 @@ import os.path
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import BaseModel
 import typer
 import yaml
+from pydantic import BaseModel
 
 from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
 from ballista.adapters.types import ExecutionEnvironmentWithAdapter
 from ballista.bolts import v1alpha_service
-from ballista.types import BallistaBolt
+from ballista.types import Bolt
 
 
 class LocalEnvironment(BaseModel):
@@ -18,7 +18,7 @@ class LocalEnvironment(BaseModel):
     name: str
 
 
-def get_local_bolt(origin: str) -> BallistaBolt:
+def get_local_bolt(origin: str) -> Bolt:
     """Get a Bolt from local path."""
     filename = "./ballista.yaml" if os.path.isfile("./ballista.yaml") else None
     if not filename:
