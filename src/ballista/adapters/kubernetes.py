@@ -28,8 +28,16 @@ def _generate_artifact_resources(
 ) -> list[K8sResource]:
     k8s_resources = []
 
+    # Common metadata
+    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project.name}
+
     # TODO: Service types
     services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": "/", "target_port": 80}]
+
+    # TODO: Probes
+    liveness_probe = {}
+    readiness_probe = {}
+    startup_probe = {}
 
     pod_resources = {"requests": {}, "limits": {}}
     if local_resources := artifact.execution.local_resources:
@@ -44,12 +52,13 @@ def _generate_artifact_resources(
 
     pod_template = {
         "spec": {  # PodTemplateSpec
-            "metadata": {"labels": {"service": artifact.id}},
+            "metadata": metadata,
             "spec": {  # PodSpec
                 "containers": [  # Container
                     {
                         "name": artifact.id,
                         "image": f"{artifact.id}:{bolt.version}",
+                        "livenessProbe": liveness_probe,
                         "ports": [
                             {
                                 "containerPort": s["container_port"],
@@ -57,12 +66,17 @@ def _generate_artifact_resources(
                             }
                             for s in services
                         ],
+                        "readinessProbe": readiness_probe,
                         "resources": {**pod_resources},  # ResourceRequirements
+                        "startupProbe": startup_probe,
                     }
                 ],
             },
         }
     }
+    # TODO
+    # env
+    # securityContext
 
     # Deployment
     k8s_resources.append(
@@ -71,10 +85,14 @@ def _generate_artifact_resources(
             {
                 "apiVersion": "apps/v1",
                 "kind": "Deployment",
-                "metadata": {"name": artifact.id, "labels": {"service": artifact.id}},
+                "metadata": metadata,
                 "spec": {
                     "selector": {  # LabelSelector
                         "matchLabels": {"service": artifact.id}
+                    },
+                    "strategy": {
+                        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+                        "type": "RollingUpdate",
                     },
                     "template": pod_template,  # PodTemplate
                 },
@@ -89,7 +107,7 @@ def _generate_artifact_resources(
             {
                 "apiVersion": "v1",
                 "kind": "Service",
-                "metadata": {"name": artifact.id},
+                "metadata": metadata,
                 "spec": {
                     "selector": {},
                     "ports": [{"port": s["target_port"], "name": s["name"], "targetPort": s["name"]} for s in services],
@@ -107,7 +125,7 @@ def _generate_artifact_resources(
                 {
                     "apiVersion": "networking.k8s.io/v1",
                     "kind": "Ingress",
-                    "metadata": {"name": artifact.id},
+                    "metadata": metadata,
                     "spec": {
                         "rules": [
                             {
