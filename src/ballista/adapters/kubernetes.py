@@ -168,12 +168,13 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         )
 
         # Create pseudo file structure
-        fs = _generate_yaml_files(bolt_resources)
-        fs.update(
-            {artifact_id: _generate_yaml_files(resources) for artifact_id, resources in artifact_resources.items()}
-        )
+        bolt_files = _generate_yaml_files(bolt_resources)
+        print(bolt_files)
+        artifact_files = {
+            artifact_id: _generate_yaml_files(resources) for artifact_id, resources in artifact_resources.items()
+        }
 
-        print(fs)
+        print(artifact_files)
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass
