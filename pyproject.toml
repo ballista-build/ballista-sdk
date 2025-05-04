@@ -1,7 +1,7 @@
 [project]
 name = "ballista"
 version = "0.1.0"
-description = "Ballista SDK"
+description = "Ballista"
 readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 requires-python = ">=3.11"
@@ -9,11 +9,13 @@ dependencies = [
     "pydantic>=2",
     "python-dateutil>=2.8.2",
     "pyyaml>=6.0.2",
+    "semver>=3.0.4",
     "urllib3>=1.25.3,<3.0.0",
 ]
 
 [project.optional-dependencies]
 cli = ["typer>=0.15.1"]
+kubernetes = []
 
 [project.scripts]
 ballista = "ballista.cli:cli"

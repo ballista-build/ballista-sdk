@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Collection, Protocol
 
-from ballista.types import BallistaArtifactType, BallistaBolt, BallistaExecutableArtifact, BallistaPlatformResource
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
 
 
 class ExecutionEnvironment(Protocol):
@@ -21,28 +21,26 @@ class ExecutionEnvironmentAdapter(Protocol):
 
     def deploy(
         self,
-        bolt: BallistaBolt,
-        artifacts: Collection[BallistaExecutableArtifact],
+        bolt: Bolt,
+        artifacts: Collection[ExecutableArtifact],
         environment: ExecutionEnvironment,
     ):
         """Deploy a Bolt."""
         ...
 
-    def fulfill_platform_resource_dependency(
-        self, environment: ExecutionEnvironment, artifact: BallistaExecutableArtifact
-    ):
+    def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         """Fulfills an artifact's dependency on a Platform Resource."""
         ...
 
-    def list_artifact_types(self, environment: ExecutionEnvironment) -> Collection[BallistaArtifactType]:
-        """List executable ArtifactTypes."""
+    def list_artifact_types(self, environment: ExecutionEnvironment) -> Collection[ArtifactType]:
+        """List executable ArtifactTypes available in environment."""
         ...
 
-    def list_platform_resources(self, environment: ExecutionEnvironment) -> Collection[BallistaPlatformResource]:
+    def list_platform_resources(self, environment: ExecutionEnvironment) -> Collection[PlatformResource]:
         """List platform resources."""
         ...
 
-    def list_services(self, environment: ExecutionEnvironment) -> Collection[BallistaExecutableArtifact]:
+    def list_services(self, environment: ExecutionEnvironment) -> Collection[ExecutableArtifact]:
         """List deployed executable services."""
         ...
 
