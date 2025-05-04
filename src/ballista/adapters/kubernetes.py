@@ -4,7 +4,6 @@ from typing import Any
 import yaml
 
 from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.artifacts.artifact_types import docker_image
 from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
 
 KubernetesResource = tuple[str, dict[str, Any]]
@@ -14,7 +13,7 @@ KubernetesResource = tuple[str, dict[str, Any]]
 def _generate_bolt_resources(
     bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
-    """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifact resources."""
+    """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
     if len(artifacts) == 0:
         raise Exception("No artifacts to generate resources.")
 
@@ -167,9 +166,9 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
             bolt=bolt, artifacts=artifacts, environment=environment
         )
 
-        # Create pseudo file structure
         bolt_files = _generate_yaml_files(bolt_resources)
         print(bolt_files)
+
         artifact_files = {
             artifact_id: _generate_yaml_files(resources) for artifact_id, resources in artifact_resources.items()
         }
@@ -180,7 +179,7 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         pass
 
     def list_artifact_types(self, environment: ExecutionEnvironment) -> list[ArtifactType]:
-        return [docker_image]
+        return []
 
     def list_platform_resources(self, environment: ExecutionEnvironment) -> list[PlatformResource]:
         return []
