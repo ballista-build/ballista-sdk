@@ -1,6 +1,8 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
+from semver import Version
+
 
 class Project(Protocol):
     id: str
@@ -94,7 +96,7 @@ class Bolt(Protocol):
         """Project bolt is associated with."""
         ...
 
-    version: str
+    version: Version
     """Semantic version of entire bundle of artifacts."""
 
     def to_dict(self) -> dict[str, Any]:

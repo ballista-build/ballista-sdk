@@ -7,19 +7,16 @@ from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAd
 from ballista.artifacts.artifact_types import docker_image
 from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
 
-K8sResource = tuple[str, dict[str, Any]]
-"""A Kubernetes Kind name and data."""
-ArtifactK8sResources = list[K8sResource]
-"""Kubernetes resources for an Artifact."""
-BoltK8sResources = tuple[list[K8sResource], dict[str, ArtifactK8sResources]]
-"""Kubernetes resources for a Bolt."""
+KubernetesResource = tuple[str, dict[str, Any]]
+"""A Kubernetes resource with an explicit Kind and data."""
 
 
 def _generate_bolt_resources(
     bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
-) -> BoltK8sResources:
+) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
+    """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifact resources."""
     if len(artifacts) == 0:
-        raise Exception("Empty artifacts.")
+        raise Exception("No artifacts to generate resources.")
 
     artifact_resources = {
         artifact.id: _generate_artifact_resources(bolt=bolt, artifact=artifact, environment=environment)
@@ -33,7 +30,7 @@ def _generate_bolt_resources(
 
 def _generate_artifact_resources(
     bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
-) -> ArtifactK8sResources:
+) -> list[KubernetesResource]:
     k8s_resources = []
 
     # Common metadata
@@ -160,7 +157,7 @@ def _generate_artifact_resources(
     return k8s_resources
 
 
-def _generate_yaml_files(k8s_resources: list[K8sResource]) -> dict[str, str]:
+def _generate_yaml_files(k8s_resources: Collection[KubernetesResource]) -> dict[str, str]:
     return {kind.lower() + ".yaml": yaml.dump(data) for kind, data in k8s_resources}
 
 

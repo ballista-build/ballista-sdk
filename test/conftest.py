@@ -1,5 +1,6 @@
 import models
 import pytest
+from semver import Version
 
 
 @pytest.fixture(scope="session")
@@ -15,7 +16,7 @@ def docker_image_artifact_type():
 @pytest.fixture(scope="session")
 def bolt(project: models.PydanticProject, docker_image_artifact_type: models.PydanticArtifactType, request):
     return {
-        "empty": models.PydanticBolt(artifacts=[], project=project, version="1"),
+        "empty": models.PydanticBolt(artifacts=[], project=project, version=Version(1)),
         "simple": models.PydanticBolt(
             artifacts=[
                 models.PydanticArtifact(
@@ -29,7 +30,7 @@ def bolt(project: models.PydanticProject, docker_image_artifact_type: models.Pyd
                 )
             ],
             project=project,
-            version="1",
+            version=Version(1),
         ),
     }[request.param]
 

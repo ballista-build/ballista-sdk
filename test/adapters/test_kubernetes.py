@@ -1,6 +1,6 @@
 import pytest
 
-from ballista.adapters.kubernetes import BoltK8sResources, _generate_bolt_resources
+from ballista.adapters.kubernetes import KubernetesResource, _generate_bolt_resources
 from ballista.adapters.types import ExecutionEnvironment
 from ballista.types import Bolt
 
@@ -41,7 +41,7 @@ def kubernetes_adapter():
                                             "spec": {
                                                 "containers": [
                                                     {
-                                                        "image": "api:1",
+                                                        "image": "api:1.0.0",
                                                         "livenessProbe": {},
                                                         "name": "api",
                                                         "ports": [{"containerPort": 80, "name": "http"}],
@@ -81,7 +81,11 @@ def kubernetes_adapter():
     ids=["simple"],
     indirect=["bolt"],
 )
-def test_resource_generation(bolt: Bolt, resources: BoltK8sResources, execution_environment: ExecutionEnvironment):
+def test_resource_generation(
+    bolt: Bolt,
+    resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
+    execution_environment: ExecutionEnvironment,
+):
     assert resources == _generate_bolt_resources(
         artifacts=bolt.executable_artifacts, bolt=bolt, environment=execution_environment
     )
