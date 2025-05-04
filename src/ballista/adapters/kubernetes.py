@@ -1,4 +1,5 @@
-from typing import Any, Collection
+from collections.abc import Collection
+from typing import Any
 
 import yaml
 
@@ -8,11 +9,18 @@ from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResou
 
 K8sResource = tuple[str, dict[str, Any]]
 """A Kubernetes Kind name and data."""
+ArtifactK8sResources = list[K8sResource]
+"""Kubernetes resources for an Artifact."""
+BoltK8sResources = tuple[list[K8sResource], dict[str, ArtifactK8sResources]]
+"""Kubernetes resources for a Bolt."""
 
 
 def _generate_bolt_resources(
     bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
-) -> tuple[list[K8sResource], dict[str, list[K8sResource]]]:
+) -> BoltK8sResources:
+    if len(artifacts) == 0:
+        raise Exception("Empty artifacts.")
+
     artifact_resources = {
         artifact.id: _generate_artifact_resources(bolt=bolt, artifact=artifact, environment=environment)
         for artifact in artifacts
@@ -25,14 +33,14 @@ def _generate_bolt_resources(
 
 def _generate_artifact_resources(
     bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
-) -> list[K8sResource]:
+) -> ArtifactK8sResources:
     k8s_resources = []
 
     # Common metadata
-    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project.name}
+    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project.id}
 
     # TODO: Service types
-    services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": "/", "target_port": 80}]
+    services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": None, "target_port": 80}]
 
     # TODO: Probes
     liveness_probe = {}
@@ -41,14 +49,14 @@ def _generate_artifact_resources(
 
     pod_resources = {"requests": {}, "limits": {}}
     if local_resources := artifact.execution.local_resources:
-        if local_resources.min_cpu_cores:
-            pod_resources["requests"]["cpu"] = local_resources.min_cpu_cores
-        if local_resources.min_memory_mb:
-            pod_resources["requests"]["memory"] = local_resources.min_memory_mb
-        if local_resources.max_cpu_cores:
-            pod_resources["limits"]["cpu"] = local_resources.max_cpu_cores
-        if local_resources.max_memory_mb:
-            pod_resources["limits"]["memory"] = local_resources.max_memory_mb
+        if local_resources.min_cpu:
+            pod_resources["requests"]["cpu"] = local_resources.min_cpu
+        if local_resources.min_memory:
+            pod_resources["requests"]["memory"] = f"{local_resources.min_memory}Gi"
+        if local_resources.max_cpu:
+            pod_resources["limits"]["cpu"] = local_resources.max_cpu
+        if local_resources.max_memory:
+            pod_resources["limits"]["memory"] = f"{local_resources.max_memory}Gi"
 
     pod_template = {
         "spec": {  # PodTemplateSpec

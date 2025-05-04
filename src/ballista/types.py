@@ -12,10 +12,14 @@ class Project(Protocol):
 class ArtifactLocalResourceNeeds(Protocol):
     """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
 
-    max_cpu_cores: float | int | None
-    max_memory_mb: int | None
-    min_cpu_cores: float | int | None
-    min_memory_mb: int | None
+    max_cpu: float | int | None
+    """Maximum CPU allowed, measured in cores."""
+    max_memory: float | None
+    """Maximum memory allowed, measured in Gibibytes."""
+    min_cpu: float | int | None
+    """Minimum CPU required, measured in cores."""
+    min_memory: float | None
+    """Minimum memory required, measured in Gibibytes."""
 
 
 class PlatformResource(Protocol):
@@ -37,26 +41,6 @@ class ArtifactType(Protocol):
     """Human-readable name of type."""
 
 
-class Artifact(Protocol):
-    dockerfile: str | None
-    """Name of local Dockerfile used to build artifact."""
-    dockerfile_stage: str | None
-    """Dockerfile target used when building artifact."""
-
-    id: str
-    """Identifier of artifact, unique to project scope."""
-
-    @property
-    def project(self) -> Project:
-        """Project artifact exists."""
-        ...
-
-    @property
-    def type(self) -> ArtifactType:
-        """Type of artifact."""
-        ...
-
-
 class ArtifactExecution(Protocol):
     @property
     def local_resources(self) -> ArtifactLocalResourceNeeds | None:
@@ -66,6 +50,24 @@ class ArtifactExecution(Protocol):
     @property
     def platform_resources(self) -> Sequence[Mapping[str, Any]] | None:
         """Platform Resource dependencies required for execution."""
+        ...
+
+
+class Artifact(Protocol):
+    dockerfile: str | None
+    """Name of local Dockerfile used to build artifact."""
+    dockerfile_stage: str | None
+    """Dockerfile target used when building artifact."""
+
+    @property
+    def execution(self) -> ArtifactExecution | None: ...
+
+    id: str
+    """Identifier of artifact, unique to project scope."""
+
+    @property
+    def type(self) -> ArtifactType:
+        """Type of artifact."""
         ...
 
 
@@ -81,6 +83,11 @@ class Bolt(Protocol):
 
     @property
     def artifacts(self) -> Sequence[Artifact]: ...
+
+    @property
+    def executable_artifacts(self) -> Sequence[ExecutableArtifact]:
+        """Sequence of ExecutableArtifacts only."""
+        ...
 
     @property
     def project(self) -> Project:
