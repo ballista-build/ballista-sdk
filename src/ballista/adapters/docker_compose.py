@@ -1,5 +1,10 @@
-from typing import Any, Collection
+import os
+import subprocess
+import tempfile
+from collections.abc import Collection, Sequence
+from typing import Any
 
+import yaml
 from pydantic import BaseModel
 
 from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
@@ -7,9 +12,9 @@ from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResou
 
 
 class DockerComposeService(BaseModel):
-    build: dict[str, Any]
+    build: dict[str, Any] | None = None
     deploy: dict[str, Any]
-    develop: dict[str, Any]
+    develop: dict[str, Any] | None = None
     image: str | None = None
     networks: list[str]
     ports: list[str | dict[str, Any]]
@@ -21,52 +26,69 @@ class DockerComposeProject(BaseModel):
     services: dict[str, DockerComposeService]
 
 
+def _generate_bolt_docker_compose_project(
+    bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
+) -> DockerComposeProject:
+    """Generate a docker compose project."""
+    services = {
+        artifact.id: _generate_artifact_docker_compose_service(bolt, artifact, environment) for artifact in artifacts
+    }
+    return DockerComposeProject(name="test", networks={}, services=services)
+
+
+def _generate_artifact_docker_compose_service(
+    bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
+) -> DockerComposeService:
+    """Generate a docker compose Service definition for an ExecutableArtifact."""
+    ports = []
+
+    deploy = {}
+    if local_resources := artifact.execution.local_resources:
+        resource_max = {}
+        resource_min = {}
+        if max_cpu := local_resources.max_cpu:
+            resource_max["cpus"] = max_cpu
+        if max_memory := local_resources.max_memory:
+            resource_max["memory"] = f"{max_memory}g"
+        if min_cpu := local_resources.min_cpu:
+            resource_min["cpus"] = min_cpu
+        if min_memory := local_resources.min_memory:
+            resource_min["memory"] = f"{min_memory}g"
+
+        deploy["resources"] = {"limits": resource_max, "reservations": resource_min}
+
+    service = DockerComposeService(deploy=deploy, networks=[], ports=ports)
+
+    if artifact.dockerfile_stage:
+        context = "."
+        dockerfile = artifact.dockerfile or "Dockerfile"
+        if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
+            context, dockerfile = pieces
+
+        service.build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
+    else:
+        service.image = f"{artifact.id}:{bolt.version}"
+
+    if platform_resources := artifact.execution.platform_resources:
+        pass
+
+    return service
+
+
 class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
     def add_platform_resource(self, platform_resource: PlatformResource):
         pass
 
-    @staticmethod
-    def _translate_artifact_to_docker_compose_service(bolt: Bolt, artifact: ExecutableArtifact) -> DockerComposeService:
-        build = {}
-        image = None
+    def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Sequence[str]):
+        """Call docker compose."""
+        # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
+        with tempfile.NamedTemporaryFile() as f:
+            compose_yaml = yaml.dump(docker_compose_project.model_dump(exclude_none=True))
+            f.write(compose_yaml.encode())
+            f.flush()
 
-        if artifact.dockerfile:
-            context = "."
-            dockerfile = artifact.dockerfile or "Dockerfile"
-            if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
-                context, dockerfile = pieces
-
-            build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
-        else:
-            image = f"{artifact.id}:{bolt.version}"
-
-        deploy = {}
-
-        if local_resources := artifact.execution.local_resources:
-            resource_max = {}
-            resource_min = {}
-            if max_cpu_cores := local_resources.max_cpu_cores:
-                resource_max["cpus"] = max_cpu_cores
-            if max_memory_mb := local_resources.max_memory_mb:
-                resource_max["memory"] = max_memory_mb
-            if min_cpu_cores := local_resources.min_cpu_cores:
-                resource_min["cpus"] = min_cpu_cores
-            if min_memory_mb := local_resources.min_memory_mb:
-                resource_min["memory"] = min_memory_mb
-
-            deploy["resources"] = {"limits": resource_max, "reservations": resource_min}
-
-        if platform_resources := artifact.execution.platform_resources:
-            pass
-
-        return DockerComposeService(
-            build=build,
-            deploy=deploy,
-            develop={},
-            image=image,
-            ports=[],
-            networks=["platform", "services"],
-        )
+            args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
+            subprocess.run(args)
 
     def deploy(
         self,
@@ -74,9 +96,11 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         artifacts: Collection[ExecutableArtifact],
         environment: ExecutionEnvironment,
     ):
-        docker_compose_services = {a.id: self._translate_artifact_to_docker_compose_service(bolt, a) for a in artifacts}
-        docker_compose_project = DockerComposeProject(name="test", networks={}, services=docker_compose_services)
-        print(docker_compose_project)
+        docker_compose_project = _generate_bolt_docker_compose_project(
+            bolt=bolt, artifacts=artifacts, environment=environment
+        )
+        # self._call_compose(docker_compose_project, ["up", "--build", "--watch", "--remove-orphans"])
+        self._call_compose(docker_compose_project, ["config"])
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass
@@ -89,11 +113,6 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
 
     def list_services(self, environment: ExecutionEnvironment) -> list[ExecutableArtifact]:
         return []
-
-    def _make_yaml(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact) -> dict:
-        d = {}
-
-        return d
 
     def start(self):
         pass

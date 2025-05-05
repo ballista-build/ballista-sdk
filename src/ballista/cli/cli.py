@@ -118,6 +118,7 @@ def up():
     ballista_bolt = get_local_bolt(origin)
 
     adapter, env = get_local_environment()
+    adapter.deploy(bolt=ballista_bolt, artifacts=[a for a in ballista_bolt.artifacts if a.execution], environment=env)
 
 
 @cli.command(short_help="teardown ballista environment")
