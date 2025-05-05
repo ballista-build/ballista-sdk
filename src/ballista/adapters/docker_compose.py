@@ -99,8 +99,7 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         docker_compose_project = _generate_bolt_docker_compose_project(
             bolt=bolt, artifacts=artifacts, environment=environment
         )
-        # self._call_compose(docker_compose_project, ["up", "--build", "--watch", "--remove-orphans"])
-        self._call_compose(docker_compose_project, ["config"])
+        self._call_compose(docker_compose_project, ["up", "--build", "--watch", "--remove-orphans"])
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass
