@@ -72,6 +72,11 @@ class Artifact(Protocol):
         """Type of artifact."""
         ...
 
+    @property
+    def version(self) -> Version | None:
+        """Artifact-specific semantic version. If not set, the Bolt version is used instead."""
+        ...
+
 
 class ExecutableArtifact(Artifact, Protocol):
     """An artifact that can be executed."""

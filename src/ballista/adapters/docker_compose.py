@@ -40,6 +40,7 @@ def _generate_artifact_docker_compose_service(
     bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
+    version = artifact.version or bolt.version
     ports = []
 
     deploy = {}
@@ -67,7 +68,7 @@ def _generate_artifact_docker_compose_service(
 
         service.build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
     else:
-        service.image = f"{artifact.id}:{bolt.version}"
+        service.image = f"{artifact.id}:{version}"
 
     if platform_resources := artifact.execution.platform_resources:
         pass

@@ -66,7 +66,7 @@ def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
         raise ValueError(f'Path "{project}" already exists.')
 
     os.makedirs(project)
-    new_bolt = bolt_service.create_bolt(project=project)
+    new_bolt = bolt_service.create_bolt(project_id=project)
     with open(os.path.join(project, "ballista.yaml"), "w") as f:
         yaml.dump(new_bolt.to_dict(), f)
 
@@ -91,11 +91,11 @@ def build(
             # Artifact is not buildable; skip
             continue
 
-        artifact_name = artifact.name
-        if artifacts and artifact_name not in artifacts:
+        artifact_id = artifact.id
+        if artifacts and artifact_id not in artifacts:
             continue
 
-        image_name = f"build_{artifact_name}:{version}"
+        image_name = f"build_{artifact_id}:{version}"
 
         path = "."
         dockerfile = artifact.dockerfile or "Dockerfile"
