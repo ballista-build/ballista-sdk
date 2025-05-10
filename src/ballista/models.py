@@ -73,6 +73,7 @@ class PydanticArtifact(BaseModel):
     execution: PydanticArtifactExecution | None = None
     id: str
     type: PydanticArtifactType
+    version: Annotated[Version | None, _VersionPydanticAnnotation] = None
 
 
 class PydanticBolt(BaseModel):

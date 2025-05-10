@@ -25,7 +25,7 @@ class ExecutionEnvironmentAdapter(Protocol):
         artifacts: Collection[ExecutableArtifact],
         environment: ExecutionEnvironment,
     ):
-        """Deploy a Bolt."""
+        """Deploy a Bolt and collection of ExecutableArtifacts in the specified ExecutionEnvironment."""
         ...
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):

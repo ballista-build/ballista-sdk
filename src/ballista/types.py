@@ -14,11 +14,11 @@ class Project(Protocol):
 class ArtifactLocalResourceNeeds(Protocol):
     """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
 
-    max_cpu: float | int | None
+    max_cpu: float | None
     """Maximum CPU allowed, measured in cores."""
     max_memory: float | None
     """Maximum memory allowed, measured in Gibibytes."""
-    min_cpu: float | int | None
+    min_cpu: float | None
     """Minimum CPU required, measured in cores."""
     min_memory: float | None
     """Minimum memory required, measured in Gibibytes."""
@@ -72,6 +72,11 @@ class Artifact(Protocol):
         """Type of artifact."""
         ...
 
+    @property
+    def version(self) -> Version | None:
+        """Artifact-specific semantic version. If not set, the Bolt version is used instead."""
+        ...
+
 
 class ExecutableArtifact(Artifact, Protocol):
     """An artifact that can be executed."""
@@ -93,7 +98,7 @@ class Bolt(Protocol):
 
     @property
     def project(self) -> Project:
-        """Project bolt is associated with."""
+        """Project Bolt is associated with."""
         ...
 
     version: Version

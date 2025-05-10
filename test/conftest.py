@@ -1,6 +1,7 @@
-import models
 import pytest
 from semver import Version
+
+from ballista import models
 
 
 @pytest.fixture(scope="session")
