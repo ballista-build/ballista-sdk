@@ -52,7 +52,6 @@ def test_generate_docker_compose(
     )
 
 
-# @pytest.mark.parametrize("bolt", ["empty"], ids=["empty"], indirect=["bolt"])
 def test_generate_requires_artifacts(bolt: Bolt, execution_environment: ExecutionEnvironment):
     executable_artifacts = [a for a in bolt.artifacts if a.execution]
 

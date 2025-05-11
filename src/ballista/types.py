@@ -5,7 +5,7 @@ from typing import Any, Protocol
 class Project(Protocol):
     @property
     def id(self) -> str:
-        """Unique identifer of project, across all environments."""
+        """Unique identifier of project, across all environments."""
         ...
 
     @property
