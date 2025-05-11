@@ -14,6 +14,5 @@ def execution_environment_adapter(scope="session"):
 def test_deployment(
     bolt: Bolt, execution_environment_adapter: ExecutionEnvironmentAdapter, execution_environment: ExecutionEnvironment
 ):
-    execution_environment_adapter.deploy(
-        bolt=bolt, environment=execution_environment, artifacts=bolt.executable_artifacts
-    )
+    executable_artifacts = [a for a in bolt.artifacts if a.execution]
+    execution_environment_adapter.deploy(bolt=bolt, environment=execution_environment, artifacts=executable_artifacts)

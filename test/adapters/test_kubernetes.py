@@ -86,6 +86,7 @@ def test_resource_generation(
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
     execution_environment: ExecutionEnvironment,
 ):
+    executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert resources == _generate_bolt_resources(
-        artifacts=bolt.executable_artifacts, bolt=bolt, environment=execution_environment
+        artifacts=executable_artifacts, bolt=bolt, environment=execution_environment
     )

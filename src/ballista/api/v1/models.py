@@ -9,6 +9,29 @@ class ArtifactType(BaseModel):
     name: str = Field(description="Human-readable name")
 
 
+class DockerImageArtifactConfiguration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: Annotated[str | None, Field(description="Name of image to use.")] = None
+
+
+class DockerImageArtifactTypeDependency(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    docker_image: DockerImageArtifactConfiguration
+
+
+# TODO: Do fancier setup here later
+class ArtifactTypeDependency(DockerImageArtifactTypeDependency):
+    @property
+    def config(self) -> dict:
+        return self.docker_image.model_dump()
+
+    @property
+    def id(self) -> str:
+        return "docker_image"
+
+
 class PlatformResource(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -24,6 +47,10 @@ class BasePlatformResourceNeed(BaseModel):
 
 
 class PlatformResourceNeed(BasePlatformResourceNeed):
+    pass
+
+
+class PlatformResourceDependency(BaseModel):
     pass
 
 
@@ -105,7 +132,7 @@ class Artifact(BaseModel):
     )
     id: Annotated[str, Field(description="Unique identifier of artifact within project.")]
     type: Annotated[
-        dict[str, dict],
+        ArtifactTypeDependency,
         Field(description="Type of artifact."),
     ]
     version: Annotated[str | None, Field(description="Artifact-specified version.")] = None

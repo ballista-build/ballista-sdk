@@ -43,7 +43,9 @@ def get_local_environment() -> ExecutionEnvironmentWithAdapter:
     # Create ephemeral DockerCompose environment for local development
     local_adapter = DockerComposeExecutionEnvironmentAdapter()
 
-    env = LocalEnvironment(hostname="local", id="local", name="Local")
+    # Deploy platform resources
+
+    env = LocalEnvironment(hostname="localhost", id="local", name="Local")
 
     return local_adapter, env
 
@@ -119,7 +121,8 @@ def up():
     ballista_bolt = get_local_bolt(origin)
 
     adapter, env = get_local_environment()
-    adapter.deploy(bolt=ballista_bolt, artifacts=ballista_bolt.executable_artifacts, environment=env)
+    executable_artifacts = [a for a in ballista_bolt.artifacts if a.execution]
+    adapter.deploy(bolt=ballista_bolt, artifacts=executable_artifacts, environment=env)
 
 
 @cli.command(short_help="teardown ballista environment")

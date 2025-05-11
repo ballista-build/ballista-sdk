@@ -38,7 +38,6 @@ def bolt(project: Project, docker_image_artifact_type: ArtifactType, request):
         return Mock(
             Bolt,
             artifacts=artifacts,
-            executable_artifacts=artifacts,
             project_id=project.id,
             version="1",
         )

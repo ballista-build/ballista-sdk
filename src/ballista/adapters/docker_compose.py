@@ -67,8 +67,9 @@ def _generate_artifact_docker_compose_service(
 
         service.build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
     else:
-        if artifact.version:
-            service.image = f"{artifact.id}:{artifact.version}"
+        docker_image_config = artifact.type.config
+        if docker_image_config["name"]:
+            service.image = docker_image_config["name"]
         else:
             # No artifact version, so use latest
             service.image = artifact.id
@@ -113,9 +114,3 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
 
     def list_services(self, environment: ExecutionEnvironment) -> list[ExecutableArtifact]:
         return []
-
-    def start(self):
-        pass
-
-    def shutdown(self):
-        pass

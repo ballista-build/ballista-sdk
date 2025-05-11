@@ -3,23 +3,39 @@ from typing import Any, Protocol
 
 
 class Project(Protocol):
-    id: str
-    """Unique identifer of project, across all environments."""
-    name: str
-    """Human-readable name of project."""
+    @property
+    def id(self) -> str:
+        """Unique identifer of project, across all environments."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of project."""
+        ...
 
 
 class ArtifactExecutionLocalResourceNeeds(Protocol):
     """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
 
-    max_cpu: float | None
-    """Maximum CPU allowed, measured in cores."""
-    max_memory: float | None
-    """Maximum memory allowed, measured in Gibibytes."""
-    min_cpu: float | None
-    """Minimum CPU required, measured in cores."""
-    min_memory: float | None
-    """Minimum memory required, measured in Gibibytes."""
+    @property
+    def max_cpu(self) -> float | None:
+        """Maximum CPU allowed, measured in cores."""
+        ...
+
+    @property
+    def max_memory(self) -> float | None:
+        """Maximum memory allowed, measured in Gibibytes."""
+        ...
+
+    @property
+    def min_cpu(self) -> float | None:
+        """Minimum CPU required, measured in cores."""
+        ...
+
+    @property
+    def min_memory(self) -> float | None:
+        """Minimum memory required, measured in Gibibytes."""
+        ...
 
 
 class PlatformResource(Protocol):
@@ -35,10 +51,31 @@ class PlatformResourceDependency(Protocol):
 
 
 class ArtifactType(Protocol):
+    config: dict
+    """Configuration structure of type."""
     id: str
     """Identifier of type, unique to environment scope."""
     name: str
     """Human-readable name of type."""
+
+
+class DockerImageArtifactConfiguration(Protocol):
+    @property
+    def name(self) -> str | None:
+        """Docker image name to use."""
+        ...
+
+
+class ArtifactTypeDependency(Protocol):
+    @property
+    def id(self) -> str:
+        """Identifier of ArtifactType."""
+        ...
+
+    @property
+    def config(self) -> dict:
+        """Dependency data."""
+        ...
 
 
 class ArtifactExecution(Protocol):
@@ -54,24 +91,41 @@ class ArtifactExecution(Protocol):
 
 
 class Artifact(Protocol):
-    dockerfile: str | None
-    """Name of local Dockerfile used to build artifact."""
-    dockerfile_stage: str | None
-    """Dockerfile target used when building artifact."""
+    """Artifact uniquely identified by `id` and `version` fields."""
 
     @property
-    def execution(self) -> ArtifactExecution | None: ...
-
-    id: str
-    """Identifier of artifact, unique to project scope."""
+    def dockerfile(self) -> str | None:
+        """Name of local Dockerfile used to build artifact."""
+        ...
 
     @property
-    def type(self) -> ArtifactType:
+    def dockerfile_stage(self) -> str | None:
+        """Dockerfile target used when building artifact."""
+        ...
+
+    @property
+    def execution(self) -> ArtifactExecution | None:
+        """Execution parameters."""
+        ...
+
+    @property
+    def id(self) -> str:
+        """Identifier of artifact."""
+        ...
+
+    @property
+    def type(self) -> ArtifactTypeDependency:
         """Type of artifact."""
         ...
 
-    version: str | None
-    """Artifact-specific version. If not set, the Bolt version is used when needed."""
+
+class BuildableArtifact(Artifact, Protocol):
+    """An artifact that can be built."""
+
+    @property
+    def dockerfile_stage(self) -> str:
+        """Dockerfile target used when building artifact."""
+        ...
 
 
 class ExecutableArtifact(Artifact, Protocol):
@@ -90,15 +144,14 @@ class Bolt(Protocol):
         ...
 
     @property
-    def executable_artifacts(self) -> Sequence[ExecutableArtifact]:
-        """Sequence of only ExecutableArtifacts included in Bolt."""
+    def project_id(self) -> str:
+        """Unique identifier of project the Bolt is associated with."""
         ...
 
-    project_id: str
-    """Unique identifier of project the Bolt is associated with."""
-
-    version: str
-    """Version of entire bundle of artifacts."""
+    @property
+    def version(self) -> str:
+        """Version of entire bundle of artifacts."""
+        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Get Bolt data in dictionary form."""
