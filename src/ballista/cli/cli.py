@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
 from ballista.adapters.types import ExecutionEnvironmentWithAdapter
-from ballista.bolts import v1alpha_service
+from ballista.bolts import v1_service
 from ballista.types import Bolt
 
 
@@ -29,8 +29,9 @@ def get_local_bolt(origin: str) -> Bolt:
 
     api_version = ballista_yaml.get("api_version")
     bolt_service = None
-    if api_version == "v1alpha":
-        bolt_service = v1alpha_service.BoltService()
+
+    if api_version == "v1":
+        bolt_service = v1_service.BoltService()
 
     if bolt_service:
         return bolt_service.get_bolt(ballista_yaml)
@@ -57,9 +58,9 @@ cli = typer.Typer()
 
 @cli.command(short_help="initialize a new ballista powered project")
 def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
-    # TODO: Need to pick an api, so just use v1alpha for now. We'll probably want a default version with compatibility for old ones up to a certain date.
+    # TODO: Need to pick an api, so just use v1 for now. We'll probably want a default version with compatibility for old ones up to a certain date.
     if True:
-        bolt_service = v1alpha_service.BoltService()
+        bolt_service = v1_service.BoltService()
 
     # Check if that project (folder) already exists
     if os.path.exists(project):
@@ -84,7 +85,6 @@ def build(
 ):
     origin = get_origin()
     ballista_bolt = get_local_bolt(origin)
-    version = ballista_bolt.version
 
     for artifact in ballista_bolt.artifacts:
         if not (dockerfile_stage := artifact.dockerfile_stage):
@@ -95,7 +95,8 @@ def build(
         if artifacts and artifact_id not in artifacts:
             continue
 
-        image_name = f"build_{artifact_id}:{version}"
+        artifact_version = artifact.version or ballista_bolt.version
+        image_name = f"build_{artifact_id}:{artifact_version}"
 
         path = "."
         dockerfile = artifact.dockerfile or "Dockerfile"
@@ -118,7 +119,7 @@ def up():
     ballista_bolt = get_local_bolt(origin)
 
     adapter, env = get_local_environment()
-    adapter.deploy(bolt=ballista_bolt, artifacts=[a for a in ballista_bolt.artifacts if a.execution], environment=env)
+    adapter.deploy(bolt=ballista_bolt, artifacts=ballista_bolt.executable_artifacts, environment=env)
 
 
 @cli.command(short_help="teardown ballista environment")

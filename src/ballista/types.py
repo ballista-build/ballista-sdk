@@ -1,8 +1,6 @@
 from collections.abc import Mapping, Sequence
 from typing import Any, Protocol
 
-from semver import Version
-
 
 class Project(Protocol):
     id: str
@@ -11,7 +9,7 @@ class Project(Protocol):
     """Human-readable name of project."""
 
 
-class ArtifactLocalResourceNeeds(Protocol):
+class ArtifactExecutionLocalResourceNeeds(Protocol):
     """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
 
     max_cpu: float | None
@@ -45,7 +43,7 @@ class ArtifactType(Protocol):
 
 class ArtifactExecution(Protocol):
     @property
-    def local_resources(self) -> ArtifactLocalResourceNeeds | None:
+    def local_resources(self) -> ArtifactExecutionLocalResourceNeeds | None:
         """Local, machine-level resources for execution."""
         ...
 
@@ -72,10 +70,8 @@ class Artifact(Protocol):
         """Type of artifact."""
         ...
 
-    @property
-    def version(self) -> Version | None:
-        """Artifact-specific semantic version. If not set, the Bolt version is used instead."""
-        ...
+    version: str | None
+    """Artifact-specific version. If not set, the Bolt version is used when needed."""
 
 
 class ExecutableArtifact(Artifact, Protocol):
@@ -89,20 +85,20 @@ class Bolt(Protocol):
     """Multiple artifacts bundled together with a version and organized under a project."""
 
     @property
-    def artifacts(self) -> Sequence[Artifact]: ...
+    def artifacts(self) -> Sequence[Artifact]:
+        """Sequence of all Artifacts included in Bolt."""
+        ...
 
     @property
     def executable_artifacts(self) -> Sequence[ExecutableArtifact]:
-        """Sequence of ExecutableArtifacts only."""
+        """Sequence of only ExecutableArtifacts included in Bolt."""
         ...
 
-    @property
-    def project(self) -> Project:
-        """Project Bolt is associated with."""
-        ...
+    project_id: str
+    """Unique identifier of project the Bolt is associated with."""
 
-    version: Version
-    """Semantic version of entire bundle of artifacts."""
+    version: str
+    """Version of entire bundle of artifacts."""
 
     def to_dict(self) -> dict[str, Any]:
         """Get Bolt data in dictionary form."""

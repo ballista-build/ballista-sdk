@@ -33,7 +33,7 @@ def _generate_artifact_resources(
     k8s_resources = []
 
     # Common metadata
-    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project.id}
+    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project_id}
 
     # TODO: Service types
     services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": None, "target_port": 80}]
@@ -166,14 +166,11 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
             bolt=bolt, artifacts=artifacts, environment=environment
         )
 
-        bolt_files = _generate_yaml_files(bolt_resources)
-        print(bolt_files)
+        _bolt_files = _generate_yaml_files(bolt_resources)
 
-        artifact_files = {
+        _artifact_files = {
             artifact_id: _generate_yaml_files(resources) for artifact_id, resources in artifact_resources.items()
         }
-
-        print(artifact_files)
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass

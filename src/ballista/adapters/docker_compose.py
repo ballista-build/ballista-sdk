@@ -73,9 +73,6 @@ def _generate_artifact_docker_compose_service(
             # No artifact version, so use latest
             service.image = artifact.id
 
-    if platform_resources := artifact.execution.platform_resources:
-        pass
-
     return service
 
 
