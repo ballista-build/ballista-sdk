@@ -97,8 +97,7 @@ def build(
         if artifacts and artifact_id not in artifacts:
             continue
 
-        artifact_version = artifact.version or ballista_bolt.version
-        image_name = f"build_{artifact_id}:{artifact_version}"
+        image_name = f"build_{artifact_id}:{bolt.version}"
 
         path = "."
         dockerfile = artifact.dockerfile or "Dockerfile"

@@ -41,7 +41,7 @@ def kubernetes_adapter():
                                             "spec": {
                                                 "containers": [
                                                     {
-                                                        "image": "api:1",
+                                                        "image": "hello-world:latest",
                                                         "livenessProbe": {},
                                                         "name": "api",
                                                         "ports": [{"containerPort": 80, "name": "http"}],

@@ -15,7 +15,7 @@ def _generate_bolt_resources(
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
     """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
     if len(artifacts) == 0:
-        raise Exception("No artifacts to generate resources.")
+        raise ValueError("No artifacts to generate resources.")
 
     artifact_resources = {
         artifact.id: _generate_artifact_resources(bolt=bolt, artifact=artifact, environment=environment)
@@ -61,7 +61,7 @@ def _generate_artifact_resources(
                 "containers": [  # Container
                     {
                         "name": artifact.id,
-                        "image": f"{artifact.id}:{bolt.version}",
+                        "image": artifact.type.config.get("name", f"{artifact.id}:{bolt.version}"),
                         "livenessProbe": liveness_probe,
                         "ports": [
                             {

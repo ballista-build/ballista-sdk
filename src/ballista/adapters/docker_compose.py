@@ -26,17 +26,21 @@ class DockerComposeProject(BaseModel):
     services: dict[str, DockerComposeService]
 
 
-def _generate_bolt_docker_compose_project(
+def _generate_docker_compose_project_from_bolt(
     bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
 ) -> DockerComposeProject:
     """Generate a docker compose project."""
+    if len(artifacts) == 0:
+        raise ValueError("No artifacts to generate with.")
+
     services = {
-        artifact.id: _generate_artifact_docker_compose_service(bolt, artifact, environment) for artifact in artifacts
+        artifact.id: _generate_docker_compose_service_from_artifact(bolt, artifact, environment)
+        for artifact in artifacts
     }
     return DockerComposeProject(name="test", networks={}, services=services)
 
 
-def _generate_artifact_docker_compose_service(
+def _generate_docker_compose_service_from_artifact(
     bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
@@ -67,12 +71,7 @@ def _generate_artifact_docker_compose_service(
 
         service.build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
     else:
-        docker_image_config = artifact.type.config
-        if docker_image_config["name"]:
-            service.image = docker_image_config["name"]
-        else:
-            # No artifact version, so use latest
-            service.image = artifact.id
+        service.image = artifact.type.config.get("name", artifact.id)
 
     return service
 
@@ -98,7 +97,7 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         artifacts: Collection[ExecutableArtifact],
         environment: ExecutionEnvironment,
     ):
-        docker_compose_project = _generate_bolt_docker_compose_project(
+        docker_compose_project = _generate_docker_compose_project_from_bolt(
             bolt=bolt, artifacts=artifacts, environment=environment
         )
         self._call_compose(docker_compose_project, ["up", "--build", "--watch", "--remove-orphans"])
