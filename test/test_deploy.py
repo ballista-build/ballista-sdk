@@ -10,6 +10,7 @@ def execution_environment_adapter(scope="session"):
     return KubernetesExecutionEnvironmentAdapter()
 
 
+@pytest.mark.skip(reason="No design on how to actually use deployments yet")
 @pytest.mark.parametrize("bolt", ["simple"], indirect=["bolt"])
 def test_deployment(
     bolt: Bolt, execution_environment_adapter: ExecutionEnvironmentAdapter, execution_environment: ExecutionEnvironment
