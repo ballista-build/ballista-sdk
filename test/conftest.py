@@ -5,8 +5,8 @@ import pytest
 from ballista.adapters.types import ExecutionEnvironment
 from ballista.types import (
     Artifact,
-    ArtifactExecution,
     ArtifactExecutionLocalResourceNeeds,
+    ArtifactExecutionParameters,
     ArtifactTypeDependency,
     Bolt,
     Project,
@@ -32,15 +32,14 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
         artifacts = [
             Mock(
                 Artifact,
-                dockerfile=None,
-                dockerfile_stage=None,
-                id="api",
+                build=None,
                 execution=Mock(
-                    ArtifactExecution,
+                    ArtifactExecutionParameters,
                     local_resources=Mock(
                         ArtifactExecutionLocalResourceNeeds, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
                     ),
                 ),
+                id="api",
                 type=docker_image_artifact_type_dependency,
             )
         ]

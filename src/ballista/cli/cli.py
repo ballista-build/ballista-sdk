@@ -89,7 +89,7 @@ def build(
     ballista_bolt = get_local_bolt(origin)
 
     for artifact in ballista_bolt.artifacts:
-        if not (dockerfile_stage := artifact.dockerfile_stage):
+        if not (build := artifact.build):
             # Artifact is not buildable; skip
             continue
 
@@ -97,10 +97,10 @@ def build(
         if artifacts and artifact_id not in artifacts:
             continue
 
-        image_name = f"build_{artifact_id}:{bolt.version}"
+        image_name = f"build_{artifact_id}:{ballista_bolt.version}"
 
         path = "."
-        dockerfile = artifact.dockerfile or "Dockerfile"
+        dockerfile = build.dockerfile or "Dockerfile"
         # Process possible path for the Dockerfile
         dockerfile_pieces = dockerfile.rsplit("/", 2)
         if len(dockerfile_pieces) > 1:
@@ -109,7 +109,7 @@ def build(
         # TODO: Get cache setup from ballista instance
         # cache_from = ""
         # cache_to = []
-        cmd = f"docker build {path} -t {image_name} -f {dockerfile} --target {dockerfile_stage}"
+        cmd = f"docker build {path} -t {image_name} -f {dockerfile} --target {build.dockerfile_target}"
         print(cmd)
         # os.system(cmd)
 

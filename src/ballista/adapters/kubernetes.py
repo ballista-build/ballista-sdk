@@ -3,8 +3,8 @@ from typing import Any
 
 import yaml
 
-from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
+from ballista.adapters.types import ExecutionEnvironmentAdapter
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 KubernetesResource = tuple[str, dict[str, Any]]
 """A Kubernetes resource with an explicit Kind and data."""

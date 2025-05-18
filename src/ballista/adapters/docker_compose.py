@@ -7,8 +7,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
+from ballista.adapters.types import ExecutionEnvironmentAdapter
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 
 class DockerComposeService(BaseModel):
@@ -63,13 +63,13 @@ def _generate_docker_compose_service_from_artifact(
 
     service = DockerComposeService(deploy=deploy, networks=[], ports=ports)
 
-    if artifact.dockerfile_stage:
+    if build := artifact.build:
         context = "."
-        dockerfile = artifact.dockerfile or "Dockerfile"
+        dockerfile = build.dockerfile or "Dockerfile"
         if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
             context, dockerfile = pieces
 
-        service.build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
+        service.build = {"context": context, "dockerfile": dockerfile, "target": build.dockerfile_target}
     else:
         service.image = artifact.type.config.get("name", artifact.id)
 
