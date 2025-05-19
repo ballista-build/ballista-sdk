@@ -7,8 +7,8 @@ from typing import Any
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
+from ballista.adapters.types import ExecutionEnvironmentAdapter
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 
 class DockerComposeService(BaseModel):
@@ -26,17 +26,21 @@ class DockerComposeProject(BaseModel):
     services: dict[str, DockerComposeService]
 
 
-def _generate_bolt_docker_compose_project(
+def _generate_docker_compose_project_from_bolt(
     bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
 ) -> DockerComposeProject:
     """Generate a docker compose project."""
+    if len(artifacts) == 0:
+        raise ValueError("No artifacts to generate with.")
+
     services = {
-        artifact.id: _generate_artifact_docker_compose_service(bolt, artifact, environment) for artifact in artifacts
+        artifact.id: _generate_docker_compose_service_from_artifact(bolt, artifact, environment)
+        for artifact in artifacts
     }
     return DockerComposeProject(name="test", networks={}, services=services)
 
 
-def _generate_artifact_docker_compose_service(
+def _generate_docker_compose_service_from_artifact(
     bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
@@ -59,22 +63,15 @@ def _generate_artifact_docker_compose_service(
 
     service = DockerComposeService(deploy=deploy, networks=[], ports=ports)
 
-    if artifact.dockerfile_stage:
+    if build := artifact.build:
         context = "."
-        dockerfile = artifact.dockerfile or "Dockerfile"
+        dockerfile = build.dockerfile or "Dockerfile"
         if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
             context, dockerfile = pieces
 
-        service.build = {"context": context, "dockerfile": dockerfile, "target": artifact.dockerfile_stage}
+        service.build = {"context": context, "dockerfile": dockerfile, "target": build.dockerfile_target}
     else:
-        if artifact.version:
-            service.image = f"{artifact.id}:{artifact.version}"
-        else:
-            # No artifact version, so use latest
-            service.image = artifact.id
-
-    if platform_resources := artifact.execution.platform_resources:
-        pass
+        service.image = artifact.type.config.get("image", artifact.id)
 
     return service
 
@@ -100,7 +97,7 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         artifacts: Collection[ExecutableArtifact],
         environment: ExecutionEnvironment,
     ):
-        docker_compose_project = _generate_bolt_docker_compose_project(
+        docker_compose_project = _generate_docker_compose_project_from_bolt(
             bolt=bolt, artifacts=artifacts, environment=environment
         )
         self._call_compose(docker_compose_project, ["up", "--build", "--watch", "--remove-orphans"])
@@ -116,9 +113,3 @@ class DockerComposeExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
 
     def list_services(self, environment: ExecutionEnvironment) -> list[ExecutableArtifact]:
         return []
-
-    def start(self):
-        pass
-
-    def shutdown(self):
-        pass

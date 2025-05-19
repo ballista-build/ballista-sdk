@@ -3,8 +3,8 @@ from typing import Any
 
 import yaml
 
-from ballista.adapters.types import ExecutionEnvironment, ExecutionEnvironmentAdapter
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
+from ballista.adapters.types import ExecutionEnvironmentAdapter
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 KubernetesResource = tuple[str, dict[str, Any]]
 """A Kubernetes resource with an explicit Kind and data."""
@@ -15,7 +15,7 @@ def _generate_bolt_resources(
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
     """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
     if len(artifacts) == 0:
-        raise Exception("No artifacts to generate resources.")
+        raise ValueError("No artifacts to generate resources.")
 
     artifact_resources = {
         artifact.id: _generate_artifact_resources(bolt=bolt, artifact=artifact, environment=environment)
@@ -33,7 +33,7 @@ def _generate_artifact_resources(
     k8s_resources = []
 
     # Common metadata
-    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project.id}
+    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project_id}
 
     # TODO: Service types
     services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": None, "target_port": 80}]
@@ -61,7 +61,7 @@ def _generate_artifact_resources(
                 "containers": [  # Container
                     {
                         "name": artifact.id,
-                        "image": f"{artifact.id}:{bolt.version}",
+                        "image": artifact.type.config.get("image", f"{artifact.id}:{bolt.version}"),
                         "livenessProbe": liveness_probe,
                         "ports": [
                             {
@@ -166,14 +166,11 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
             bolt=bolt, artifacts=artifacts, environment=environment
         )
 
-        bolt_files = _generate_yaml_files(bolt_resources)
-        print(bolt_files)
+        _bolt_files = _generate_yaml_files(bolt_resources)
 
-        artifact_files = {
+        _artifact_files = {
             artifact_id: _generate_yaml_files(resources) for artifact_id, resources in artifact_resources.items()
         }
-
-        print(artifact_files)
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass

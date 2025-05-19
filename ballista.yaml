@@ -1,9 +1,0 @@
-# yaml-language-server: $schema=http://localhost:8000/api/v1alpha/schema
-api_version: v1alpha
-artifacts:
-  - id: python-package
-    dockerfile_stage: python-package
-    type:
-      python_wheel: {}
-project_id: nautilus
-version: 0.0.1

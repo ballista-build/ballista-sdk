@@ -1,111 +1,219 @@
-from collections.abc import Mapping, Sequence
+from collections.abc import Sequence
 from typing import Any, Protocol
-
-from semver import Version
 
 
 class Project(Protocol):
-    id: str
-    """Unique identifer of project, across all environments."""
-    name: str
-    """Human-readable name of project."""
+    @property
+    def id(self) -> str:
+        """Unique identifier of project, across all environments."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of project."""
+        ...
 
 
-class ArtifactLocalResourceNeeds(Protocol):
+class ArtifactBuildParameters(Protocol):
+    """Parameters for building an artifact."""
+
+    @property
+    def dockerfile(self) -> str | None:
+        """Name of local Dockerfile used to build artifact."""
+        ...
+
+    @property
+    def dockerfile_target(self) -> str:
+        """Dockerfile target used when building artifact."""
+        ...
+
+
+class ArtifactExecutionLocalResourceNeeds(Protocol):
     """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
 
-    max_cpu: float | None
-    """Maximum CPU allowed, measured in cores."""
-    max_memory: float | None
-    """Maximum memory allowed, measured in Gibibytes."""
-    min_cpu: float | None
-    """Minimum CPU required, measured in cores."""
-    min_memory: float | None
-    """Minimum memory required, measured in Gibibytes."""
+    @property
+    def max_cpu(self) -> float | None:
+        """Maximum CPU allowed, measured in cores."""
+        ...
+
+    @property
+    def max_memory(self) -> float | None:
+        """Maximum memory allowed, measured in Gibibytes."""
+        ...
+
+    @property
+    def min_cpu(self) -> float | None:
+        """Minimum CPU required, measured in cores."""
+        ...
+
+    @property
+    def min_memory(self) -> float | None:
+        """Minimum memory required, measured in Gibibytes."""
+        ...
 
 
 class PlatformResource(Protocol):
-    id: str
-    name: str
+    @property
+    def id(self) -> str:
+        """Identifer."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of PlatformResource."""
+        ...
 
 
 class PlatformResourceDependency(Protocol):
     """An execution dependency for a specific Platform Resource."""
 
-    id: str
-    """Reference to Platform Resource."""
+    @property
+    def config(self) -> dict:
+        """Dependency data."""
+        ...
+
+    @property
+    def platform_resource_id(self) -> str:
+        """Unique identifer to Platform Resource."""
+        ...
 
 
 class ArtifactType(Protocol):
-    id: str
-    """Identifier of type, unique to environment scope."""
-    name: str
-    """Human-readable name of type."""
+    """Type of artifact."""
 
-
-class ArtifactExecution(Protocol):
     @property
-    def local_resources(self) -> ArtifactLocalResourceNeeds | None:
+    def id(self) -> str:
+        """Identifier for type, unique to environment scope."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of type."""
+        ...
+
+
+class DockerImageArtifactConfiguration(Protocol):
+    @property
+    def image(self) -> str | None:
+        """Docker image name to use."""
+        ...
+
+
+class ArtifactTypeDependency(Protocol):
+    @property
+    def artifact_type_id(self) -> str:
+        """Identifier of ArtifactType."""
+        ...
+
+    @property
+    def config(self) -> dict[str, Any]:
+        """Dependency data."""
+        ...
+
+
+class ArtifactExecutionParameters(Protocol):
+    @property
+    def local_resources(self) -> ArtifactExecutionLocalResourceNeeds | None:
         """Local, machine-level resources for execution."""
         ...
 
-    @property
-    def platform_resources(self) -> Sequence[Mapping[str, Any]] | None:
-        """Platform Resource dependencies required for execution."""
-        ...
+    # @property
+    # def platform_resources(self) -> Sequence[PlatformResourceDependency]:
+    #     """Platform Resource dependencies required for execution."""
+    #     ...
 
 
 class Artifact(Protocol):
-    dockerfile: str | None
-    """Name of local Dockerfile used to build artifact."""
-    dockerfile_stage: str | None
-    """Dockerfile target used when building artifact."""
+    """Artifact uniquely identified by `id` and `version` fields."""
 
     @property
-    def execution(self) -> ArtifactExecution | None: ...
-
-    id: str
-    """Identifier of artifact, unique to project scope."""
+    def build(self) -> ArtifactBuildParameters | None:
+        """Build parameters."""
+        ...
 
     @property
-    def type(self) -> ArtifactType:
+    def execution(self) -> ArtifactExecutionParameters | None:
+        """Execution parameters."""
+        ...
+
+    @property
+    def id(self) -> str:
+        """Identifier of artifact."""
+        ...
+
+    @property
+    def type(self) -> ArtifactTypeDependency:
         """Type of artifact."""
         ...
-
-    @property
-    def version(self) -> Version | None:
-        """Artifact-specific semantic version. If not set, the Bolt version is used instead."""
-        ...
-
-
-class ExecutableArtifact(Artifact, Protocol):
-    """An artifact that can be executed."""
-
-    @property
-    def execution(self) -> ArtifactExecution: ...
 
 
 class Bolt(Protocol):
     """Multiple artifacts bundled together with a version and organized under a project."""
 
     @property
-    def artifacts(self) -> Sequence[Artifact]: ...
-
-    @property
-    def executable_artifacts(self) -> Sequence[ExecutableArtifact]:
-        """Sequence of ExecutableArtifacts only."""
+    def artifacts(self) -> Sequence[Artifact]:
+        """Sequence of all Artifacts included in Bolt."""
         ...
 
     @property
-    def project(self) -> Project:
-        """Project Bolt is associated with."""
+    def project_id(self) -> str:
+        """Unique identifier of project the Bolt is associated with."""
         ...
 
-    version: Version
-    """Semantic version of entire bundle of artifacts."""
+    @property
+    def version(self) -> str:
+        """Version of entire bundle of artifacts."""
+        ...
 
     def to_dict(self) -> dict[str, Any]:
         """Get Bolt data in dictionary form."""
+        ...
+
+
+#
+# Building
+#
+
+
+class BuildableArtifact(Artifact, Protocol):
+    """An artifact that can be built."""
+
+    @property
+    def build(self) -> ArtifactBuildParameters:
+        """Parameters to build artifact."""
+        ...
+
+
+#
+# Execution
+#
+
+
+class ExecutableArtifact(Artifact, Protocol):
+    """An artifact that can be executed."""
+
+    @property
+    def execution(self) -> ArtifactExecutionParameters:
+        """Execution parameters."""
+        ...
+
+
+class ExecutionEnvironment(Protocol):
+    """An environment that can execute artifacts."""
+
+    @property
+    def hostname(self) -> str:
+        """Name of the environment host. Typically used for cluster name, server name, etc."""
+        ...
+
+    @property
+    def id(self) -> str:
+        """Unique identifier."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of environment."""
         ...
 
 

@@ -2,18 +2,7 @@ from __future__ import annotations
 
 from typing import Collection, Protocol
 
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, PlatformResource
-
-
-class ExecutionEnvironment(Protocol):
-    """An environment that can execute artifacts."""
-
-    hostname: str
-    """Name of the environment host. Typically used for cluster name, server name, etc."""
-    id: str
-    """Unique identifier."""
-    name: str
-    """Human-readable name of environment."""
+from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 
 class ExecutionEnvironmentAdapter(Protocol):

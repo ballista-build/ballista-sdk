@@ -8,7 +8,7 @@ from pydantic import BaseModel
 
 from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
 from ballista.adapters.types import ExecutionEnvironmentWithAdapter
-from ballista.bolts import v1alpha_service
+from ballista.bolts import v1_service
 from ballista.types import Bolt
 
 
@@ -29,8 +29,9 @@ def get_local_bolt(origin: str) -> Bolt:
 
     api_version = ballista_yaml.get("api_version")
     bolt_service = None
-    if api_version == "v1alpha":
-        bolt_service = v1alpha_service.BoltService()
+
+    if api_version == "v1":
+        bolt_service = v1_service.BoltService()
 
     if bolt_service:
         return bolt_service.get_bolt(ballista_yaml)
@@ -42,7 +43,9 @@ def get_local_environment() -> ExecutionEnvironmentWithAdapter:
     # Create ephemeral DockerCompose environment for local development
     local_adapter = DockerComposeExecutionEnvironmentAdapter()
 
-    env = LocalEnvironment(hostname="local", id="local", name="Local")
+    # Deploy platform resources
+
+    env = LocalEnvironment(hostname="localhost", id="local", name="Local")
 
     return local_adapter, env
 
@@ -57,9 +60,9 @@ cli = typer.Typer()
 
 @cli.command(short_help="initialize a new ballista powered project")
 def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
-    # TODO: Need to pick an api, so just use v1alpha for now. We'll probably want a default version with compatibility for old ones up to a certain date.
+    # TODO: Need to pick an api, so just use v1 for now. We'll probably want a default version with compatibility for old ones up to a certain date.
     if True:
-        bolt_service = v1alpha_service.BoltService()
+        bolt_service = v1_service.BoltService()
 
     # Check if that project (folder) already exists
     if os.path.exists(project):
@@ -84,10 +87,9 @@ def build(
 ):
     origin = get_origin()
     ballista_bolt = get_local_bolt(origin)
-    version = ballista_bolt.version
 
     for artifact in ballista_bolt.artifacts:
-        if not (dockerfile_stage := artifact.dockerfile_stage):
+        if not (build := artifact.build):
             # Artifact is not buildable; skip
             continue
 
@@ -95,19 +97,20 @@ def build(
         if artifacts and artifact_id not in artifacts:
             continue
 
-        image_name = f"build_{artifact_id}:{version}"
+        image_name = f"build_{artifact_id}:{ballista_bolt.version}"
 
         path = "."
-        dockerfile = artifact.dockerfile or "Dockerfile"
+        dockerfile = build.dockerfile or "Dockerfile"
         # Process possible path for the Dockerfile
         dockerfile_pieces = dockerfile.rsplit("/", 2)
         if len(dockerfile_pieces) > 1:
             path, dockerfile = dockerfile_pieces
 
+        # TODO: Auth to registries
         # TODO: Get cache setup from ballista instance
         # cache_from = ""
         # cache_to = []
-        cmd = f"docker build {path} -t {image_name} -f {dockerfile} --target {dockerfile_stage}"
+        cmd = f"docker build {path} -t {image_name} -f {dockerfile} --target {build.dockerfile_target}"
         print(cmd)
         # os.system(cmd)
 
@@ -118,7 +121,8 @@ def up():
     ballista_bolt = get_local_bolt(origin)
 
     adapter, env = get_local_environment()
-    adapter.deploy(bolt=ballista_bolt, artifacts=[a for a in ballista_bolt.artifacts if a.execution], environment=env)
+    executable_artifacts = [a for a in ballista_bolt.artifacts if a.execution]
+    adapter.deploy(bolt=ballista_bolt, artifacts=executable_artifacts, environment=env)
 
 
 @cli.command(short_help="teardown ballista environment")
