@@ -71,7 +71,7 @@ def _generate_docker_compose_service_from_artifact(
 
         service.build = {"context": context, "dockerfile": dockerfile, "target": build.dockerfile_target}
     else:
-        service.image = artifact.type.config.get("name", artifact.id)
+        service.image = artifact.type.config.get("image", artifact.id)
 
     return service
 

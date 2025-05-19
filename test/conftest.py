@@ -20,7 +20,7 @@ def project():
 
 @pytest.fixture(scope="session")
 def docker_image_artifact_type_dependency():
-    return Mock(ArtifactTypeDependency, config={"name": "hello-world:latest"}, id="docker_image")
+    return Mock(ArtifactTypeDependency, config={"image": "hello-world:latest"}, id="docker_image")
 
 
 @pytest.fixture(scope="session", params=["empty", "simple"])

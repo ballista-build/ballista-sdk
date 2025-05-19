@@ -94,7 +94,7 @@ class ArtifactType(Protocol):
 
 class DockerImageArtifactConfiguration(Protocol):
     @property
-    def name(self) -> str | None:
+    def image(self) -> str | None:
         """Docker image name to use."""
         ...
 

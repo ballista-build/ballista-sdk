@@ -1,6 +1,6 @@
 from typing import Annotated, Any, Literal
 
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field
 
 
 class ArtifactBuildParameters(BaseModel, extra="forbid", frozen=True):
@@ -75,11 +75,10 @@ class ArtifactExecutionParameters(BaseModel, extra="forbid", frozen=True):
 
 
 class DockerImageArtifactConfiguration(BaseModel, extra="forbid", frozen=True):
-    name: Annotated[str | None, Field(description="Name of image to use.")] = None
+    image: Annotated[str | None, Field(description="Name of image to use.")] = None
 
 
 class DockerImageArtifactTypeDependency(BaseModel, extra="forbid", frozen=True):
-    artifact_type_id: Literal["docker_image"] = "docker_image"
     docker_image: DockerImageArtifactConfiguration
 
 
@@ -87,8 +86,10 @@ class DockerImageArtifactTypeDependency(BaseModel, extra="forbid", frozen=True):
 
 
 # TODO: Do fancier setup here later
-class ArtifactTypeDependency(RootModel):
-    root: Annotated[DockerImageArtifactTypeDependency, Field(discriminator="artifact_type_id")]
+class ArtifactTypeDependency(DockerImageArtifactTypeDependency):
+    @property
+    def artifact_type_id(self) -> str:
+        return "docker_image"
 
     @property
     def config(self) -> dict[str, Any]:
@@ -96,8 +97,8 @@ class ArtifactTypeDependency(RootModel):
 
 
 class ArtifactType(BaseModel, extra="forbid", frozen=True):
-    id: Annotated[str, Field(description="Reference key")]
-    name: Annotated[str, Field(description="Human-readable name")]
+    id: Annotated[str, Field(description="Unique identifier of Artifact Type.")]
+    name: Annotated[str, Field(description="Human-readable name of Artifact Type.")]
 
 
 class PlatformResource(BaseModel, extra="forbid", frozen=True):
@@ -105,9 +106,9 @@ class PlatformResource(BaseModel, extra="forbid", frozen=True):
     name: Annotated[str, Field(description="Human-readable name of Platform Resource.")]
 
 
-class PlatformResourceDependency(BaseModel, extra="forbid", frozen=True):
-    platform_resource_id: Annotated[str, Field()]
-    config: Annotated[dict, Field()] = {}
+# class PlatformResourceDependency(BaseModel, extra="forbid", frozen=True):
+#     platform_resource_id: Annotated[str, Field()]
+#     config: Annotated[dict, Field()] = {}
 
 
 class Artifact(BaseModel, extra="forbid", frozen=True):

@@ -61,7 +61,7 @@ def _generate_artifact_resources(
                 "containers": [  # Container
                     {
                         "name": artifact.id,
-                        "image": artifact.type.config.get("name", f"{artifact.id}:{bolt.version}"),
+                        "image": artifact.type.config.get("image", f"{artifact.id}:{bolt.version}"),
                         "livenessProbe": liveness_probe,
                         "ports": [
                             {

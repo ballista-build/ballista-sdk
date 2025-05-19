@@ -106,6 +106,7 @@ def build(
         if len(dockerfile_pieces) > 1:
             path, dockerfile = dockerfile_pieces
 
+        # TODO: Auth to registries
         # TODO: Get cache setup from ballista instance
         # cache_from = ""
         # cache_to = []
