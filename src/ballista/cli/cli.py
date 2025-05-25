@@ -6,7 +6,7 @@ import typer
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
+from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
 from ballista.adapters.types import ExecutionEnvironmentWithAdapter
 from ballista.bolts import v1_service
 from ballista.types import Bolt
@@ -41,7 +41,8 @@ def get_local_bolt(origin: str) -> Bolt:
 
 def get_local_environment() -> ExecutionEnvironmentWithAdapter:
     # Create ephemeral DockerCompose environment for local development
-    local_adapter = DockerComposeExecutionEnvironmentAdapter()
+    # local_adapter = DockerComposeExecutionEnvironmentAdapter()
+    local_adapter = KubernetesExecutionEnvironmentAdapter()
 
     # Deploy platform resources
 
