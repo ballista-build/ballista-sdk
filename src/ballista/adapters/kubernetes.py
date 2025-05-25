@@ -2,6 +2,7 @@ from collections.abc import Collection
 from typing import Any
 
 import yaml
+from kubernetes import client, config, utils
 
 from ballista.adapters.types import ExecutionEnvironmentAdapter
 from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
@@ -33,15 +34,20 @@ def _generate_artifact_resources(
     k8s_resources = []
 
     # Common metadata
-    metadata = {"labels": {"service": artifact.id}, "name": artifact.id, "namespace": bolt.project_id}
+    service_name = artifact.id
+    metadata = {
+        "labels": {
+            "app.kubernetes.io/managed-by": "Ballista",
+            "app.kubernetes.io/name": service_name,
+            "app.kubernetes.io/part-of": bolt.project_id,
+            "app.kubernetes.io/version": bolt.version,
+        },
+        "name": service_name,
+        "namespace": bolt.project_id,
+    }
 
     # TODO: Service types
     services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": None, "target_port": 80}]
-
-    # TODO: Probes
-    liveness_probe = {}
-    readiness_probe = {}
-    startup_probe = {}
 
     pod_resources = {"requests": {}, "limits": {}}
     if local_resources := artifact.execution.local_resources:
@@ -55,31 +61,28 @@ def _generate_artifact_resources(
             pod_resources["limits"]["memory"] = f"{local_resources.max_memory}Gi"
 
     pod_template = {
+        "metadata": metadata,
         "spec": {  # PodTemplateSpec
-            "metadata": metadata,
-            "spec": {  # PodSpec
-                "containers": [  # Container
-                    {
-                        "name": artifact.id,
-                        "image": artifact.type.config.get("image", f"{artifact.id}:{bolt.version}"),
-                        "livenessProbe": liveness_probe,
-                        "ports": [
-                            {
-                                "containerPort": s["container_port"],
-                                "name": s["name"],
-                            }
-                            for s in services
-                        ],
-                        "readinessProbe": readiness_probe,
-                        "resources": {**pod_resources},  # ResourceRequirements
-                        "startupProbe": startup_probe,
-                    }
-                ],
-            },
-        }
+            "containers": [  # Container
+                {
+                    "name": artifact.id,
+                    "image": artifact.type.config.get("image", f"{artifact.id}:{bolt.version}"),
+                    "ports": [
+                        {
+                            "containerPort": s["container_port"],
+                            "name": s["name"],
+                        }
+                        for s in services
+                    ],
+                    "resources": {**pod_resources},  # ResourceRequirements
+                }
+            ],
+        },
     }
+
     # TODO
     # env
+    # probes
     # securityContext
 
     # Deployment
@@ -92,7 +95,7 @@ def _generate_artifact_resources(
                 "metadata": metadata,
                 "spec": {
                     "selector": {  # LabelSelector
-                        "matchLabels": {"service": artifact.id}
+                        "matchLabels": {"app.kubernetes.io/name": service_name}
                     },
                     "strategy": {
                         "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
@@ -113,7 +116,7 @@ def _generate_artifact_resources(
                 "kind": "Service",
                 "metadata": metadata,
                 "spec": {
-                    "selector": {},
+                    "selector": {"app.kubernetes.io/name": service_name},
                     "ports": [{"port": s["target_port"], "name": s["name"], "targetPort": s["name"]} for s in services],
                 },
             },
@@ -162,15 +165,29 @@ def _generate_yaml_files(k8s_resources: Collection[KubernetesResource]) -> dict[
 
 class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
     def deploy(self, bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment):
-        bolt_resources, artifact_resources = _generate_bolt_resources(
+        bolt_resources, all_artifact_resources = _generate_bolt_resources(
             bolt=bolt, artifacts=artifacts, environment=environment
         )
 
-        _bolt_files = _generate_yaml_files(bolt_resources)
+        # TODO: This needs expanding to not rely on the local kubeconf
+        config.load_kube_config()
+        k8s_client = client.ApiClient()
 
-        _artifact_files = {
-            artifact_id: _generate_yaml_files(resources) for artifact_id, resources in artifact_resources.items()
-        }
+        # Create namespace
+        namespace = client.V1Namespace(metadata=client.V1ObjectMeta(name=bolt.project_id))
+        api = client.CoreV1Api()
+        api.create_namespace(namespace)
+
+        [
+            utils.create_from_dict(k8s_client, resource[1], apply=True, namespace=bolt.project_id)
+            for resource in bolt_resources
+        ]
+
+        for artifact_id, artifact_resources in all_artifact_resources.items():
+            [
+                utils.create_from_dict(k8s_client, resource[1], apply=True, namespace=bolt.project_id)
+                for resource in artifact_resources
+            ]
 
     def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
         pass

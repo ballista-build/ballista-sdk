@@ -6,6 +6,7 @@ readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 requires-python = ">=3.11"
 dependencies = [
+    "kubernetes>=32.0.1",
     "pydantic>=2",
     "python-dateutil>=2.8.2",
     "pyyaml>=6.0.2",
