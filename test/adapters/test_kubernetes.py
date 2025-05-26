@@ -19,78 +19,80 @@ def kubernetes_adapter():
                 [],
                 {
                     "api": [
-                        (
-                            "Deployment",
-                            {
-                                "apiVersion": "apps/v1",
-                                "kind": "Deployment",
-                                "metadata": {
-                                    "labels": {
-                                        "app.kubernetes.io/name": "api",
-                                        "app.kubernetes.io/managed-by": "Ballista",
-                                        "app.kubernetes.io/part-of": "example",
-                                        "app.kubernetes.io/version": "1",
-                                    },
-                                    "name": "api",
-                                    "namespace": "example",
+                        {
+                            "apiVersion": "apps/v1",
+                            "kind": "Deployment",
+                            "metadata": {
+                                "labels": {
+                                    "app.kubernetes.io/name": "api",
+                                    "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/part-of": "example",
+                                    "app.kubernetes.io/version": "1",
                                 },
-                                "spec": {
-                                    "selector": {"matchLabels": {"app.kubernetes.io/name": "api"}},
-                                    "strategy": {
-                                        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
-                                        "type": "RollingUpdate",
-                                    },
-                                    "template": {
-                                        "metadata": {
-                                            "labels": {
-                                                "app.kubernetes.io/name": "api",
-                                                "app.kubernetes.io/managed-by": "Ballista",
-                                                "app.kubernetes.io/part-of": "example",
-                                                "app.kubernetes.io/version": "1",
-                                            },
-                                            "name": "api",
-                                            "namespace": "example",
+                                "name": "api",
+                                "namespace": "example-test",
+                            },
+                            "spec": {
+                                "selector": {"matchLabels": {"app.kubernetes.io/name": "api"}},
+                                "strategy": {
+                                    "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+                                    "type": "RollingUpdate",
+                                },
+                                "template": {
+                                    "metadata": {
+                                        "labels": {
+                                            "app.kubernetes.io/name": "api",
+                                            "app.kubernetes.io/managed-by": "Ballista",
+                                            "app.kubernetes.io/part-of": "example",
+                                            "app.kubernetes.io/version": "1",
                                         },
-                                        "spec": {
-                                            "containers": [
-                                                {
-                                                    "image": "hello-world:latest",
-                                                    "name": "api",
-                                                    "ports": [{"containerPort": 80, "name": "http"}],
-                                                    "resources": {
-                                                        "limits": {
-                                                            "memory": "1.0Gi",
-                                                        },
-                                                        "requests": {"cpu": 0.25, "memory": "0.1Gi"},
+                                        "name": "api",
+                                        "namespace": "example-test",
+                                    },
+                                    "spec": {
+                                        "containers": [
+                                            {
+                                                "env": [
+                                                    {"name": "HTTP_SERVICE_PATH", "value": "/"},
+                                                    {"name": "HTTP_SERVICE_PORT", "value": 80},
+                                                ],
+                                                "envFrom": [
+                                                    {"configMapRef": {"name": "api", "optional": True}},
+                                                    {"secretRef": {"name": "api", "optional": False}},
+                                                ],
+                                                "image": "hello-world:latest",
+                                                "name": "api",
+                                                "ports": [{"containerPort": 80, "name": "http"}],
+                                                "resources": {
+                                                    "limits": {
+                                                        "memory": "1.0Gi",
                                                     },
-                                                }
-                                            ]
-                                        },
+                                                    "requests": {"cpu": 0.25, "memory": "0.1Gi"},
+                                                },
+                                            }
+                                        ]
                                     },
                                 },
                             },
-                        ),
-                        (
-                            "Service",
-                            {
-                                "apiVersion": "v1",
-                                "kind": "Service",
-                                "metadata": {
-                                    "labels": {
-                                        "app.kubernetes.io/name": "api",
-                                        "app.kubernetes.io/managed-by": "Ballista",
-                                        "app.kubernetes.io/part-of": "example",
-                                        "app.kubernetes.io/version": "1",
-                                    },
-                                    "name": "api",
-                                    "namespace": "example",
+                        },
+                        {
+                            "apiVersion": "v1",
+                            "kind": "Service",
+                            "metadata": {
+                                "labels": {
+                                    "app.kubernetes.io/name": "api",
+                                    "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/part-of": "example",
+                                    "app.kubernetes.io/version": "1",
                                 },
-                                "spec": {
-                                    "selector": {"app.kubernetes.io/name": "api"},
-                                    "ports": [{"port": 80, "name": "http", "targetPort": "http"}],
-                                },
+                                "name": "api",
+                                "namespace": "example-test",
                             },
-                        ),
+                            "spec": {
+                                "selector": {"app.kubernetes.io/name": "api"},
+                                "ports": [{"port": 80, "name": "http", "targetPort": "http"}],
+                            },
+                        },
                     ]
                 },
             ),

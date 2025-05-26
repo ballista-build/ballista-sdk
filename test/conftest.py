@@ -7,6 +7,7 @@ from ballista.types import (
     Artifact,
     ArtifactExecutionLocalResourceNeeds,
     ArtifactExecutionParameters,
+    ArtifactExecutionSetting,
     ArtifactTypeDependency,
     Bolt,
     Project,
@@ -35,9 +36,11 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                 build=None,
                 execution=Mock(
                     ArtifactExecutionParameters,
+                    configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
                     local_resources=Mock(
                         ArtifactExecutionLocalResourceNeeds, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
                     ),
+                    secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
                 ),
                 id="api",
                 type=docker_image_artifact_type_dependency,
