@@ -1,4 +1,5 @@
 from collections.abc import Sequence
+from enum import StrEnum
 from typing import Any, Protocol
 
 
@@ -111,7 +112,40 @@ class ArtifactTypeDependency(Protocol):
         ...
 
 
+class ArtifactSettingType(StrEnum):
+    integer = "integer"
+    """32-bit integer."""
+    float = "float"
+    """64-bit float."""
+    password = "password"
+    """String but specifically a password."""
+    string = "string"
+    """Generic string."""
+
+
+class ArtifactExecutionSetting(Protocol):
+    @property
+    def alias(self) -> str | None:
+        """Alias to use when injecting value."""
+        ...
+
+    @property
+    def id(self) -> str:
+        """Identifier."""
+        ...
+
+    @property
+    def type(self) -> ArtifactSettingType:
+        """Type of secret value."""
+        ...
+
+
 class ArtifactExecutionParameters(Protocol):
+    @property
+    def configs(self) -> Sequence[ArtifactExecutionSetting]:
+        """Non-sensitive and optional settings."""
+        ...
+
     @property
     def local_resources(self) -> ArtifactExecutionLocalResourceNeeds | None:
         """Local, machine-level resources for execution."""
@@ -121,6 +155,11 @@ class ArtifactExecutionParameters(Protocol):
     # def platform_resources(self) -> Sequence[PlatformResourceDependency]:
     #     """Platform Resource dependencies required for execution."""
     #     ...
+
+    @property
+    def secrets(self) -> Sequence[ArtifactExecutionSetting]:
+        """Sensitive and required settings."""
+        ...
 
 
 class Artifact(Protocol):
@@ -215,6 +254,38 @@ class ExecutionEnvironment(Protocol):
     def name(self) -> str:
         """Human-readable name of environment."""
         ...
+
+
+#
+# Settings
+#
+
+
+class BaseSetting(Protocol):
+    @property
+    def alias(self) -> str: ...
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def type(self) -> ArtifactSettingType: ...
+
+
+class ServiceConfig(BaseSetting, Protocol):
+    pass
+
+
+class ServiceSecret(BaseSetting, Protocol):
+    pass
+
+
+class SharedConfig(BaseSetting, Protocol):
+    pass
+
+
+class SharedSecret(BaseSetting, Protocol):
+    pass
 
 
 class BoltService(Protocol):

@@ -2,6 +2,8 @@ from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, Field
 
+from ballista.types import ArtifactSettingType
+
 
 class ArtifactBuildParameters(BaseModel, extra="forbid", frozen=True):
     dockerfile: Annotated[
@@ -58,7 +60,27 @@ class ArtifactExecutionLocalResourceNeeds(BaseModel, extra="forbid", frozen=True
     ] = None
 
 
+class BaseArtifactExecutionSetting(BaseModel, extra="forbid", frozen=True):
+    alias: Annotated[str | None, Field(description="Alias used when injecting value.")] = None
+    id: Annotated[str, Field(description="Identifier")]
+    type: Annotated[ArtifactSettingType, Field(description="Type of secret value.")]
+
+
+class ArtifactExectionConfig(BaseArtifactExecutionSetting):
+    """ArtifactExecution config value. Non-sensitive and optional."""
+
+    pass
+
+
+class ArtifactExecutionSecret(BaseArtifactExecutionSetting):
+    """ArtifactExecution secret value. Sensitive and required."""
+
+    pass
+
+
 class ArtifactExecutionParameters(BaseModel, extra="forbid", frozen=True):
+    configs: Annotated[list[ArtifactExectionConfig], Field(description="List of optional configurations.")] = []
+
     # dependency_variables: Annotated[
     #     list[ArtifactExecutionDependencyVariable],
     #     Field(description="List of Variables injected to dependent services."),
@@ -72,6 +94,9 @@ class ArtifactExecutionParameters(BaseModel, extra="forbid", frozen=True):
     # platform_resources: Annotated[
     #     list[PlatformResourceDependency], Field(description="List of platform resources needed.")
     # ] = []
+    #
+
+    secrets: Annotated[list[ArtifactExecutionSecret], Field(description="List of required secrets.")] = []
 
 
 class DockerImageArtifactConfiguration(BaseModel, extra="forbid", frozen=True):
