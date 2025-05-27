@@ -54,7 +54,7 @@ def kubernetes_adapter():
                                             {
                                                 "env": [
                                                     {"name": "HTTP_SERVICE_PATH", "value": "/"},
-                                                    {"name": "HTTP_SERVICE_PORT", "value": 80},
+                                                    {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                                 ],
                                                 "envFrom": [
                                                     {"configMapRef": {"name": "api", "optional": True}},

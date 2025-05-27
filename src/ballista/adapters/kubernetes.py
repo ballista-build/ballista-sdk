@@ -58,7 +58,7 @@ def _generate_artifact_resources(
 
     # TODO: Service types
     services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": None, "target_port": 80}]
-    env.extend([{"name": "HTTP_SERVICE_PATH", "value": "/"}, {"name": "HTTP_SERVICE_PORT", "value": 80}])
+    env.extend([{"name": "HTTP_SERVICE_PATH", "value": "/"}, {"name": "HTTP_SERVICE_PORT", "value": "80"}])
 
     container = {
         "env": env,
@@ -195,20 +195,21 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
         config.load_kube_config()
         k8s_client = client.ApiClient()
 
-        # Create namespace
-        namespace_name = f"{bolt.project_id}-{environment.id}"
-        namespace = client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace_name))
-        api = client.CoreV1Api()
-        api.create_namespace(namespace)
+        namespace = f"{bolt.project_id}-{environment.id}"
 
-        [
-            utils.create_from_dict(k8s_client, resource, apply=True, namespace=namespace_name)
-            for resource in bolt_resources
-        ]
+        if True:
+            # Create namespace
+            api = client.CoreV1Api()
+            try:
+                api.read_namespace(namespace)
+            except client.ApiException:
+                api.create_namespace(client.V1Namespace(metadata=client.V1ObjectMeta(name=namespace)))
+
+        [utils.create_from_dict(k8s_client, resource, apply=True, namespace=namespace) for resource in bolt_resources]
 
         for artifact_id, artifact_resources in all_artifact_resources.items():
             [
-                utils.create_from_dict(k8s_client, resource, apply=True, namespace=namespace_name)
+                utils.create_from_dict(k8s_client, resource, apply=True, namespace=namespace)
                 for resource in artifact_resources
             ]
 
