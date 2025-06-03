@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Collection, Protocol
 
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
+from ballista.types import ArtifactType, BaseSetting, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 
 class ExecutionEnvironmentAdapter(Protocol):
@@ -34,4 +34,24 @@ class ExecutionEnvironmentAdapter(Protocol):
         ...
 
 
-ExecutionEnvironmentWithAdapter = tuple[ExecutionEnvironmentAdapter, ExecutionEnvironment]
+class SettingsAdapter(Protocol):
+    def create_setting(self, bolt: Bolt, artifact: ExecutableArtifact, setting: BaseSetting): ...
+
+    def does_setting_exist(self, bolt: Bolt, artifact: ExecutableArtifact, setting: BaseSetting) -> bool: ...
+
+    def update_setting(self): ...
+
+
+class ConfigsAdapter(SettingsAdapter, Protocol):
+    pass
+
+
+class SecretsAdapter(SettingsAdapter, Protocol):
+    pass
+
+
+# TODO: This should probably be something better than a tuple
+ExecutionEnvironmentWithAdapter = tuple[
+    ExecutionEnvironment, ExecutionEnvironmentAdapter, ConfigsAdapter, SecretsAdapter
+]
+"""An ExecutionEnvironment bundled with the needed adapters."""

@@ -4,7 +4,7 @@ from typing import Any, TypedDict
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import ExecutionEnvironmentAdapter
+from ballista.adapters.types import ConfigsAdapter, ExecutionEnvironmentAdapter, SecretsAdapter
 from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
 
 
@@ -91,12 +91,12 @@ def _generate_artifact_resources(
 
         container["resources"] = pod_resources
 
-    has_secrets = bool(artifact.execution.secrets)
+    has_service_secrets = bool(artifact.execution.secrets)
 
     # TODO: Platform Resources
 
     # Secrets
-    if has_secrets:
+    if has_service_secrets:
         env_from.append({"secretRef": {"name": service_env_name, "optional": False}})
 
     if env_from:
@@ -227,4 +227,12 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
 
 
 class ArgoCDGitOpsKubernetesExecutionEnvironmentAdapter(KubernetesExecutionEnvironmentAdapter):
+    pass
+
+
+class KubernetesSecretSecretsAadapter(SecretsAdapter):
+    pass
+
+
+class KubernetesConfigMapConfigsAdapter(ConfigsAdapter):
     pass
