@@ -2,14 +2,16 @@ from unittest.mock import Mock
 
 import pytest
 
-from ballista.adapters.types import ExecutionEnvironment
 from ballista.types import (
     Artifact,
-    ArtifactExecutionLocalResourceNeeds,
-    ArtifactExecutionParameters,
+    ArtifactExecutionRequirements,
     ArtifactExecutionSetting,
     ArtifactTypeDependency,
     Bolt,
+    Environment,
+    EnvironmentArtifactExecutionParameters,
+    EnvironmentArtifactExecutionResources,
+    EnvironmentArtifactExecutionScaling,
     Project,
 )
 
@@ -35,11 +37,8 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                 Artifact,
                 build=None,
                 execution=Mock(
-                    ArtifactExecutionParameters,
+                    ArtifactExecutionRequirements,
                     configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
-                    local_resources=Mock(
-                        ArtifactExecutionLocalResourceNeeds, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
-                    ),
                     secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
                 ),
                 id="api",
@@ -58,5 +57,16 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
 
 @pytest.fixture(scope="session")
-def execution_environment():
-    return Mock(ExecutionEnvironment, hostname="localhost", id="test", name="Test Environment")
+def environment():
+    return Mock(Environment, hostname="localhost", id="test", name="Test Environment")
+
+
+@pytest.fixture(scope="session")
+def environment_artifact_execution_parameters():
+    return Mock(
+        EnvironmentArtifactExecutionParameters,
+        resources=Mock(
+            EnvironmentArtifactExecutionResources, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
+        ),
+        scaling=Mock(EnvironmentArtifactExecutionScaling),
+    )

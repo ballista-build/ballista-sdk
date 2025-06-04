@@ -1,8 +1,7 @@
 import pytest
 
 from ballista.adapters.kubernetes import KubernetesResource, _generate_bolt_resources
-from ballista.adapters.types import ExecutionEnvironment
-from ballista.types import Bolt
+from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
 
 @pytest.fixture
@@ -104,9 +103,13 @@ def kubernetes_adapter():
 def test_resource_generation(
     bolt: Bolt,
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
-    execution_environment: ExecutionEnvironment,
+    environment: Environment,
+    environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
     executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert resources == _generate_bolt_resources(
-        artifacts=executable_artifacts, bolt=bolt, environment=execution_environment
+        artifacts=executable_artifacts,
+        bolt=bolt,
+        environment=environment,
+        execution_parameters=environment_artifact_execution_parameters,
     )

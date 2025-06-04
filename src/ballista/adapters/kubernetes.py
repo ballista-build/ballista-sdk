@@ -4,8 +4,15 @@ from typing import Any, TypedDict
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import ExecutionEnvironmentAdapter
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
+from ballista.adapters.types import EnvironmentExecutionAdapter
+from ballista.types import (
+    ArtifactType,
+    Bolt,
+    Environment,
+    EnvironmentArtifactExecutionParameters,
+    ExecutableArtifact,
+    Resource,
+)
 
 
 class KubernetesResource(TypedDict):
@@ -16,14 +23,19 @@ class KubernetesResource(TypedDict):
 
 
 def _generate_bolt_resources(
-    bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment
+    bolt: Bolt,
+    artifacts: Collection[ExecutableArtifact],
+    environment: Environment,
+    execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
     """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
     if len(artifacts) == 0:
         raise ValueError("No artifacts to generate resources.")
 
     artifact_resources = {
-        artifact.id: _generate_artifact_resources(bolt=bolt, artifact=artifact, environment=environment)
+        artifact.id: _generate_artifact_resources(
+            bolt=bolt, artifact=artifact, execution_parameters=execution_parameters, environment=environment
+        )
         for artifact in artifacts
     }
 
@@ -33,7 +45,10 @@ def _generate_bolt_resources(
 
 
 def _generate_artifact_resources(
-    bolt: Bolt, artifact: ExecutableArtifact, environment: ExecutionEnvironment
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
+    environment: Environment,
+    execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     k8s_resources: list[KubernetesResource] = []
 
@@ -78,16 +93,16 @@ def _generate_artifact_resources(
         env_from.append({"configMapRef": {"name": service_env_name, "optional": True}})
 
     # Local Resources
-    if local_resources := artifact.execution.local_resources:
+    if execution_resources := execution_parameters.resources:
         pod_resources = {"requests": {}, "limits": {}}
-        if local_resources.min_cpu:
-            pod_resources["requests"]["cpu"] = local_resources.min_cpu
-        if local_resources.min_memory:
-            pod_resources["requests"]["memory"] = f"{local_resources.min_memory}Gi"
-        if local_resources.max_cpu:
-            pod_resources["limits"]["cpu"] = local_resources.max_cpu
-        if local_resources.max_memory:
-            pod_resources["limits"]["memory"] = f"{local_resources.max_memory}Gi"
+        if execution_resources.min_cpu:
+            pod_resources["requests"]["cpu"] = execution_resources.min_cpu
+        if execution_resources.min_memory:
+            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}Gi"
+        if execution_resources.max_cpu:
+            pod_resources["limits"]["cpu"] = execution_resources.max_cpu
+        if execution_resources.max_memory:
+            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}Gi"
 
         container["resources"] = pod_resources
 
@@ -185,10 +200,16 @@ def _generate_yaml_files(k8s_resources: Collection[KubernetesResource]) -> dict[
     return {kind.lower() + ".yaml": yaml.dump(data) for kind, data in k8s_resources}
 
 
-class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
-    def deploy(self, bolt: Bolt, artifacts: Collection[ExecutableArtifact], environment: ExecutionEnvironment):
+class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
+    def deploy(
+        self,
+        bolt: Bolt,
+        artifacts: Collection[ExecutableArtifact],
+        environment: Environment,
+        execution_parameters: EnvironmentArtifactExecutionParameters,
+    ):
         bolt_resources, all_artifact_resources = _generate_bolt_resources(
-            bolt=bolt, artifacts=artifacts, environment=environment
+            bolt=bolt, artifacts=artifacts, environment=environment, execution_parameters=execution_parameters
         )
 
         # TODO: This needs expanding to not rely on the local kubeconf
@@ -213,16 +234,16 @@ class KubernetesExecutionEnvironmentAdapter(ExecutionEnvironmentAdapter):
                 for resource in artifact_resources
             ]
 
-    def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
+    def fulfill_platform_resource_dependency(self, environment: Environment, artifact: ExecutableArtifact):
         pass
 
-    def list_artifact_types(self, environment: ExecutionEnvironment) -> list[ArtifactType]:
+    def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return []
 
-    def list_platform_resources(self, environment: ExecutionEnvironment) -> list[PlatformResource]:
+    def list_platform_resources(self, environment: Environment) -> list[Resource]:
         return []
 
-    def list_services(self, environment: ExecutionEnvironment) -> list[ExecutableArtifact]:
+    def list_services(self, environment: Environment) -> list[ExecutableArtifact]:
         return []
 
 

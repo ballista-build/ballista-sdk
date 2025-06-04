@@ -2,36 +2,44 @@ from __future__ import annotations
 
 from typing import Collection, Protocol
 
-from ballista.types import ArtifactType, Bolt, ExecutableArtifact, ExecutionEnvironment, PlatformResource
+from ballista.types import (
+    ArtifactType,
+    Bolt,
+    Environment,
+    EnvironmentArtifactExecutionParameters,
+    ExecutableArtifact,
+    Resource,
+)
 
 
-class ExecutionEnvironmentAdapter(Protocol):
-    """Environment that can execute artifacts."""
+class EnvironmentExecutionAdapter(Protocol):
+    """Adapter for executing artifacts in an environment."""
 
     def deploy(
         self,
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
-        environment: ExecutionEnvironment,
+        environment: Environment,
+        execution_parameters: EnvironmentArtifactExecutionParameters,
     ):
-        """Deploy a Bolt and collection of ExecutableArtifacts in the specified ExecutionEnvironment."""
+        """Deploy a Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
         ...
 
-    def fulfill_platform_resource_dependency(self, environment: ExecutionEnvironment, artifact: ExecutableArtifact):
+    def fulfill_platform_resource_dependency(self, environment: Environment, artifact: ExecutableArtifact):
         """Fulfills an artifact's dependency on a Platform Resource."""
         ...
 
-    def list_artifact_types(self, environment: ExecutionEnvironment) -> Collection[ArtifactType]:
+    def list_artifact_types(self, environment: Environment) -> Collection[ArtifactType]:
         """List executable ArtifactTypes available in environment."""
         ...
 
-    def list_platform_resources(self, environment: ExecutionEnvironment) -> Collection[PlatformResource]:
+    def list_platform_resources(self, environment: Environment) -> Collection[Resource]:
         """List platform resources."""
         ...
 
-    def list_services(self, environment: ExecutionEnvironment) -> Collection[ExecutableArtifact]:
+    def list_services(self, environment: Environment) -> Collection[ExecutableArtifact]:
         """List deployed executable services."""
         ...
 
 
-ExecutionEnvironmentWithAdapter = tuple[ExecutionEnvironmentAdapter, ExecutionEnvironment]
+EnvironmentWithExecutionAdapter = tuple[EnvironmentExecutionAdapter, Environment]
