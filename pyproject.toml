@@ -38,3 +38,8 @@ dev = [
     "coverage>=7.7.1",
 ]
 generation = ["openapi-generator-cli[jdk4py]>=7.11.0.post0"]
+
+# This is to fix a bug in Zed where it can't properly use a venv
+[tool.pyright]
+venvPath = "."
+venv = ".venv"

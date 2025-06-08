@@ -88,11 +88,20 @@ def _generate_artifact_resources(
         ],
     }
 
+    pod_template = {
+        "metadata": metadata,
+        "spec": {  # PodTemplateSpec
+            "containers": [  # Container
+                container
+            ],
+        },
+    }
+
     # Configs
     if artifact.execution.configs:
         env_from.append({"configMapRef": {"name": service_env_name, "optional": True}})
 
-    # Local Resources
+    # Execution Parameters Resources
     if execution_resources := execution_parameters.resources:
         pod_resources = {"requests": {}, "limits": {}}
         if execution_resources.min_cpu:
@@ -117,20 +126,12 @@ def _generate_artifact_resources(
     if env_from:
         container["envFrom"] = env_from
 
-    pod_template = {
-        "metadata": metadata,
-        "spec": {  # PodTemplateSpec
-            "containers": [  # Container
-                container
-            ],
-        },
-    }
-
     # TODO
     # env
     # probes
     # securityContext
 
+    # Generate Kubernetes resource definitions
     # Deployment
     k8s_resources.append(
         {
@@ -162,6 +163,63 @@ def _generate_artifact_resources(
             },
         }
     )
+
+    # Volumes
+    if volumes := artifact.execution.volumes:
+        volume_mounts = []
+        for volume in volumes:
+            volume_claim_metadata = {
+                "labels": metadata["labels"],
+                "name": f"{service_name}-{volume.id}",
+                "namespace": metadata["namespace"],
+            }
+
+            # Mount Path
+            volume_mount = {"mountPath": volume.path, "name": volume.id}
+            volume_mounts.append(volume_mount)
+
+            volume_claim = {}
+
+            # Claim resources
+            if execution_volume := execution_parameters.volumes.get(volume.id):
+                claim_resources = {}
+                if execution_volume.min_storage:
+                    claim_resources["requests"] = {"storage": f"{execution_volume.min_storage}G"}
+                if execution_volume.max_storage:
+                    claim_resources["limits"] = {"storage": f"{execution_volume.max_storage}G"}
+                if execution_volume.path:
+                    # Set a subPath in the volume for this specific mount
+                    volume_mount["subPath"] = execution_volume.path
+                if execution_volume.type:
+                    volume_claim["storageClassName"] = execution_volume.type
+                if claim_resources:
+                    volume_claim["resources"] = claim_resources
+
+            if volume.persistent:
+                # Create a PersistentVolumeClaim; multiple pods can access the claim.
+                volume_claim.update({"accessModes": ["ReadWriteMany"]})
+
+                k8s_resources.append(
+                    {
+                        "apiVersion": "v1",
+                        "kind": "PersistentVolumeClaim",
+                        "metadata": volume_claim_metadata,
+                        "spec": volume_claim,
+                    }
+                )
+
+            else:
+                # Add an ephemeral volume claim to the PodTemplate
+                volume_claim.update({"accessModes": ["ReadWriteOnce"]})
+
+                pod_template["spec"]["volumes"] = pod_template["spec"].get("volumes", []) + [
+                    {
+                        "name": volume.id,
+                        "ephemeral": {"volumeClaimTemplate": {"metadata": volume_claim_metadata, "spec": volume_claim}},
+                    }
+                ]
+        container["volumeMounts"] = volume_mounts
+
     # Ingress
     external_services = [s for s in services if s["external_host"] or s["external_path"]]
 

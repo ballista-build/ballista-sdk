@@ -53,7 +53,10 @@ class ArtifactExecutionSecret(BaseArtifactExecutionSetting, title="Artifact Exec
 class ArtifactExecutionVolume(BaseModel, extra="forbid", frozen=True, title="Artifact Execution Volume"):
     id: Annotated[str, Field(description="Unique identifier of volume.", title="ID")]
     name: Annotated[str, Field(description="Human-readable name of volume.")]
-    type: Annotated[str, Field(description="Type of volume.")]
+    path: Annotated[str, Field(description="Path inside service to access volume.")]
+    persistent: Annotated[
+        bool, Field(description="Indicates if volume data should persist outside execution lifecycle.")
+    ] = True
 
 
 class ArtifactExecutionRequirements(BaseModel, extra="forbid", frozen=True, title="Artifact Execution Requirements"):

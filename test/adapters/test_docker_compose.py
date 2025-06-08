@@ -4,7 +4,9 @@ import pytest
 
 from ballista.adapters.docker_compose import (
     DockerComposeProject,
+    DockerComposeProjectVolume,
     DockerComposeService,
+    DockerComposeServiceVolume,
     _generate_docker_compose_project_from_bolt,
 )
 from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
@@ -16,7 +18,7 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
         (
             "simple",
             DockerComposeProject(
-                name="test",
+                name="simple",
                 networks={},
                 services={
                     "api": DockerComposeService(
@@ -29,8 +31,17 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
                         image="hello-world:latest",
                         networks=[],
                         ports=[],
+                        volumes=[
+                            DockerComposeServiceVolume(
+                                source="volume_a",
+                                target="/var/volume_a",
+                                type="volume",
+                                volume={"subpath": "/custom/path"},
+                            )
+                        ],
                     )
                 },
+                volumes={"volume_a": DockerComposeProjectVolume(driver="local", name="Volume A")},
             ),
         )
     ],

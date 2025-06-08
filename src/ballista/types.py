@@ -1,4 +1,4 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping
 from enum import StrEnum
 from typing import Any, Protocol
 
@@ -132,8 +132,13 @@ class ArtifactExecutionVolume(Protocol):
         ...
 
     @property
-    def type(self) -> str:
-        """Type of volume requested."""
+    def path(self) -> str:
+        """Path to mount volume."""
+        ...
+
+    @property
+    def persistent(self) -> bool:
+        """Flag indicating volume persists."""
         ...
 
 
@@ -141,23 +146,23 @@ class ArtifactExecutionRequirements(Protocol):
     """Artifact's declared requirements for execution."""
 
     @property
-    def configs(self) -> Sequence[ArtifactExecutionSetting]:
-        """Sequence of non-sensitive settings optional for artifact execution."""
+    def configs(self) -> Collection[ArtifactExecutionSetting]:
+        """Collection of non-sensitive settings optional for artifact execution."""
         ...
 
     @property
-    def resources(self) -> Sequence[ArtifactExecutionResourceDependency]:
-        """Sequence of resource dependencies required for artifact execution."""
+    def resources(self) -> Collection[ArtifactExecutionResourceDependency]:
+        """Collection of resource dependencies required for artifact execution."""
         ...
 
     @property
-    def secrets(self) -> Sequence[ArtifactExecutionSetting]:
-        """Sequence of sensitive settings required for artifact execution."""
+    def secrets(self) -> Collection[ArtifactExecutionSetting]:
+        """Collection of sensitive settings required for artifact execution."""
         ...
 
     @property
-    def volumes(self) -> Sequence[ArtifactExecutionVolume]:
-        """Sequence of volumes required for artifact execution."""
+    def volumes(self) -> Collection[ArtifactExecutionVolume]:
+        """Collection of volumes required for artifact execution."""
         ...
 
 
@@ -189,8 +194,8 @@ class Bolt(Protocol):
     """Multiple artifacts bundled together with a version and organized under a project."""
 
     @property
-    def artifacts(self) -> Sequence[Artifact]:
-        """Sequence of artifacts included in Bolt."""
+    def artifacts(self) -> Collection[Artifact]:
+        """Collection of artifacts included in Bolt."""
         ...
 
     @property
@@ -291,6 +296,28 @@ class EnvironmentArtifactExecutionScaling(Protocol):
         ...
 
 
+class EnvironmentArtifactExecutionVolume(Protocol):
+    @property
+    def max_storage(self) -> float | None:
+        """Maximum storage size, measures in Gigabytes."""
+        ...
+
+    @property
+    def min_storage(self) -> float | None:
+        """Minimum storage size required, measured in Gigabytes."""
+        ...
+
+    @property
+    def path(self) -> str | None:
+        """Path inside volume to use as mount root."""
+        ...
+
+    @property
+    def type(self) -> str | None:
+        """Specific type of volume to use."""
+        ...
+
+
 class EnvironmentArtifactExecutionParameters(Protocol):
     """Parameters for executing artifacts in an environment."""
 
@@ -302,6 +329,11 @@ class EnvironmentArtifactExecutionParameters(Protocol):
     @property
     def scaling(self) -> EnvironmentArtifactExecutionScaling:
         """Scaling parameters."""
+        ...
+
+    @property
+    def volumes(self) -> Mapping[str, EnvironmentArtifactExecutionVolume]:
+        """Volume parameters"""
         ...
 
 

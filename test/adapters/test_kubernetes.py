@@ -25,11 +25,11 @@ def kubernetes_adapter():
                                 "labels": {
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
-                                    "app.kubernetes.io/part-of": "example",
+                                    "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
                                 "name": "api",
-                                "namespace": "example-test",
+                                "namespace": "simple-test",
                             },
                             "spec": {
                                 "selector": {"matchLabels": {"app.kubernetes.io/name": "api"}},
@@ -42,11 +42,11 @@ def kubernetes_adapter():
                                         "labels": {
                                             "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/managed-by": "Ballista",
-                                            "app.kubernetes.io/part-of": "example",
+                                            "app.kubernetes.io/part-of": "simple",
                                             "app.kubernetes.io/version": "1",
                                         },
                                         "name": "api",
-                                        "namespace": "example-test",
+                                        "namespace": "simple-test",
                                     },
                                     "spec": {
                                         "containers": [
@@ -68,6 +68,13 @@ def kubernetes_adapter():
                                                     },
                                                     "requests": {"cpu": 0.25, "memory": "0.1Gi"},
                                                 },
+                                                "volumeMounts": [
+                                                    {
+                                                        "mountPath": "/var/volume_a",
+                                                        "name": "volume_a",
+                                                        "subPath": "/custom/path",
+                                                    }
+                                                ],
                                             }
                                         ]
                                     },
@@ -81,15 +88,34 @@ def kubernetes_adapter():
                                 "labels": {
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
-                                    "app.kubernetes.io/part-of": "example",
+                                    "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
                                 "name": "api",
-                                "namespace": "example-test",
+                                "namespace": "simple-test",
                             },
                             "spec": {
                                 "selector": {"app.kubernetes.io/name": "api"},
                                 "ports": [{"port": 80, "name": "http", "targetPort": "http"}],
+                            },
+                        },
+                        {
+                            "apiVersion": "v1",
+                            "kind": "PersistentVolumeClaim",
+                            "metadata": {
+                                "labels": {
+                                    "app.kubernetes.io/name": "api",
+                                    "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/part-of": "simple",
+                                    "app.kubernetes.io/version": "1",
+                                },
+                                "name": "api-volume_a",
+                                "namespace": "simple-test",
+                            },
+                            "spec": {
+                                "accessModes": ["ReadWriteMany"],
+                                "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.25G"}},
+                                "storageClassName": "generic-storage",
                             },
                         },
                     ]
