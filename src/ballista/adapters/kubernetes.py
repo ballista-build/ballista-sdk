@@ -165,9 +165,12 @@ def _generate_artifact_resources(
     )
 
     # Volumes
-    if volumes := artifact.execution.volumes:
+    if artifact.execution.volumes:
+        persistent_volumes = set()
+
+        volumes = []
         volume_mounts = []
-        for volume in volumes:
+        for volume in artifact.execution.volumes:
             volume_claim_metadata = {
                 "labels": metadata["labels"],
                 "name": f"{service_name}-{volume.id}",
@@ -183,21 +186,30 @@ def _generate_artifact_resources(
             # Claim resources
             if execution_volume := execution_parameters.volumes.get(volume.id):
                 claim_resources = {}
-                if execution_volume.min_storage:
-                    claim_resources["requests"] = {"storage": f"{execution_volume.min_storage}G"}
-                if execution_volume.max_storage:
-                    claim_resources["limits"] = {"storage": f"{execution_volume.max_storage}G"}
+                if execution_volume.min_capacity:
+                    claim_resources["requests"] = {"storage": f"{execution_volume.min_capacity}G"}
+                if execution_volume.max_capacity:
+                    claim_resources["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
                 if execution_volume.path:
                     # Set a subPath in the volume for this specific mount
-                    volume_mount["subPath"] = execution_volume.path
+                    volume_mount["subPath"] = f"{execution_volume.path}/{volume.id}"
                 if execution_volume.type:
                     volume_claim["storageClassName"] = execution_volume.type
                 if claim_resources:
                     volume_claim["resources"] = claim_resources
 
             if volume.persistent:
+                volumes.append(
+                    {"name": volume.id, "persistentVolumeClaim": {"claimName": volume_claim_metadata["name"]}}
+                )
+
                 # Create a PersistentVolumeClaim; multiple pods can access the claim.
-                volume_claim.update({"accessModes": ["ReadWriteMany"]})
+                volume_claim.update(
+                    {
+                        "accessModes": ["ReadWriteMany"],
+                        "selector": {"matchLabels": {"app.kubernetes.io/name": volume.id}},
+                    }
+                )
 
                 k8s_resources.append(
                     {
@@ -208,17 +220,52 @@ def _generate_artifact_resources(
                     }
                 )
 
+                if volume.id not in persistent_volumes:
+                    persistent_volumes.add(volume.id)
+
+                    persistent_volume = {
+                        "apiVersion": "v1",
+                        "kind": "PersistentVolume",
+                        "metadata": {
+                            "labels": {
+                                "app.kubernetes.io/managed-by": "Ballista",
+                                "app.kubernetes.io/name": volume.id,
+                                "app.kubernetes.io/part-of": bolt.project_id,
+                                "app.kubernetes.io/version": bolt.version,
+                            },
+                            "name": volume.id,
+                            "namespace": metadata["namespace"],
+                        },
+                        "spec": {
+                            "accessModes": ["ReadWriteMany"],
+                            "capacity": {"storage": "1G"},
+                            "hostPath": {"path": f"/data/{volume.id}"},
+                        },
+                    }
+
+                    if execution_volume and execution_volume.type:
+                        persistent_volume["spec"]["storageClassName"] = execution_volume.type
+
+                    k8s_resources.append(persistent_volume)
+
             else:
                 # Add an ephemeral volume claim to the PodTemplate
                 volume_claim.update({"accessModes": ["ReadWriteOnce"]})
 
-                pod_template["spec"]["volumes"] = pod_template["spec"].get("volumes", []) + [
+                volumes.append(
                     {
                         "name": volume.id,
-                        "ephemeral": {"volumeClaimTemplate": {"metadata": volume_claim_metadata, "spec": volume_claim}},
+                        "ephemeral": {
+                            "volumeClaimTemplate": {
+                                "metadata": {"labels": metadata["labels"]},
+                                "spec": volume_claim,
+                            }
+                        },
                     }
-                ]
+                )
+
         container["volumeMounts"] = volume_mounts
+        pod_template["spec"]["volumes"] = volumes
 
     # Ingress
     external_services = [s for s in services if s["external_host"] or s["external_path"]]

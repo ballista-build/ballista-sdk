@@ -65,11 +65,11 @@ def _generate_docker_compose_project_from_bolt(
             bolt=bolt, artifact=artifact, environment=environment, execution_parameters=execution_parameters
         )
 
-        for volume in artifact.execution.volumes:
-            if volume.persistent:
-                project.volumes[volume.id] = DockerComposeProjectVolume(driver="local", name=volume.name)
-            else:
-                project.volumes[volume.id] = DockerComposeProjectVolume(driver="tmpfs", name=volume.name)
+        project.volumes = {
+            volume.id: DockerComposeProjectVolume(driver="local", name=volume.name)
+            for volume in artifact.execution.volumes
+            if volume.persistent
+        }
 
     return project
 
@@ -127,8 +127,8 @@ def _generate_docker_compose_service_from_artifact(
                 )
             else:
                 tmpfs_options = None
-                if execution_volume and execution_volume.min_storage:
-                    tmpfs_options = {"size": f"{execution_volume.min_storage}G"}
+                if execution_volume and execution_volume.min_capacity:
+                    tmpfs_options = {"size": f"{execution_volume.min_capacity}G"}
 
                 service.volumes.append(
                     DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")

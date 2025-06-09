@@ -7,15 +7,40 @@ import yaml
 from pydantic import BaseModel
 
 from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
-from ballista.adapters.types import ExecutionEnvironmentWithAdapter
+from ballista.adapters.types import EnvironmentExecutionAdapter
 from ballista.bolts import v1_service
-from ballista.types import Bolt
+from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
 
 class LocalEnvironment(BaseModel):
     hostname: str
     id: str
     name: str
+
+
+class LocalEnvironmentArtifactExecutionResources(BaseModel):
+    max_cpu: float | None = None
+    max_memory: float | None = None
+    min_cpu: float | None = None
+    min_memory: float | None = None
+
+
+class LocalEnvironmentArtifactExecutionScaling(BaseModel):
+    max_replicas: int | None = None
+    min_replicas: int | None = None
+
+
+class LocalEnvironmentArtifactExecutionVolume(BaseModel):
+    max_capacity: float | None = None
+    min_capacity: float | None = None
+    path: str | None = None
+    type: str | None = None
+
+
+class LocalEnvironmentArtifactExecutionParameters(BaseModel):
+    resources: LocalEnvironmentArtifactExecutionResources
+    scaling: LocalEnvironmentArtifactExecutionScaling
+    volumes: dict[str, LocalEnvironmentArtifactExecutionVolume]
 
 
 def get_local_bolt(origin: str) -> Bolt:
@@ -39,16 +64,22 @@ def get_local_bolt(origin: str) -> Bolt:
     raise ValueError()
 
 
-def get_local_environment() -> ExecutionEnvironmentWithAdapter:
+def get_local_environment() -> tuple[Environment, EnvironmentExecutionAdapter, EnvironmentArtifactExecutionParameters]:
     # Create ephemeral DockerCompose environment for local development
     # local_adapter = DockerComposeExecutionEnvironmentAdapter()
-    local_adapter = KubernetesExecutionEnvironmentAdapter()
+    adapter = KubernetesExecutionEnvironmentAdapter()
 
     # Deploy platform resources
 
-    env = LocalEnvironment(hostname="localhost", id="local", name="Local")
+    environment = LocalEnvironment(hostname="localhost", id="local", name="Local")
 
-    return local_adapter, env
+    execution_parameters = LocalEnvironmentArtifactExecutionParameters(
+        resources=LocalEnvironmentArtifactExecutionResources(),
+        scaling=LocalEnvironmentArtifactExecutionScaling(),
+        volumes={},
+    )
+
+    return environment, adapter, execution_parameters
 
 
 def get_origin() -> str:
@@ -121,9 +152,14 @@ def up():
     origin = get_origin()
     ballista_bolt = get_local_bolt(origin)
 
-    adapter, env = get_local_environment()
+    environment, adapter, execution_parameters = get_local_environment()
     executable_artifacts = [a for a in ballista_bolt.artifacts if a.execution]
-    adapter.deploy(bolt=ballista_bolt, artifacts=executable_artifacts, environment=env)
+    adapter.deploy(
+        bolt=ballista_bolt,
+        artifacts=executable_artifacts,
+        environment=environment,
+        execution_parameters=execution_parameters,
+    )
 
 
 @cli.command(short_help="teardown ballista environment")

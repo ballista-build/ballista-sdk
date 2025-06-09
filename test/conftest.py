@@ -35,13 +35,10 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
     elif request.param == "simple":
         # Name cannot be mocked via the constructor.
-        volume = Mock(
-            ArtifactExecutionVolume,
-            id="volume_a",
-            path="/var/volume_a",
-            persistent=True,
-        )
-        volume.name = "Volume A"
+        volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
+        volume_a.name = "Volume A"
+        volume_b = Mock(ArtifactExecutionVolume, id="volume_b", path="/var/volume_b", persistent=False)
+        volume_b.name = "Volume B"
 
         artifacts = [
             Mock(
@@ -51,7 +48,7 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                     ArtifactExecutionRequirements,
                     configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
                     secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
-                    volumes=[volume],
+                    volumes=[volume_a, volume_b],
                 ),
                 id="api",
                 type=docker_image_artifact_type_dependency,
@@ -84,10 +81,17 @@ def environment_artifact_execution_parameters():
         volumes={
             "volume_a": Mock(
                 EnvironmentArtifactExecutionVolume,
-                min_storage=0.25,
-                max_storage=1.0,
+                min_capacity=0.25,
+                max_capacity=1.0,
                 path="/custom/path",
                 type="generic-storage",
-            )
+            ),
+            "volume_b": Mock(
+                EnvironmentArtifactExecutionVolume,
+                min_capacity=0.25,
+                max_capacity=None,
+                path="/custom/path",
+                type="generic-storage",
+            ),
         },
     )

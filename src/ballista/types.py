@@ -298,13 +298,13 @@ class EnvironmentArtifactExecutionScaling(Protocol):
 
 class EnvironmentArtifactExecutionVolume(Protocol):
     @property
-    def max_storage(self) -> float | None:
-        """Maximum storage size, measures in Gigabytes."""
+    def max_capacity(self) -> float | None:
+        """Maximum storage capacity, measures in Gigabytes."""
         ...
 
     @property
-    def min_storage(self) -> float | None:
-        """Minimum storage size required, measured in Gigabytes."""
+    def min_capacity(self) -> float | None:
+        """Minimum storage capacity required, measured in Gigabytes."""
         ...
 
     @property
@@ -334,6 +334,13 @@ class EnvironmentArtifactExecutionParameters(Protocol):
     @property
     def volumes(self) -> Mapping[str, EnvironmentArtifactExecutionVolume]:
         """Volume parameters"""
+        ...
+
+
+class EnvironmentProjectExecutionParameters(Protocol):
+    @property
+    def artifacts(self) -> Mapping[str, EnvironmentArtifactExecutionParameters]:
+        """Mapping of artifact IDs to individual EnvironmentArtifactExecutionParameters."""
         ...
 
 

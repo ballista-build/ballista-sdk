@@ -37,7 +37,12 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
                                 target="/var/volume_a",
                                 type="volume",
                                 volume={"subpath": "/custom/path"},
-                            )
+                            ),
+                            DockerComposeServiceVolume(
+                                target="/var/volume_b",
+                                tmpfs={"size": "0.25G"},
+                                type="tmpfs",
+                            ),
                         ],
                     )
                 },
