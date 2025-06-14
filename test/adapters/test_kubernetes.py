@@ -146,27 +146,6 @@ def kubernetes_adapter():
                             "spec": {
                                 "accessModes": ["ReadWriteMany"],
                                 "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.25G"}},
-                                "selector": {"matchLabels": {"app.kubernetes.io/name": "volume_a"}},
-                                "storageClassName": "generic-storage",
-                            },
-                        },
-                        {
-                            "apiVersion": "v1",
-                            "kind": "PersistentVolume",
-                            "metadata": {
-                                "labels": {
-                                    "app.kubernetes.io/name": "volume_a",
-                                    "app.kubernetes.io/managed-by": "Ballista",
-                                    "app.kubernetes.io/part-of": "simple",
-                                    "app.kubernetes.io/version": "1",
-                                },
-                                "name": "volume_a",
-                                "namespace": "simple-test",
-                            },
-                            "spec": {
-                                "accessModes": ["ReadWriteMany"],
-                                "capacity": {"storage": "1G"},
-                                "hostPath": {"path": "/data/volume_a"},
                                 "storageClassName": "generic-storage",
                             },
                         },

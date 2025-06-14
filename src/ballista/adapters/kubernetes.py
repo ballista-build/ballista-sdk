@@ -190,13 +190,14 @@ def _generate_artifact_resources(
                     claim_resources["requests"] = {"storage": f"{execution_volume.min_capacity}G"}
                 if execution_volume.max_capacity:
                     claim_resources["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
+                if claim_resources:
+                    volume_claim["resources"] = claim_resources
+
                 if execution_volume.path:
                     # Set a subPath in the volume for this specific mount
                     volume_mount["subPath"] = f"{execution_volume.path}/{volume.id}"
                 if execution_volume.type:
                     volume_claim["storageClassName"] = execution_volume.type
-                if claim_resources:
-                    volume_claim["resources"] = claim_resources
 
             if volume.persistent:
                 volumes.append(
@@ -204,12 +205,7 @@ def _generate_artifact_resources(
                 )
 
                 # Create a PersistentVolumeClaim; multiple pods can access the claim.
-                volume_claim.update(
-                    {
-                        "accessModes": ["ReadWriteMany"],
-                        "selector": {"matchLabels": {"app.kubernetes.io/name": volume.id}},
-                    }
-                )
+                volume_claim.update({"accessModes": ["ReadWriteMany"]})
 
                 k8s_resources.append(
                     {
@@ -219,34 +215,6 @@ def _generate_artifact_resources(
                         "spec": volume_claim,
                     }
                 )
-
-                if volume.id not in persistent_volumes:
-                    persistent_volumes.add(volume.id)
-
-                    persistent_volume = {
-                        "apiVersion": "v1",
-                        "kind": "PersistentVolume",
-                        "metadata": {
-                            "labels": {
-                                "app.kubernetes.io/managed-by": "Ballista",
-                                "app.kubernetes.io/name": volume.id,
-                                "app.kubernetes.io/part-of": bolt.project_id,
-                                "app.kubernetes.io/version": bolt.version,
-                            },
-                            "name": volume.id,
-                            "namespace": metadata["namespace"],
-                        },
-                        "spec": {
-                            "accessModes": ["ReadWriteMany"],
-                            "capacity": {"storage": "1G"},
-                            "hostPath": {"path": f"/data/{volume.id}"},
-                        },
-                    }
-
-                    if execution_volume and execution_volume.type:
-                        persistent_volume["spec"]["storageClassName"] = execution_volume.type
-
-                    k8s_resources.append(persistent_volume)
 
             else:
                 # Add an ephemeral volume claim to the PodTemplate
