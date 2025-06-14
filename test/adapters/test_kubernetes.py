@@ -66,7 +66,7 @@ def kubernetes_adapter():
                                                     "limits": {
                                                         "memory": "1.0Gi",
                                                     },
-                                                    "requests": {"cpu": 0.25, "memory": "0.1Gi"},
+                                                    "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
                                                 },
                                                 "volumeMounts": [
                                                     {

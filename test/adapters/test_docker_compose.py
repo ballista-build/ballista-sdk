@@ -25,7 +25,7 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
                         deploy={
                             "resources": {
                                 "limits": {"memory": "1.0g"},
-                                "reservations": {"cpus": 0.25, "memory": "0.1g"},
+                                "reservations": {"cpus": "0.25g", "memory": "0.1g"},
                             }
                         },
                         image="hello-world:latest",

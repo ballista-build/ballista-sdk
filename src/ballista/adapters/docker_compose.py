@@ -88,11 +88,11 @@ def _generate_docker_compose_service_from_artifact(
         resource_max = {}
         resource_min = {}
         if max_cpu := execution_resources.max_cpu:
-            resource_max["cpus"] = max_cpu
+            resource_max["cpus"] = f"{max_cpu}g"
         if max_memory := execution_resources.max_memory:
             resource_max["memory"] = f"{max_memory}g"
         if min_cpu := execution_resources.min_cpu:
-            resource_min["cpus"] = min_cpu
+            resource_min["cpus"] = f"{min_cpu}g"
         if min_memory := execution_resources.min_memory:
             resource_min["memory"] = f"{min_memory}g"
 

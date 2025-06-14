@@ -105,11 +105,11 @@ def _generate_artifact_resources(
     if execution_resources := execution_parameters.resources:
         pod_resources = {"requests": {}, "limits": {}}
         if execution_resources.min_cpu:
-            pod_resources["requests"]["cpu"] = execution_resources.min_cpu
+            pod_resources["requests"]["cpu"] = f"{execution_resources.min_cpu}G"
         if execution_resources.min_memory:
             pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}Gi"
         if execution_resources.max_cpu:
-            pod_resources["limits"]["cpu"] = execution_resources.max_cpu
+            pod_resources["limits"]["cpu"] = f"{execution_resources.max_cpu}G"
         if execution_resources.max_memory:
             pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}Gi"
 
