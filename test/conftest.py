@@ -2,21 +2,25 @@ from unittest.mock import Mock
 
 import pytest
 
-from ballista.adapters.types import ExecutionEnvironment
 from ballista.types import (
     Artifact,
-    ArtifactExecutionLocalResourceNeeds,
-    ArtifactExecutionParameters,
+    ArtifactExecutionRequirements,
     ArtifactExecutionSetting,
+    ArtifactExecutionVolume,
     ArtifactTypeDependency,
     Bolt,
+    Environment,
+    EnvironmentArtifactExecutionParameters,
+    EnvironmentArtifactExecutionResources,
+    EnvironmentArtifactExecutionScaling,
+    EnvironmentArtifactExecutionVolume,
     Project,
 )
 
 
 @pytest.fixture(scope="session")
 def project():
-    return Mock(Project, id="example", name="Example Project")
+    return Mock(Project, id="simple", name="Simple Project")
 
 
 @pytest.fixture(scope="session")
@@ -30,17 +34,21 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
         return Mock(Bolt, artifacts=[], project_id=project.id, version="1")
 
     elif request.param == "simple":
+        # Name cannot be mocked via the constructor.
+        volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
+        volume_a.name = "Volume A"
+        volume_b = Mock(ArtifactExecutionVolume, id="volume_b", path="/var/volume_b", persistent=False)
+        volume_b.name = "Volume B"
+
         artifacts = [
             Mock(
                 Artifact,
                 build=None,
                 execution=Mock(
-                    ArtifactExecutionParameters,
+                    ArtifactExecutionRequirements,
                     configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
-                    local_resources=Mock(
-                        ArtifactExecutionLocalResourceNeeds, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
-                    ),
                     secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
+                    volumes=[volume_a, volume_b],
                 ),
                 id="api",
                 type=docker_image_artifact_type_dependency,
@@ -58,5 +66,32 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
 
 @pytest.fixture(scope="session")
-def execution_environment():
-    return Mock(ExecutionEnvironment, hostname="localhost", id="test", name="Test Environment")
+def environment():
+    return Mock(Environment, hostname="localhost", id="test", name="Test Environment")
+
+
+@pytest.fixture(scope="session")
+def environment_artifact_execution_parameters():
+    return Mock(
+        EnvironmentArtifactExecutionParameters,
+        resources=Mock(
+            EnvironmentArtifactExecutionResources, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
+        ),
+        scaling=Mock(EnvironmentArtifactExecutionScaling),
+        volumes={
+            "volume_a": Mock(
+                EnvironmentArtifactExecutionVolume,
+                min_capacity=0.25,
+                max_capacity=1.0,
+                path="/custom/path",
+                type="generic-storage",
+            ),
+            "volume_b": Mock(
+                EnvironmentArtifactExecutionVolume,
+                min_capacity=0.25,
+                max_capacity=None,
+                path="/custom/path",
+                type="generic-storage",
+            ),
+        },
+    )

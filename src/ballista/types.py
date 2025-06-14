@@ -1,6 +1,18 @@
-from collections.abc import Sequence
+from collections.abc import Collection, Mapping
 from enum import StrEnum
 from typing import Any, Protocol
+
+
+class Resource(Protocol):
+    @property
+    def id(self) -> str:
+        """Identifer."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of Resource."""
+        ...
 
 
 class Project(Protocol):
@@ -12,70 +24,6 @@ class Project(Protocol):
     @property
     def name(self) -> str:
         """Human-readable name of project."""
-        ...
-
-
-class ArtifactBuildParameters(Protocol):
-    """Parameters for building an artifact."""
-
-    @property
-    def dockerfile(self) -> str | None:
-        """Name of local Dockerfile used to build artifact."""
-        ...
-
-    @property
-    def dockerfile_target(self) -> str:
-        """Dockerfile target used when building artifact."""
-        ...
-
-
-class ArtifactExecutionLocalResourceNeeds(Protocol):
-    """High-level execution resource requirements. Pretty sure all computers have these in some fashion."""
-
-    @property
-    def max_cpu(self) -> float | None:
-        """Maximum CPU allowed, measured in cores."""
-        ...
-
-    @property
-    def max_memory(self) -> float | None:
-        """Maximum memory allowed, measured in Gibibytes."""
-        ...
-
-    @property
-    def min_cpu(self) -> float | None:
-        """Minimum CPU required, measured in cores."""
-        ...
-
-    @property
-    def min_memory(self) -> float | None:
-        """Minimum memory required, measured in Gibibytes."""
-        ...
-
-
-class PlatformResource(Protocol):
-    @property
-    def id(self) -> str:
-        """Identifer."""
-        ...
-
-    @property
-    def name(self) -> str:
-        """Human-readable name of PlatformResource."""
-        ...
-
-
-class PlatformResourceDependency(Protocol):
-    """An execution dependency for a specific Platform Resource."""
-
-    @property
-    def config(self) -> dict:
-        """Dependency data."""
-        ...
-
-    @property
-    def platform_resource_id(self) -> str:
-        """Unique identifer to Platform Resource."""
         ...
 
 
@@ -112,6 +60,20 @@ class ArtifactTypeDependency(Protocol):
         ...
 
 
+class ArtifactBuildRequirements(Protocol):
+    """Artifact requirements for building an artifact."""
+
+    @property
+    def dockerfile(self) -> str | None:
+        """Name of local Dockerfile used to build artifact."""
+        ...
+
+    @property
+    def dockerfile_target(self) -> str:
+        """Dockerfile target used when building artifact."""
+        ...
+
+
 class ArtifactSettingType(StrEnum):
     integer = "integer"
     """32-bit integer."""
@@ -124,6 +86,8 @@ class ArtifactSettingType(StrEnum):
 
 
 class ArtifactExecutionSetting(Protocol):
+    """Single setting exposed as an Environment Variable to service."""
+
     @property
     def alias(self) -> str | None:
         """Alias to use when injecting value."""
@@ -140,44 +104,84 @@ class ArtifactExecutionSetting(Protocol):
         ...
 
 
-class ArtifactExecutionParameters(Protocol):
+class ArtifactExecutionResourceDependency(Protocol):
+    """An execution dependency for a specific Resource."""
+
     @property
-    def configs(self) -> Sequence[ArtifactExecutionSetting]:
-        """Non-sensitive and optional settings."""
+    def config(self) -> dict:
+        """Dependency data."""
         ...
 
     @property
-    def local_resources(self) -> ArtifactExecutionLocalResourceNeeds | None:
-        """Local, machine-level resources for execution."""
+    def resource_id(self) -> str:
+        """Unique identifer to Resource."""
         ...
 
-    # @property
-    # def platform_resources(self) -> Sequence[PlatformResourceDependency]:
-    #     """Platform Resource dependencies required for execution."""
-    #     ...
+
+class ArtifactExecutionVolume(Protocol):
+    """Volume with mounted path exposed as an Environment Variable."""
 
     @property
-    def secrets(self) -> Sequence[ArtifactExecutionSetting]:
-        """Sensitive and required settings."""
+    def id(self) -> str:
+        """Unique identifier of volume."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of volume."""
+        ...
+
+    @property
+    def path(self) -> str:
+        """Path to mount volume."""
+        ...
+
+    @property
+    def persistent(self) -> bool:
+        """Flag indicating volume persists."""
+        ...
+
+
+class ArtifactExecutionRequirements(Protocol):
+    """Artifact's declared requirements for execution."""
+
+    @property
+    def configs(self) -> Collection[ArtifactExecutionSetting]:
+        """Collection of non-sensitive settings optional for artifact execution."""
+        ...
+
+    @property
+    def resources(self) -> Collection[ArtifactExecutionResourceDependency]:
+        """Collection of resource dependencies required for artifact execution."""
+        ...
+
+    @property
+    def secrets(self) -> Collection[ArtifactExecutionSetting]:
+        """Collection of sensitive settings required for artifact execution."""
+        ...
+
+    @property
+    def volumes(self) -> Collection[ArtifactExecutionVolume]:
+        """Collection of volumes required for artifact execution."""
         ...
 
 
 class Artifact(Protocol):
-    """Artifact uniquely identified by `id` and `version` fields."""
+    """Artifact uniquely identified by `id` fields."""
 
     @property
-    def build(self) -> ArtifactBuildParameters | None:
-        """Build parameters."""
+    def build(self) -> ArtifactBuildRequirements | None:
+        """Requirements to build artifact."""
         ...
 
     @property
-    def execution(self) -> ArtifactExecutionParameters | None:
-        """Execution parameters."""
+    def execution(self) -> ArtifactExecutionRequirements | None:
+        """Requirements to execute artifact."""
         ...
 
     @property
     def id(self) -> str:
-        """Identifier of artifact."""
+        """Unique identifier of artifact."""
         ...
 
     @property
@@ -190,8 +194,8 @@ class Bolt(Protocol):
     """Multiple artifacts bundled together with a version and organized under a project."""
 
     @property
-    def artifacts(self) -> Sequence[Artifact]:
-        """Sequence of all Artifacts included in Bolt."""
+    def artifacts(self) -> Collection[Artifact]:
+        """Collection of artifacts included in Bolt."""
         ...
 
     @property
@@ -218,8 +222,8 @@ class BuildableArtifact(Artifact, Protocol):
     """An artifact that can be built."""
 
     @property
-    def build(self) -> ArtifactBuildParameters:
-        """Parameters to build artifact."""
+    def build(self) -> ArtifactBuildRequirements:
+        """Requirements to build artifact."""
         ...
 
 
@@ -229,15 +233,15 @@ class BuildableArtifact(Artifact, Protocol):
 
 
 class ExecutableArtifact(Artifact, Protocol):
-    """An artifact that can be executed."""
+    """An artifact that can be executed in an environment."""
 
     @property
-    def execution(self) -> ArtifactExecutionParameters:
-        """Execution parameters."""
+    def execution(self) -> ArtifactExecutionRequirements:
+        """Requirements to execute artifact."""
         ...
 
 
-class ExecutionEnvironment(Protocol):
+class Environment(Protocol):
     """An environment that can execute artifacts."""
 
     @property
@@ -253,6 +257,90 @@ class ExecutionEnvironment(Protocol):
     @property
     def name(self) -> str:
         """Human-readable name of environment."""
+        ...
+
+
+class EnvironmentArtifactExecutionResources(Protocol):
+    """High-level execution resource requirements."""
+
+    @property
+    def max_cpu(self) -> float | None:
+        """Maximum CPU allowed, measured in cores."""
+        ...
+
+    @property
+    def max_memory(self) -> float | None:
+        """Maximum memory allowed, measured in Gibibytes."""
+        ...
+
+    @property
+    def min_cpu(self) -> float | None:
+        """Minimum CPU required, measured in cores."""
+        ...
+
+    @property
+    def min_memory(self) -> float | None:
+        """Minimum memory required, measured in Gibibytes."""
+        ...
+
+
+class EnvironmentArtifactExecutionScaling(Protocol):
+    @property
+    def max_replicas(self) -> int | None:
+        """Maximum number of replicas."""
+        ...
+
+    @property
+    def min_replicas(self) -> int | None:
+        """Minimum number of replicas."""
+        ...
+
+
+class EnvironmentArtifactExecutionVolume(Protocol):
+    @property
+    def max_capacity(self) -> float | None:
+        """Maximum storage capacity, measures in Gigabytes."""
+        ...
+
+    @property
+    def min_capacity(self) -> float | None:
+        """Minimum storage capacity required, measured in Gigabytes."""
+        ...
+
+    @property
+    def path(self) -> str | None:
+        """Path inside volume to use as mount root."""
+        ...
+
+    @property
+    def type(self) -> str | None:
+        """Specific type of volume to use."""
+        ...
+
+
+class EnvironmentArtifactExecutionParameters(Protocol):
+    """Parameters for executing artifacts in an environment."""
+
+    @property
+    def resources(self) -> EnvironmentArtifactExecutionResources:
+        """Compute resources."""
+        ...
+
+    @property
+    def scaling(self) -> EnvironmentArtifactExecutionScaling:
+        """Scaling parameters."""
+        ...
+
+    @property
+    def volumes(self) -> Mapping[str, EnvironmentArtifactExecutionVolume]:
+        """Volume parameters"""
+        ...
+
+
+class EnvironmentProjectExecutionParameters(Protocol):
+    @property
+    def artifacts(self) -> Mapping[str, EnvironmentArtifactExecutionParameters]:
+        """Mapping of artifact IDs to individual EnvironmentArtifactExecutionParameters."""
         ...
 
 

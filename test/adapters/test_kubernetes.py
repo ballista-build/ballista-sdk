@@ -1,8 +1,7 @@
 import pytest
 
 from ballista.adapters.kubernetes import KubernetesResource, _generate_bolt_resources
-from ballista.adapters.types import ExecutionEnvironment
-from ballista.types import Bolt
+from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
 
 @pytest.fixture
@@ -26,11 +25,11 @@ def kubernetes_adapter():
                                 "labels": {
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
-                                    "app.kubernetes.io/part-of": "example",
+                                    "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
                                 "name": "api",
-                                "namespace": "example-test",
+                                "namespace": "simple-test",
                             },
                             "spec": {
                                 "selector": {"matchLabels": {"app.kubernetes.io/name": "api"}},
@@ -43,11 +42,11 @@ def kubernetes_adapter():
                                         "labels": {
                                             "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/managed-by": "Ballista",
-                                            "app.kubernetes.io/part-of": "example",
+                                            "app.kubernetes.io/part-of": "simple",
                                             "app.kubernetes.io/version": "1",
                                         },
                                         "name": "api",
-                                        "namespace": "example-test",
+                                        "namespace": "simple-test",
                                     },
                                     "spec": {
                                         "containers": [
@@ -67,10 +66,48 @@ def kubernetes_adapter():
                                                     "limits": {
                                                         "memory": "1.0Gi",
                                                     },
-                                                    "requests": {"cpu": 0.25, "memory": "0.1Gi"},
+                                                    "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
                                                 },
+                                                "volumeMounts": [
+                                                    {
+                                                        "mountPath": "/var/volume_a",
+                                                        "name": "volume_a",
+                                                        "subPath": "/custom/path/volume_a",
+                                                    },
+                                                    {
+                                                        "mountPath": "/var/volume_b",
+                                                        "name": "volume_b",
+                                                        "subPath": "/custom/path/volume_b",
+                                                    },
+                                                ],
                                             }
-                                        ]
+                                        ],
+                                        "volumes": [
+                                            {
+                                                "name": "volume_a",
+                                                "persistentVolumeClaim": {"claimName": "api-volume_a"},
+                                            },
+                                            {
+                                                "ephemeral": {
+                                                    "volumeClaimTemplate": {
+                                                        "metadata": {
+                                                            "labels": {
+                                                                "app.kubernetes.io/name": "api",
+                                                                "app.kubernetes.io/managed-by": "Ballista",
+                                                                "app.kubernetes.io/part-of": "simple",
+                                                                "app.kubernetes.io/version": "1",
+                                                            },
+                                                        },
+                                                        "spec": {
+                                                            "accessModes": ["ReadWriteOnce"],
+                                                            "resources": {"requests": {"storage": "0.25G"}},
+                                                            "storageClassName": "generic-storage",
+                                                        },
+                                                    }
+                                                },
+                                                "name": "volume_b",
+                                            },
+                                        ],
                                     },
                                 },
                             },
@@ -82,15 +119,34 @@ def kubernetes_adapter():
                                 "labels": {
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
-                                    "app.kubernetes.io/part-of": "example",
+                                    "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
                                 "name": "api",
-                                "namespace": "example-test",
+                                "namespace": "simple-test",
                             },
                             "spec": {
                                 "selector": {"app.kubernetes.io/name": "api"},
                                 "ports": [{"port": 80, "name": "http", "targetPort": "http"}],
+                            },
+                        },
+                        {
+                            "apiVersion": "v1",
+                            "kind": "PersistentVolumeClaim",
+                            "metadata": {
+                                "labels": {
+                                    "app.kubernetes.io/name": "api",
+                                    "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/part-of": "simple",
+                                    "app.kubernetes.io/version": "1",
+                                },
+                                "name": "api-volume_a",
+                                "namespace": "simple-test",
+                            },
+                            "spec": {
+                                "accessModes": ["ReadWriteMany"],
+                                "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.25G"}},
+                                "storageClassName": "generic-storage",
                             },
                         },
                     ]
@@ -104,9 +160,13 @@ def kubernetes_adapter():
 def test_resource_generation(
     bolt: Bolt,
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
-    execution_environment: ExecutionEnvironment,
+    environment: Environment,
+    environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
     executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert resources == _generate_bolt_resources(
-        artifacts=executable_artifacts, bolt=bolt, environment=execution_environment
+        artifacts=executable_artifacts,
+        bolt=bolt,
+        environment=environment,
+        execution_parameters=environment_artifact_execution_parameters,
     )
