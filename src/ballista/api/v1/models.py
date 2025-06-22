@@ -1,8 +1,12 @@
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, ClassVar, Literal
 
 from pydantic import BaseModel, Field
 
 from ballista.types import ArtifactSettingType
+
+
+class BaseOneofModel(BaseModel, json_schema_extra={"maxProperties": 1, "minProperties": 1}):
+    pass
 
 
 class Resource(BaseModel, extra="forbid", frozen=True):
@@ -44,10 +48,63 @@ class ArtifactExecutionConfig(BaseArtifactExecutionSetting, title="Artifact Exec
     pass
 
 
+class ArtifactExecutionExecProbe(BaseModel, extra="forbid", frozen=True):
+    """Probe that executes a list of commands."""
+
+    commands: Annotated[list[str], Field(description="List of commands executed.")]
+
+    type: ClassVar[Literal["exec"]] = "exec"
+
+
+class BaseArtifactExecutionPortProbe(BaseModel):
+    port: Annotated[int | None, Field(description="Port number to probe.")] = None
+    service_id: Annotated[
+        str | None, Field(description="Unique identifier of service to probe.", title="Service ID")
+    ] = None
+
+
+class ArtifactExecutionPortProbe(BaseArtifactExecutionPortProbe, extra="forbid", frozen=True):
+    type: ClassVar[Literal["port"]] = "port"
+
+
+class ArtifactExecutionGRPCProbe(BaseArtifactExecutionPortProbe, extra="forbid", frozen=True):
+    """Probe that uses the standard GRPC Healthcheck V1 service."""
+
+    type: ClassVar[Literal["grpc"]] = "grpc"
+
+
+class ArtifactExecutionHTTPProbe(BaseArtifactExecutionPortProbe, extra="forbid", frozen=True):
+    """Probe that uses HTTP."""
+
+    path: Annotated[str | None, Field(description="HTTP path to probe.")] = None
+
+    type: ClassVar[Literal["http"]] = "http"
+
+
+class ArtifactExecutionProbe(BaseOneofModel):
+    exec: Annotated[ArtifactExecutionExecProbe | None, Field()] = None
+    grpc: Annotated[ArtifactExecutionGRPCProbe | None, Field()] = None
+    http: Annotated[ArtifactExecutionHTTPProbe | None, Field()] = None
+    port: Annotated[ArtifactExecutionPortProbe | None, Field()] = None
+
+
+class ArtifactExecutionHealthchecks(BaseModel):
+    alive: ArtifactExecutionProbe | None = None
+    ready: ArtifactExecutionProbe | None = None
+    started: ArtifactExecutionProbe | None = None
+
+
 class ArtifactExecutionSecret(BaseArtifactExecutionSetting, title="Artifact Execution Secret"):
     """ArtifactExecution secret value. Sensitive and required."""
 
     pass
+
+
+class ArtifactExecutionService(BaseModel):
+    """A network-connected port with unique identifier."""
+
+    id: Annotated[str, Field(description="Unique identifier of the service.", title="Service ID")]
+    port: Annotated[int, Field(description="Port number connected by the service.")]
 
 
 class ArtifactExecutionVolume(BaseModel, extra="forbid", frozen=True, title="Artifact Execution Volume"):
@@ -64,12 +121,21 @@ class ArtifactExecutionRequirements(BaseModel, extra="forbid", frozen=True, titl
         list[ArtifactExecutionConfig], Field(description="List of non-sensitive settings optional for execution.")
     ] = []
 
+    healthchecks: Annotated[
+        ArtifactExecutionHealthchecks | None, Field(description="Healthchecks to ensure correct execution.")
+    ] = None
+
     resources: Annotated[
         list[ArtifactExecutionResourceDependency], Field(description="List of Resources required for execution.")
     ] = []
 
     secrets: Annotated[
         list[ArtifactExecutionSecret], Field(description="List of sensitive settings required for execution.")
+    ] = []
+
+    services: Annotated[
+        list[ArtifactExecutionService],
+        Field(description="List of services required for execution to process."),
     ] = []
 
     volumes: Annotated[
@@ -90,9 +156,7 @@ class DockerImageArtifactTypeDependency(BaseModel, extra="forbid", frozen=True):
 
 # TODO: Do fancier setup here later
 class ArtifactTypeDependency(DockerImageArtifactTypeDependency):
-    @property
-    def artifact_type_id(self) -> str:
-        return "docker_image"
+    artifact_type_id: ClassVar[Literal["docker_image"]] = "docker_image"
 
     @property
     def config(self) -> dict[str, Any]:
@@ -185,5 +249,9 @@ class EnvironmentArtifactExecutionResources(BaseModel, extra="forbid", frozen=Tr
 
 
 class EnvironmentArtifactExecutionScaling(BaseModel, extra="forbid", frozen=True):
-    max_replicas: int | None = None
-    min_replicas: int | None = None
+    max_replicas: Annotated[
+        int | None, Field(description="Maximum number of replicas of executing artifact.", gt=0)
+    ] = None
+    min_replicas: Annotated[
+        int | None, Field(description="Minimum number of replicas of executing artifact.", ge=0)
+    ] = None

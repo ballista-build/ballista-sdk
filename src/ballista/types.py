@@ -1,6 +1,6 @@
 from collections.abc import Collection, Mapping
 from enum import StrEnum
-from typing import Any, Protocol
+from typing import Any, ClassVar, Literal, Protocol
 
 
 class Resource(Protocol):
@@ -118,6 +118,73 @@ class ArtifactExecutionResourceDependency(Protocol):
         ...
 
 
+class ArtifactExecutionExecProbe(Protocol):
+    """Probe that executes a collection of commands. A return code of 0 indicates a successful probe. A return code of anything else indicates a failure."""
+
+    @property
+    def commands(self) -> Collection[str]: ...
+
+    type: ClassVar[Literal["exec"]] = "exec"
+
+
+class BaseArtifactExecutionPortProbe(Protocol):
+    @property
+    def port(self) -> int | None: ...
+
+    @property
+    def service_id(self) -> str | None: ...
+
+
+class ArtifactExecutionGRPCProbe(BaseArtifactExecutionPortProbe, Protocol):
+    """Probe that executes a GRPC Health Checking Protocol request."""
+
+    type: ClassVar[Literal["grpc"]] = "grpc"
+
+
+class ArtifactExecutionHTTPProbe(BaseArtifactExecutionPortProbe, Protocol):
+    """Probe that executes an HTTP GET request to the path "/healthz". A status of 200 indicates a successful probe. Any other status indicates a failure."""
+
+    @property
+    def path(self) -> str | None:
+        """A specific HTTP path for the probe request."""
+        ...
+
+    type: ClassVar[Literal["http"]] = "http"
+
+
+class ArtifactExecutionPortProbe(BaseArtifactExecutionPortProbe, Protocol):
+    """Probe that executes a TCP socket connection. A connection indicates a successful probe. Inability to connect indicates a failure."""
+
+    type: ClassVar[Literal["port"]] = "port"
+
+
+ArtifactExecutionProbe = (
+    ArtifactExecutionExecProbe | ArtifactExecutionGRPCProbe | ArtifactExecutionHTTPProbe | ArtifactExecutionPortProbe
+)
+"""Probe that makes a check against an executing artifact."""
+
+
+class ArtifactExecutionHealthChecks(Protocol):
+    @property
+    def alive(self) -> ArtifactExecutionProbe | None: ...
+
+    @property
+    def ready(self) -> ArtifactExecutionProbe | None: ...
+
+    @property
+    def started(self) -> ArtifactExecutionProbe | None: ...
+
+
+class ArtifactExecutionService(Protocol):
+    """Networked communication on a specific port."""
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def port(self) -> int: ...
+
+
 class ArtifactExecutionVolume(Protocol):
     """Volume with mounted path exposed as an Environment Variable."""
 
@@ -151,6 +218,11 @@ class ArtifactExecutionRequirements(Protocol):
         ...
 
     @property
+    def healthchecks(self) -> ArtifactExecutionHealthChecks:
+        """Healthchecks to ensure correct execution."""
+        ...
+
+    @property
     def resources(self) -> Collection[ArtifactExecutionResourceDependency]:
         """Collection of resource dependencies required for artifact execution."""
         ...
@@ -158,6 +230,11 @@ class ArtifactExecutionRequirements(Protocol):
     @property
     def secrets(self) -> Collection[ArtifactExecutionSetting]:
         """Collection of sensitive settings required for artifact execution."""
+        ...
+
+    @property
+    def services(self) -> Collection[ArtifactExecutionService]:
+        """Collection of services required for execution to process."""
         ...
 
     @property

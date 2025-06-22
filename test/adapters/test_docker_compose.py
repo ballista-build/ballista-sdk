@@ -25,23 +25,19 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
                         deploy={
                             "resources": {
                                 "limits": {"memory": "1.0g"},
-                                "reservations": {"cpus": "0.25g", "memory": "0.1g"},
+                                "reservations": {"cpus": 0.25, "memory": "0.1g"},
                             }
                         },
+                        healthcheck=None,
                         image="hello-world:latest",
                         networks=[],
-                        ports=[],
+                        ports=[{"name": "http", "target": 80}],
                         volumes=[
                             DockerComposeServiceVolume(
                                 source="volume_a",
                                 target="/var/volume_a",
                                 type="volume",
                                 volume={"subpath": "/custom/path"},
-                            ),
-                            DockerComposeServiceVolume(
-                                target="/var/volume_b",
-                                tmpfs={"size": "0.25G"},
-                                type="tmpfs",
                             ),
                         ],
                     )

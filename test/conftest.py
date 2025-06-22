@@ -4,7 +4,10 @@ import pytest
 
 from ballista.types import (
     Artifact,
+    ArtifactExecutionHealthChecks,
+    ArtifactExecutionHTTPProbe,
     ArtifactExecutionRequirements,
+    ArtifactExecutionService,
     ArtifactExecutionSetting,
     ArtifactExecutionVolume,
     ArtifactTypeDependency,
@@ -20,7 +23,7 @@ from ballista.types import (
 
 @pytest.fixture(scope="session")
 def project():
-    return Mock(Project, id="simple", name="Simple Project")
+    return Mock(Project, id="typical", name="Typical Project")
 
 
 @pytest.fixture(scope="session")
@@ -28,41 +31,79 @@ def docker_image_artifact_type_dependency():
     return Mock(ArtifactTypeDependency, config={"image": "hello-world:latest"}, id="docker_image")
 
 
-@pytest.fixture(scope="session", params=["empty", "simple"])
+@pytest.fixture(scope="session", params=["empty", "simple", "typical"])
 def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDependency, request):
-    if request.param == "empty":
-        return Mock(Bolt, artifacts=[], project_id=project.id, version="1")
-
-    elif request.param == "simple":
-        # Name cannot be mocked via the constructor.
-        volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
-        volume_a.name = "Volume A"
-        volume_b = Mock(ArtifactExecutionVolume, id="volume_b", path="/var/volume_b", persistent=False)
-        volume_b.name = "Volume B"
-
-        artifacts = [
-            Mock(
-                Artifact,
-                build=None,
-                execution=Mock(
-                    ArtifactExecutionRequirements,
-                    configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
-                    secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
-                    volumes=[volume_a, volume_b],
-                ),
-                id="api",
-                type=docker_image_artifact_type_dependency,
+    match request.param:
+        case "empty":
+            # An empty project, having no artifacts. Invalid.
+            return Mock(Bolt, artifacts=[], project_id=project.id, version="1")
+        case "simple":
+            # A simple project with one ExecutableArtifact
+            # Name cannot be mocked via the constructor.
+            volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
+            volume_a.name = "Volume A"
+            artifacts = [
+                Mock(
+                    Artifact,
+                    build=None,
+                    execution=Mock(
+                        ArtifactExecutionRequirements,
+                        configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
+                        healthchecks=Mock(
+                            ArtifactExecutionHealthChecks,
+                            alive=None,
+                            ready=Mock(
+                                ArtifactExecutionHTTPProbe, path=None, port=None, service_id="http", type="http"
+                            ),
+                            started=None,
+                        ),
+                        secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
+                        services=[Mock(ArtifactExecutionService, id="http", port=80)],
+                        volumes=[volume_a],
+                    ),
+                    id="api",
+                    type=docker_image_artifact_type_dependency,
+                )
+            ]
+            return Mock(
+                Bolt,
+                artifacts=artifacts,
+                project_id="simple",
+                version="1",
             )
-        ]
-        return Mock(
-            Bolt,
-            artifacts=artifacts,
-            project_id=project.id,
-            version="1",
-        )
+        case "typical":
+            # A typical project with two artifacts using various dependencies
+            # Name cannot be mocked via the constructor.
+            volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
+            volume_a.name = "Volume A"
+            volume_b = Mock(ArtifactExecutionVolume, id="volume_b", path="/var/volume_b", persistent=False)
+            volume_b.name = "Volume B"
 
-    elif request.param == "platform_resource":
-        pass
+            artifacts = [
+                Mock(
+                    Artifact,
+                    build=None,
+                    execution=Mock(
+                        ArtifactExecutionRequirements,
+                        configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
+                        secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
+                        services=[],
+                        volumes=[volume_a, volume_b],
+                    ),
+                    id="api",
+                    type=docker_image_artifact_type_dependency,
+                ),
+                Mock(Artifact, build=None, execution=None, id="frontend", type=docker_image_artifact_type_dependency),
+            ]
+            return Mock(
+                Bolt,
+                artifacts=artifacts,
+                project_id="typical",
+                version="1",
+            )
+        case "complex":
+            # A complex project with multiple artifacts and complicated dependencies
+            pass
 
 
 @pytest.fixture(scope="session")
