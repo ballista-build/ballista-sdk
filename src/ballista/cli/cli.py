@@ -52,6 +52,9 @@ def get_local_bolt(origin: str) -> Bolt:
     with open(filename, "r") as f:
         ballista_yaml = yaml.load(f, Loader=yaml.Loader)
 
+    if ballista_yaml is None:
+        raise ValueError()
+
     api_version = ballista_yaml.get("api_version")
     bolt_service = None
 
@@ -73,10 +76,11 @@ def get_local_environment() -> tuple[Environment, EnvironmentExecutionAdapter, E
 
     environment = LocalEnvironment(hostname="localhost", id="local", name="Local")
 
+    # TODO: Need a mechanism to get defaults for these
     execution_parameters = LocalEnvironmentArtifactExecutionParameters(
         resources=LocalEnvironmentArtifactExecutionResources(),
         scaling=LocalEnvironmentArtifactExecutionScaling(),
-        volumes={},
+        volumes={"postgres": LocalEnvironmentArtifactExecutionVolume(min_capacity=0.1)},
     )
 
     return environment, adapter, execution_parameters

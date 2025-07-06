@@ -1,12 +1,12 @@
 from collections.abc import Collection, Mapping
 from enum import StrEnum
-from typing import Any, ClassVar, Literal, Protocol
+from typing import Any, Protocol
 
 
 class Resource(Protocol):
     @property
     def id(self) -> str:
-        """Identifer."""
+        """Identifier."""
         ...
 
     @property
@@ -124,8 +124,6 @@ class ArtifactExecutionExecProbe(Protocol):
     @property
     def commands(self) -> Collection[str]: ...
 
-    type: ClassVar[Literal["exec"]] = "exec"
-
 
 class BaseArtifactExecutionPortProbe(Protocol):
     @property
@@ -138,7 +136,7 @@ class BaseArtifactExecutionPortProbe(Protocol):
 class ArtifactExecutionGRPCProbe(BaseArtifactExecutionPortProbe, Protocol):
     """Probe that executes a GRPC Health Checking Protocol request."""
 
-    type: ClassVar[Literal["grpc"]] = "grpc"
+    pass
 
 
 class ArtifactExecutionHTTPProbe(BaseArtifactExecutionPortProbe, Protocol):
@@ -149,19 +147,27 @@ class ArtifactExecutionHTTPProbe(BaseArtifactExecutionPortProbe, Protocol):
         """A specific HTTP path for the probe request."""
         ...
 
-    type: ClassVar[Literal["http"]] = "http"
-
 
 class ArtifactExecutionPortProbe(BaseArtifactExecutionPortProbe, Protocol):
     """Probe that executes a TCP socket connection. A connection indicates a successful probe. Inability to connect indicates a failure."""
 
-    type: ClassVar[Literal["port"]] = "port"
+    pass
 
 
-ArtifactExecutionProbe = (
-    ArtifactExecutionExecProbe | ArtifactExecutionGRPCProbe | ArtifactExecutionHTTPProbe | ArtifactExecutionPortProbe
-)
-"""Probe that makes a check against an executing artifact."""
+class ArtifactExecutionProbe(Protocol):
+    """Probe that makes a check against an executing artifact."""
+
+    @property
+    def exec(self) -> ArtifactExecutionExecProbe | None: ...
+
+    @property
+    def grpc(self) -> ArtifactExecutionGRPCProbe | None: ...
+
+    @property
+    def http(self) -> ArtifactExecutionHTTPProbe | None: ...
+
+    @property
+    def port(self) -> ArtifactExecutionPortProbe | None: ...
 
 
 class ArtifactExecutionHealthChecks(Protocol):

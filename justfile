@@ -1,5 +1,5 @@
-test:
-    uv run coverage run -m pytest -s -vvvv
+test path=".":
+    uv run coverage run -m pytest -s -vvvv {{path}}
 
 coverage:
     uv run coverage run -m pytest

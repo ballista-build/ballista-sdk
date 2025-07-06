@@ -1,14 +1,11 @@
 from collections.abc import Collection
-from typing import Any, TypedDict, cast
+from typing import Any, TypedDict
 
 import yaml
 from kubernetes import client, config, utils
 
 from ballista.adapters.types import EnvironmentExecutionAdapter
 from ballista.types import (
-    ArtifactExecutionExecProbe,
-    ArtifactExecutionHTTPProbe,
-    ArtifactExecutionPortProbe,
     ArtifactExecutionProbe,
     ArtifactExecutionService,
     ArtifactType,
@@ -49,33 +46,27 @@ def _generate_bolt_resources(
     return k8s_resources, artifact_resources
 
 
-def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactExecutionService]) -> dict:
-    if probe.type == "exec":
-        probe = cast(ArtifactExecutionExecProbe, probe)
-        return {"exec": {"command": probe.commands}}
+def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactExecutionService]) -> dict | None:
+    if probe.exec:
+        return {"exec": {"command": probe.exec.commands}}
 
-    probe = cast(ArtifactExecutionPortProbe, probe)
+    # Get port common in grpc, http, and port probes
+    common = probe.grpc or probe.http or probe.port
+    if common is None:
+        raise ValueError("WTF")
 
-    port = probe.port
-    service: ArtifactExecutionService | None = None
-    if probe.service_id:
-        service = services.get(probe.service_id)
+    service = services.get(common.service_id) if common.service_id else None
+    port = common.port
 
-    if probe.type == "grpc":
-        if service:
-            # GRPC probes have to use integers
-            port = service.port
+    if probe.grpc:
+        # GRPC cannot use a named port
+        return {"grpc": {"port": service.port if service else port}}
 
-        return {"grpc": {"port": port}}
+    if probe.http:
+        return {"httpGet": {"path": probe.http.path or "/healthz", "port": service.id if service else port}}
 
-    if service:
-        port = service.id
-
-    if probe.type == "http":
-        probe = cast(ArtifactExecutionHTTPProbe, probe)
-        return {"httpGet": {"path": probe.path or "/healthz", "port": port}}
-
-    return {"tcpSocket": {"port": port}}
+    if probe.port:
+        return {"tcpSocket": {"port": service.id if service else port}}
 
 
 def _generate_artifact_resources(
@@ -151,14 +142,14 @@ def _generate_artifact_resources(
 
     # Healthchecks; processed after Services since they can refer to them
     if healthchecks := artifact.execution.healthchecks:
-        if ready := healthchecks.ready:
-            container["readinessProbe"] = _generate_probe(ready, services)
+        if (ready := healthchecks.ready) and (probe := _generate_probe(ready, services)):
+            container["readinessProbe"] = probe
 
-        if alive := healthchecks.alive:
-            container["livenessProbe"] = _generate_probe(alive, services)
+        if (alive := healthchecks.alive) and (probe := _generate_probe(alive, services)):
+            container["livenessProbe"] = probe
 
-        if started := healthchecks.started:
-            container["startupProbe"] = _generate_probe(started, services)
+        if (started := healthchecks.started) and (probe := _generate_probe(started, services)):
+            container["startupProbe"] = probe
 
     if env:
         container["env"] = env

@@ -6,6 +6,7 @@ from ballista.types import (
     Artifact,
     ArtifactExecutionHealthChecks,
     ArtifactExecutionHTTPProbe,
+    ArtifactExecutionProbe,
     ArtifactExecutionRequirements,
     ArtifactExecutionService,
     ArtifactExecutionSetting,
@@ -53,7 +54,11 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                             ArtifactExecutionHealthChecks,
                             alive=None,
                             ready=Mock(
-                                ArtifactExecutionHTTPProbe, path=None, port=None, service_id="http", type="http"
+                                ArtifactExecutionProbe,
+                                exec=None,
+                                grpc=None,
+                                http=Mock(ArtifactExecutionHTTPProbe, path=None, port=None, service_id="http"),
+                                port=None,
                             ),
                             started=None,
                         ),
