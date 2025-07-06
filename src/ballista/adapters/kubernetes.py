@@ -53,7 +53,7 @@ def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactE
     # Get port common in grpc, http, and port probes
     common = probe.grpc or probe.http or probe.port
     if common is None:
-        raise ValueError("WTF")
+        return None
 
     service = services.get(common.service_id) if common.service_id else None
     port = common.port
