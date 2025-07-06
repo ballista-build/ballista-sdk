@@ -415,6 +415,11 @@ class EnvironmentArtifactExecutionParameters(Protocol):
         ...
 
     @property
+    def default_volume(self) -> EnvironmentArtifactExecutionVolume:
+        """Default volume parameters."""
+        ...
+
+    @property
     def volumes(self) -> Mapping[str, EnvironmentArtifactExecutionVolume]:
         """Volume parameters"""
         ...

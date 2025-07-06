@@ -225,7 +225,8 @@ def _generate_artifact_resources(
             volume_claim = {}
 
             # Claim resources
-            if execution_volume := execution_parameters.volumes.get(volume.id):
+            # TODO: This isn't great! There should be a better way to handle defaults.
+            if execution_volume := execution_parameters.volumes.get(volume.id, execution_parameters.default_volume):
                 claim_resources = {}
                 if execution_volume.min_capacity:
                     claim_resources["requests"] = {"storage": f"{execution_volume.min_capacity}G"}
