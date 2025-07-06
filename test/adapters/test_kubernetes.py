@@ -23,8 +23,8 @@ def kubernetes_adapter():
                             "kind": "Deployment",
                             "metadata": {
                                 "labels": {
-                                    "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
@@ -40,8 +40,8 @@ def kubernetes_adapter():
                                 "template": {
                                     "metadata": {
                                         "labels": {
-                                            "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/managed-by": "Ballista",
+                                            "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/part-of": "simple",
                                             "app.kubernetes.io/version": "1",
                                         },
@@ -52,7 +52,6 @@ def kubernetes_adapter():
                                         "containers": [
                                             {
                                                 "env": [
-                                                    {"name": "HTTP_SERVICE_PATH", "value": "/"},
                                                     {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                                 ],
                                                 "envFrom": [
@@ -62,22 +61,18 @@ def kubernetes_adapter():
                                                 "image": "hello-world:latest",
                                                 "name": "api",
                                                 "ports": [{"containerPort": 80, "name": "http"}],
+                                                "readinessProbe": {"httpGet": {"path": "/healthz", "port": "http"}},
                                                 "resources": {
                                                     "limits": {
-                                                        "memory": "1.0Gi",
+                                                        "memory": "1.0G",
                                                     },
-                                                    "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
+                                                    "requests": {"cpu": "0.25G", "memory": "0.1G"},
                                                 },
                                                 "volumeMounts": [
                                                     {
                                                         "mountPath": "/var/volume_a",
                                                         "name": "volume_a",
                                                         "subPath": "/custom/path/volume_a",
-                                                    },
-                                                    {
-                                                        "mountPath": "/var/volume_b",
-                                                        "name": "volume_b",
-                                                        "subPath": "/custom/path/volume_b",
                                                     },
                                                 ],
                                             }
@@ -86,26 +81,6 @@ def kubernetes_adapter():
                                             {
                                                 "name": "volume_a",
                                                 "persistentVolumeClaim": {"claimName": "api-volume_a"},
-                                            },
-                                            {
-                                                "ephemeral": {
-                                                    "volumeClaimTemplate": {
-                                                        "metadata": {
-                                                            "labels": {
-                                                                "app.kubernetes.io/name": "api",
-                                                                "app.kubernetes.io/managed-by": "Ballista",
-                                                                "app.kubernetes.io/part-of": "simple",
-                                                                "app.kubernetes.io/version": "1",
-                                                            },
-                                                        },
-                                                        "spec": {
-                                                            "accessModes": ["ReadWriteOnce"],
-                                                            "resources": {"requests": {"storage": "0.25G"}},
-                                                            "storageClassName": "generic-storage",
-                                                        },
-                                                    }
-                                                },
-                                                "name": "volume_b",
                                             },
                                         ],
                                     },
@@ -117,12 +92,12 @@ def kubernetes_adapter():
                             "kind": "Service",
                             "metadata": {
                                 "labels": {
-                                    "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
-                                "name": "api",
+                                "name": "api-http",
                                 "namespace": "simple-test",
                             },
                             "spec": {
@@ -135,8 +110,8 @@ def kubernetes_adapter():
                             "kind": "PersistentVolumeClaim",
                             "metadata": {
                                 "labels": {
-                                    "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
                                 },
@@ -145,7 +120,7 @@ def kubernetes_adapter():
                             },
                             "spec": {
                                 "accessModes": ["ReadWriteMany"],
-                                "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.25G"}},
+                                "resources": {"limits": {"storage": "1.0Gi"}, "requests": {"storage": "0.01Gi"}},
                                 "storageClassName": "generic-storage",
                             },
                         },

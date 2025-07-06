@@ -28,11 +28,12 @@ class DockerComposeServiceVolume(BaseModel):
 
 class DockerComposeService(BaseModel):
     build: dict[str, Any] | None = None
-    deploy: dict[str, Any]
+    deploy: dict[str, Any] | None = None
     develop: dict[str, Any] | None = None
+    healthcheck: dict[str, Any] | None = None
     image: str | None = None
-    networks: list[str]
-    ports: list[str | dict[str, Any]]
+    networks: list[str] = []
+    ports: list[dict[str, Any]] = []
     volumes: list[DockerComposeServiceVolume] = []
 
 
@@ -81,9 +82,9 @@ def _generate_docker_compose_service_from_artifact(
     execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
-    ports = []
 
-    deploy = {}
+    service = DockerComposeService()
+
     if execution_resources := execution_parameters.resources:
         resource_max = {}
         resource_min = {}
@@ -96,9 +97,24 @@ def _generate_docker_compose_service_from_artifact(
         if min_memory := execution_resources.min_memory:
             resource_min["memory"] = f"{min_memory}g"
 
-        deploy["resources"] = {"limits": resource_max, "reservations": resource_min}
+        service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
 
-    service = DockerComposeService(deploy=deploy, networks=[], ports=ports)
+    # Services
+    services = {}
+    if execution_services := artifact.execution.services:
+        for execution_service in execution_services:
+            services[execution_service.id] = execution_service
+            service.ports.append({"name": execution_service.id, "target": execution_service.port})
+
+    # Healthchecks; processed after services as they can depend on them.
+    if healthchecks := artifact.execution.healthchecks:
+        # Docker Compose only supports a single healthcheck
+        probe = healthchecks.ready or healthchecks.alive or healthchecks.started
+
+        if probe:
+            # TODO: Implement this
+            # service.healthcheck = _generate_healthcheck(probe, services)
+            pass
 
     if build := artifact.build:
         context = "."
@@ -126,15 +142,17 @@ def _generate_docker_compose_service_from_artifact(
                     )
                 )
             else:
-                tmpfs_options = None
-                if execution_volume and execution_volume.min_capacity:
-                    tmpfs_options = {"size": f"{execution_volume.min_capacity}G"}
+                tmpfs_options = {"size": f"{volume.capacity}G"}
 
                 service.volumes.append(
                     DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")
                 )
 
     return service
+
+
+def _generate_healthcheck(probe, services) -> dict:
+    return {}
 
 
 class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):

@@ -6,7 +6,7 @@ from typing import Any, Protocol
 class Resource(Protocol):
     @property
     def id(self) -> str:
-        """Identifer."""
+        """Identifier."""
         ...
 
     @property
@@ -118,8 +118,86 @@ class ArtifactExecutionResourceDependency(Protocol):
         ...
 
 
+class ArtifactExecutionExecProbe(Protocol):
+    """Probe that executes a collection of commands. A return code of 0 indicates a successful probe. A return code of anything else indicates a failure."""
+
+    @property
+    def commands(self) -> Collection[str]: ...
+
+
+class BaseArtifactExecutionPortProbe(Protocol):
+    @property
+    def port(self) -> int | None: ...
+
+    @property
+    def service_id(self) -> str | None: ...
+
+
+class ArtifactExecutionGRPCProbe(BaseArtifactExecutionPortProbe, Protocol):
+    """Probe that executes a GRPC Health Checking Protocol request."""
+
+    pass
+
+
+class ArtifactExecutionHTTPProbe(BaseArtifactExecutionPortProbe, Protocol):
+    """Probe that executes an HTTP GET request to the path "/healthz". A status of 200 indicates a successful probe. Any other status indicates a failure."""
+
+    @property
+    def path(self) -> str | None:
+        """A specific HTTP path for the probe request."""
+        ...
+
+
+class ArtifactExecutionPortProbe(BaseArtifactExecutionPortProbe, Protocol):
+    """Probe that executes a TCP socket connection. A connection indicates a successful probe. Inability to connect indicates a failure."""
+
+    pass
+
+
+class ArtifactExecutionProbe(Protocol):
+    """Probe that makes a check against an executing artifact."""
+
+    @property
+    def exec(self) -> ArtifactExecutionExecProbe | None: ...
+
+    @property
+    def grpc(self) -> ArtifactExecutionGRPCProbe | None: ...
+
+    @property
+    def http(self) -> ArtifactExecutionHTTPProbe | None: ...
+
+    @property
+    def port(self) -> ArtifactExecutionPortProbe | None: ...
+
+
+class ArtifactExecutionHealthChecks(Protocol):
+    @property
+    def alive(self) -> ArtifactExecutionProbe | None: ...
+
+    @property
+    def ready(self) -> ArtifactExecutionProbe | None: ...
+
+    @property
+    def started(self) -> ArtifactExecutionProbe | None: ...
+
+
+class ArtifactExecutionService(Protocol):
+    """Networked communication on a specific port."""
+
+    @property
+    def id(self) -> str: ...
+
+    @property
+    def port(self) -> int: ...
+
+
 class ArtifactExecutionVolume(Protocol):
     """Volume with mounted path exposed as an Environment Variable."""
+
+    @property
+    def capacity(self) -> float:
+        """Minimum storage capacity required, measured in Gibibytes."""
+        ...
 
     @property
     def id(self) -> str:
@@ -151,6 +229,11 @@ class ArtifactExecutionRequirements(Protocol):
         ...
 
     @property
+    def healthchecks(self) -> ArtifactExecutionHealthChecks:
+        """Healthchecks to ensure correct execution."""
+        ...
+
+    @property
     def resources(self) -> Collection[ArtifactExecutionResourceDependency]:
         """Collection of resource dependencies required for artifact execution."""
         ...
@@ -158,6 +241,11 @@ class ArtifactExecutionRequirements(Protocol):
     @property
     def secrets(self) -> Collection[ArtifactExecutionSetting]:
         """Collection of sensitive settings required for artifact execution."""
+        ...
+
+    @property
+    def services(self) -> Collection[ArtifactExecutionService]:
+        """Collection of services required for execution to process."""
         ...
 
     @property
@@ -300,11 +388,6 @@ class EnvironmentArtifactExecutionVolume(Protocol):
     @property
     def max_capacity(self) -> float | None:
         """Maximum storage capacity, measures in Gigabytes."""
-        ...
-
-    @property
-    def min_capacity(self) -> float | None:
-        """Minimum storage capacity required, measured in Gigabytes."""
         ...
 
     @property

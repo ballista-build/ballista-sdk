@@ -6,6 +6,8 @@ from kubernetes import client, config, utils
 
 from ballista.adapters.types import EnvironmentExecutionAdapter
 from ballista.types import (
+    ArtifactExecutionProbe,
+    ArtifactExecutionService,
     ArtifactType,
     Bolt,
     Environment,
@@ -44,6 +46,29 @@ def _generate_bolt_resources(
     return k8s_resources, artifact_resources
 
 
+def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactExecutionService]) -> dict | None:
+    if probe.exec:
+        return {"exec": {"command": probe.exec.commands}}
+
+    # Get port common in grpc, http, and port probes
+    common = probe.grpc or probe.http or probe.port
+    if common is None:
+        return None
+
+    service = services.get(common.service_id) if common.service_id else None
+    port = common.port
+
+    if probe.grpc:
+        # GRPC cannot use a named port
+        return {"grpc": {"port": service.port if service else port}}
+
+    if probe.http:
+        return {"httpGet": {"path": probe.http.path or "/healthz", "port": service.id if service else port}}
+
+    if probe.port:
+        return {"tcpSocket": {"port": service.id if service else port}}
+
+
 def _generate_artifact_resources(
     bolt: Bolt,
     artifact: ExecutableArtifact,
@@ -69,32 +94,9 @@ def _generate_artifact_resources(
     env = []
     env_from = []
 
-    container = {}
-
-    # TODO: Service types
-    services = [{"container_port": 80, "name": "http", "external_host": None, "external_path": None, "target_port": 80}]
-    env.extend([{"name": "HTTP_SERVICE_PATH", "value": "/"}, {"name": "HTTP_SERVICE_PORT", "value": "80"}])
-
     container = {
-        "env": env,
         "name": service_name,
         "image": artifact.type.config.get("image", f"{artifact.id}:{bolt.version}"),
-        "ports": [
-            {
-                "containerPort": s["container_port"],
-                "name": s["name"],
-            }
-            for s in services
-        ],
-    }
-
-    pod_template = {
-        "metadata": metadata,
-        "spec": {  # PodTemplateSpec
-            "containers": [  # Container
-                container
-            ],
-        },
     }
 
     # Configs
@@ -107,11 +109,11 @@ def _generate_artifact_resources(
         if execution_resources.min_cpu:
             pod_resources["requests"]["cpu"] = f"{execution_resources.min_cpu}G"
         if execution_resources.min_memory:
-            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}Gi"
+            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}G"
         if execution_resources.max_cpu:
             pod_resources["limits"]["cpu"] = f"{execution_resources.max_cpu}G"
         if execution_resources.max_memory:
-            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}Gi"
+            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}G"
 
         container["resources"] = pod_resources
 
@@ -123,15 +125,48 @@ def _generate_artifact_resources(
     if has_secrets:
         env_from.append({"secretRef": {"name": service_env_name, "optional": False}})
 
+    # Services
+    services = {}
+    if execution_services := artifact.execution.services:
+        ports = []
+        for service in execution_services:
+            services[service.id] = service
+
+            key = f"{service.id.upper()}_SERVICE"
+
+            ports.append({"containerPort": service.port, "name": service.id})
+
+            env.append({"name": f"{key}_PORT", "value": str(service.port)})
+
+        container["ports"] = ports
+
+    # Healthchecks; processed after Services since they can refer to them
+    if healthchecks := artifact.execution.healthchecks:
+        if (ready := healthchecks.ready) and (probe := _generate_probe(ready, services)):
+            container["readinessProbe"] = probe
+
+        if (alive := healthchecks.alive) and (probe := _generate_probe(alive, services)):
+            container["livenessProbe"] = probe
+
+        if (started := healthchecks.started) and (probe := _generate_probe(started, services)):
+            container["startupProbe"] = probe
+
+    if env:
+        container["env"] = env
     if env_from:
         container["envFrom"] = env_from
 
     # TODO
-    # env
-    # probes
     # securityContext
 
     # Generate Kubernetes resource definitions
+    pod_spec = {"containers": [container]}
+
+    pod_template = {
+        "metadata": metadata,
+        "spec": pod_spec,
+    }
+
     # Deployment
     k8s_resources.append(
         {
@@ -151,23 +186,29 @@ def _generate_artifact_resources(
         },
     )
 
-    # Service
-    k8s_resources.append(
-        {
-            "apiVersion": "v1",
-            "kind": "Service",
-            "metadata": metadata,
-            "spec": {
-                "selector": {"app.kubernetes.io/name": service_name},
-                "ports": [{"port": s["target_port"], "name": s["name"], "targetPort": s["name"]} for s in services],
-            },
-        }
-    )
+    # Services
+    if services:
+        k8s_resources.extend(
+            [
+                {
+                    "apiVersion": "v1",
+                    "kind": "Service",
+                    "metadata": {
+                        "labels": metadata["labels"],
+                        "name": f"{service_name}-{s.id}",
+                        "namespace": metadata["namespace"],
+                    },
+                    "spec": {
+                        "selector": {"app.kubernetes.io/name": service_name},
+                        "ports": [{"port": s.port, "name": s.id, "targetPort": s.id}],
+                    },
+                }
+                for s in services.values()
+            ]
+        )
 
     # Volumes
     if artifact.execution.volumes:
-        persistent_volumes = set()
-
         volumes = []
         volume_mounts = []
         for volume in artifact.execution.volumes:
@@ -181,17 +222,12 @@ def _generate_artifact_resources(
             volume_mount = {"mountPath": volume.path, "name": volume.id}
             volume_mounts.append(volume_mount)
 
-            volume_claim = {}
+            volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}Gi"}}}
 
             # Claim resources
             if execution_volume := execution_parameters.volumes.get(volume.id):
-                claim_resources = {}
-                if execution_volume.min_capacity:
-                    claim_resources["requests"] = {"storage": f"{execution_volume.min_capacity}G"}
                 if execution_volume.max_capacity:
-                    claim_resources["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
-                if claim_resources:
-                    volume_claim["resources"] = claim_resources
+                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}Gi"}
 
                 if execution_volume.path:
                     # Set a subPath in the volume for this specific mount
@@ -233,10 +269,10 @@ def _generate_artifact_resources(
                 )
 
         container["volumeMounts"] = volume_mounts
-        pod_template["spec"]["volumes"] = volumes
+        pod_spec["volumes"] = volumes
 
     # Ingress
-    external_services = [s for s in services if s["external_host"] or s["external_path"]]
+    external_services = []
 
     if external_services:
         k8s_resources.append(
