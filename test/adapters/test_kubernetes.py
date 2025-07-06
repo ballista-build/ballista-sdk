@@ -64,9 +64,9 @@ def kubernetes_adapter():
                                                 "readinessProbe": {"httpGet": {"path": "/healthz", "port": "http"}},
                                                 "resources": {
                                                     "limits": {
-                                                        "memory": "1.0Gi",
+                                                        "memory": "1.0G",
                                                     },
-                                                    "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
+                                                    "requests": {"cpu": "0.25G", "memory": "0.1G"},
                                                 },
                                                 "volumeMounts": [
                                                     {
@@ -120,7 +120,7 @@ def kubernetes_adapter():
                             },
                             "spec": {
                                 "accessModes": ["ReadWriteMany"],
-                                "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.25G"}},
+                                "resources": {"limits": {"storage": "1.0Gi"}, "requests": {"storage": "0.01Gi"}},
                                 "storageClassName": "generic-storage",
                             },
                         },

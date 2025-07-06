@@ -38,7 +38,6 @@ class LocalEnvironmentArtifactExecutionVolume(BaseModel):
 
 
 class LocalEnvironmentArtifactExecutionParameters(BaseModel):
-    default_volume: LocalEnvironmentArtifactExecutionVolume
     resources: LocalEnvironmentArtifactExecutionResources
     scaling: LocalEnvironmentArtifactExecutionScaling
     volumes: dict[str, LocalEnvironmentArtifactExecutionVolume]
@@ -79,7 +78,6 @@ def get_local_environment() -> tuple[Environment, EnvironmentExecutionAdapter, E
 
     # TODO: Need a mechanism to get defaults for these
     execution_parameters = LocalEnvironmentArtifactExecutionParameters(
-        default_volume=LocalEnvironmentArtifactExecutionVolume(max_capacity=0.5, min_capacity=0.01),
         resources=LocalEnvironmentArtifactExecutionResources(),
         scaling=LocalEnvironmentArtifactExecutionScaling(),
         volumes={},

@@ -195,6 +195,11 @@ class ArtifactExecutionVolume(Protocol):
     """Volume with mounted path exposed as an Environment Variable."""
 
     @property
+    def capacity(self) -> float:
+        """Minimum storage capacity required, measured in Gibibytes."""
+        ...
+
+    @property
     def id(self) -> str:
         """Unique identifier of volume."""
         ...
@@ -386,11 +391,6 @@ class EnvironmentArtifactExecutionVolume(Protocol):
         ...
 
     @property
-    def min_capacity(self) -> float | None:
-        """Minimum storage capacity required, measured in Gigabytes."""
-        ...
-
-    @property
     def path(self) -> str | None:
         """Path inside volume to use as mount root."""
         ...
@@ -412,11 +412,6 @@ class EnvironmentArtifactExecutionParameters(Protocol):
     @property
     def scaling(self) -> EnvironmentArtifactExecutionScaling:
         """Scaling parameters."""
-        ...
-
-    @property
-    def default_volume(self) -> EnvironmentArtifactExecutionVolume:
-        """Default volume parameters."""
         ...
 
     @property

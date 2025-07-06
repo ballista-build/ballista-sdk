@@ -142,9 +142,7 @@ def _generate_docker_compose_service_from_artifact(
                     )
                 )
             else:
-                tmpfs_options = None
-                if execution_volume and execution_volume.min_capacity:
-                    tmpfs_options = {"size": f"{execution_volume.min_capacity}G"}
+                tmpfs_options = {"size": f"{volume.capacity}G"}
 
                 service.volumes.append(
                     DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")

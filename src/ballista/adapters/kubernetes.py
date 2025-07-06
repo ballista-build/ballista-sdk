@@ -109,11 +109,11 @@ def _generate_artifact_resources(
         if execution_resources.min_cpu:
             pod_resources["requests"]["cpu"] = f"{execution_resources.min_cpu}G"
         if execution_resources.min_memory:
-            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}Gi"
+            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}G"
         if execution_resources.max_cpu:
             pod_resources["limits"]["cpu"] = f"{execution_resources.max_cpu}G"
         if execution_resources.max_memory:
-            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}Gi"
+            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}G"
 
         container["resources"] = pod_resources
 
@@ -222,18 +222,12 @@ def _generate_artifact_resources(
             volume_mount = {"mountPath": volume.path, "name": volume.id}
             volume_mounts.append(volume_mount)
 
-            volume_claim = {}
+            volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}Gi"}}}
 
             # Claim resources
-            # TODO: This isn't great! There should be a better way to handle defaults.
-            if execution_volume := execution_parameters.volumes.get(volume.id, execution_parameters.default_volume):
-                claim_resources = {}
-                if execution_volume.min_capacity:
-                    claim_resources["requests"] = {"storage": f"{execution_volume.min_capacity}G"}
+            if execution_volume := execution_parameters.volumes.get(volume.id):
                 if execution_volume.max_capacity:
-                    claim_resources["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
-                if claim_resources:
-                    volume_claim["resources"] = claim_resources
+                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}Gi"}
 
                 if execution_volume.path:
                     # Set a subPath in the volume for this specific mount

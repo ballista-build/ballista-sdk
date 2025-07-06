@@ -104,6 +104,7 @@ class ArtifactExecutionService(BaseModel):
 
 
 class ArtifactExecutionVolume(BaseModel, frozen=True, title="Artifact Execution Volume"):
+    capacity: Annotated[float, Field(description="Minimum storage capacity required, measured in Gibibytes.")] = 0.01
     id: Annotated[str, Field(description="Unique identifier of volume.", title="ID")]
     name: Annotated[str, Field(description="Human-readable name of volume.")]
     path: Annotated[str, Field(description="Path inside service to access volume.")]
@@ -143,7 +144,7 @@ class DockerImageArtifactConfiguration(BaseModel, frozen=True):
     image: Annotated[str | None, Field(description="Name of image to use.")] = None
 
 
-class DockerImageArtifactTypeDependency(BaseModel, frozen=True):
+class DockerImageArtifactTypeDependency(BaseOneOfModel, frozen=True):
     docker_image: DockerImageArtifactConfiguration
 
 

@@ -41,7 +41,9 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
         case "simple":
             # A simple project with one ExecutableArtifact
             # Name cannot be mocked via the constructor.
-            volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
+            volume_a = Mock(
+                ArtifactExecutionVolume, capacity=0.01, id="volume_a", path="/var/volume_a", persistent=True
+            )
             volume_a.name = "Volume A"
             artifacts = [
                 Mock(
@@ -79,9 +81,13 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
         case "typical":
             # A typical project with two artifacts using various dependencies
             # Name cannot be mocked via the constructor.
-            volume_a = Mock(ArtifactExecutionVolume, id="volume_a", path="/var/volume_a", persistent=True)
+            volume_a = Mock(
+                ArtifactExecutionVolume, capacity=0.01, id="volume_a", path="/var/volume_a", persistent=True
+            )
             volume_a.name = "Volume A"
-            volume_b = Mock(ArtifactExecutionVolume, id="volume_b", path="/var/volume_b", persistent=False)
+            volume_b = Mock(
+                ArtifactExecutionVolume, capacity=0.25, id="volume_b", path="/var/volume_b", persistent=False
+            )
             volume_b.name = "Volume B"
 
             artifacts = [
@@ -127,14 +133,12 @@ def environment_artifact_execution_parameters():
         volumes={
             "volume_a": Mock(
                 EnvironmentArtifactExecutionVolume,
-                min_capacity=0.25,
                 max_capacity=1.0,
                 path="/custom/path",
                 type="generic-storage",
             ),
             "volume_b": Mock(
                 EnvironmentArtifactExecutionVolume,
-                min_capacity=0.25,
                 max_capacity=None,
                 path="/custom/path",
                 type="generic-storage",
