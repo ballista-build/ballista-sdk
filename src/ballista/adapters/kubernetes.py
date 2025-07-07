@@ -94,10 +94,11 @@ def _generate_artifact_resources(
     env = []
     env_from = []
 
-    container = {
-        "name": service_name,
-        "image": artifact.type.config.get("image", f"{artifact.id}:{bolt.version}"),
-    }
+    # TODO: This will need a better abstraction so it can use explicit Docker registries.
+    if (image := artifact.type.config.get("image")) is None:
+        image = f"{bolt.project_id}_{artifact.id}:{bolt.version}"
+
+    container = {"name": service_name, "image": image}
 
     # Configs
     if artifact.execution.configs:

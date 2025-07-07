@@ -133,7 +133,7 @@ def build(
         if artifacts and artifact_id not in artifacts:
             continue
 
-        image_name = f"build_{artifact_id}:{ballista_bolt.version}"
+        image_name = f"{ballista_bolt.project_id}_{artifact_id}:{ballista_bolt.version}"
 
         path = "."
         dockerfile = build.dockerfile or "Dockerfile"
@@ -147,8 +147,7 @@ def build(
         # cache_from = ""
         # cache_to = []
         cmd = f"docker build {path} -t {image_name} -f {dockerfile} --target {build.dockerfile_target}"
-        print(cmd)
-        # os.system(cmd)
+        os.system(cmd)
 
 
 @cli.command(short_help="start ballista environment")
