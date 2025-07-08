@@ -1,9 +1,57 @@
 from collections.abc import Collection, Mapping
-from enum import StrEnum
+from enum import StrEnum, auto
 from typing import Any, Protocol
 
 
+class ArtifactSettingType(StrEnum):
+    BOOLEAN = auto()
+    """A boolean."""
+    INTEGER = auto()
+    """32-bit integer."""
+    FLOAT = auto()
+    """64-bit float."""
+    PASSWORD = auto()
+    """String but specifically a password."""
+    STRING = auto()
+    """String."""
+
+
+class ResourceDependencyRequirements(Protocol):
+    """Values required for a Resource dependency."""
+
+    @property
+    def prefix(self) -> str | None:
+        """Key prefix for returned dependency setting values."""
+        ...
+
+
+class ResourceDependencyInjectedSetting(Protocol):
+    """Setting injected back to dependents."""
+
+    @property
+    def id(self) -> str:
+        """Identifier."""
+        ...
+
+    @property
+    def type(self) -> ArtifactSettingType:
+        """Type of secret value."""
+        ...
+
+    @property
+    def unique(self) -> bool:
+        """Indicates dependency setting is unique to dependency."""
+        ...
+
+    @property
+    def value(self) -> str | None:
+        """Value template injected."""
+        ...
+
+
 class Resource(Protocol):
+    """A platform Resource."""
+
     @property
     def id(self) -> str:
         """Identifier."""
@@ -12,6 +60,16 @@ class Resource(Protocol):
     @property
     def name(self) -> str:
         """Human-readable name of Resource."""
+        ...
+
+    @property
+    def requirements(self) -> ResourceDependencyRequirements:
+        """Requirements for a dependency."""
+        ...
+
+    @property
+    def settings(self) -> Mapping[str, ResourceDependencyInjectedSetting]:
+        """Settings given back to dependents."""
         ...
 
 
@@ -72,17 +130,6 @@ class ArtifactBuildRequirements(Protocol):
     def dockerfile_target(self) -> str:
         """Dockerfile target used when building artifact."""
         ...
-
-
-class ArtifactSettingType(StrEnum):
-    integer = "integer"
-    """32-bit integer."""
-    float = "float"
-    """64-bit float."""
-    password = "password"
-    """String but specifically a password."""
-    string = "string"
-    """Generic string."""
 
 
 class ArtifactExecutionSetting(Protocol):

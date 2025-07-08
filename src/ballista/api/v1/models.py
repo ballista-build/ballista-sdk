@@ -10,8 +10,24 @@ class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minPrope
 
 
 class Resource(BaseModel, frozen=True):
+    """Resource available to use as an artifact dependency."""
+
     id: Annotated[str, Field(description="Unique identifier of Resource.", title="ID")]
     name: Annotated[str, Field(description="Human-readable name of Resource.")]
+
+
+class ArtifactExecutionResourceDependency(BaseOneOfModel, frozen=True, title="Artifact Execution Resource Dependency"):
+    @property
+    def config(self) -> dict:
+        return {}
+
+    @property
+    def resource_id(self) -> str:
+        return "TEST"
+
+
+class BaseArtifactExecutionResource(BaseModel, frozen=True):
+    pass
 
 
 class ArtifactBuildRequirements(BaseModel, frozen=True, title="Artifact Build Requirements"):
@@ -28,10 +44,6 @@ class ArtifactBuildRequirements(BaseModel, frozen=True, title="Artifact Build Re
             title="Dockerfile Target",
         ),
     ] = None
-
-
-class ArtifactExecutionResourceDependency(BaseModel, frozen=True, title="Artifact Execution Resource Dependency"):
-    pass
 
 
 class BaseArtifactExecutionSetting(BaseModel, frozen=True):

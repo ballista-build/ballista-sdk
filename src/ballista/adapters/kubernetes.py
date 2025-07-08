@@ -1,5 +1,6 @@
 from collections.abc import Collection
 from typing import Any, TypedDict
+from unittest.mock import Mock
 
 import yaml
 from kubernetes import client, config, utils
@@ -8,12 +9,15 @@ from ballista.adapters.types import EnvironmentExecutionAdapter
 from ballista.types import (
     ArtifactExecutionProbe,
     ArtifactExecutionService,
+    ArtifactSettingType,
     ArtifactType,
     Bolt,
     Environment,
     EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
     Resource,
+    ResourceDependencyInjectedSetting,
+    ResourceDependencyRequirements,
 )
 
 
@@ -27,6 +31,7 @@ class KubernetesResource(TypedDict):
 def _generate_bolt_resources(
     bolt: Bolt,
     artifacts: Collection[ExecutableArtifact],
+    adapter: EnvironmentExecutionAdapter,
     environment: Environment,
     execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
@@ -36,7 +41,11 @@ def _generate_bolt_resources(
 
     artifact_resources = {
         artifact.id: _generate_artifact_resources(
-            bolt=bolt, artifact=artifact, execution_parameters=execution_parameters, environment=environment
+            bolt=bolt,
+            artifact=artifact,
+            adapter=adapter,
+            execution_parameters=execution_parameters,
+            environment=environment,
         )
         for artifact in artifacts
     }
@@ -72,6 +81,7 @@ def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactE
 def _generate_artifact_resources(
     bolt: Bolt,
     artifact: ExecutableArtifact,
+    adapter: EnvironmentExecutionAdapter,
     environment: Environment,
     execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
@@ -121,6 +131,29 @@ def _generate_artifact_resources(
     has_secrets = bool(artifact.execution.secrets)
 
     # TODO: Platform Resources
+    if resource_dependencies := artifact.execution.resources:
+        platform_resources = adapter.list_platform_resources(environment=environment)
+
+        for dependency in resource_dependencies:
+            # Get resource handler
+            handler: Resource | None = None
+            for platform_resource in platform_resources:
+                if platform_resource.id == dependency.resource_id:
+                    handler = platform_resource
+                    break
+
+            if handler is None:
+                raise Exception("CRUD")
+
+            has_resource_secrets = False
+            for setting in handler.settings.values():
+                if setting.unique:
+                    has_secrets = True
+                else:
+                    has_resource_secrets = True
+
+            if has_resource_secrets:
+                env_from.append({"secretRef": {"name": "SECRET REF TO RESOURCE", "optional": False}})
 
     # Secrets
     if has_secrets:
@@ -319,7 +352,11 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         execution_parameters: EnvironmentArtifactExecutionParameters,
     ):
         bolt_resources, all_artifact_resources = _generate_bolt_resources(
-            bolt=bolt, artifacts=artifacts, environment=environment, execution_parameters=execution_parameters
+            bolt=bolt,
+            artifacts=artifacts,
+            adapter=self,
+            environment=environment,
+            execution_parameters=execution_parameters,
         )
 
         # TODO: This needs expanding to not rely on the local kubeconf
@@ -351,7 +388,71 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         return []
 
     def list_platform_resources(self, environment: Environment) -> list[Resource]:
-        return []
+        # DO THIS FOR REAL
+
+        # Fake Postgres
+        class PostgresRequirements(ResourceDependencyRequirements):
+            prefix: str | None = None
+            """Key prefix."""
+            database_id: str
+            """ID of database."""
+
+        postgres_settings = {
+            "host": Mock(
+                ResourceDependencyInjectedSetting, id="host", type=ArtifactSettingType.STRING, unique=False, value=""
+            ),
+            "port": Mock(
+                ResourceDependencyInjectedSetting, id="port", type=ArtifactSettingType.INTEGER, unique=False, value=""
+            ),
+            "database": Mock(
+                ResourceDependencyInjectedSetting, id="database", type=ArtifactSettingType.STRING, unique=True, value=""
+            ),
+            "username": Mock(
+                ResourceDependencyInjectedSetting, id="username", type=ArtifactSettingType.STRING, unique=True, value=""
+            ),
+            "password": Mock(
+                ResourceDependencyInjectedSetting,
+                id="password",
+                type=ArtifactSettingType.PASSWORD,
+                unique=True,
+                value=None,
+            ),
+        }
+        postgres = Mock(Resource, id="postgres", requirements=PostgresRequirements, settings=postgres_settings)
+        postgres.name = "Postgres"
+
+        # Fake Redis
+        class RedisRequirements(ResourceDependencyRequirements):
+            prefix: str | None = None
+            """Key prefix."""
+            index_id: str | None = None
+            """ID of index."""
+
+        redis_settings = {
+            "host": Mock(
+                ResourceDependencyInjectedSetting, id="host", type=ArtifactSettingType.STRING, unique=False, value=""
+            ),
+            "port": Mock(
+                ResourceDependencyInjectedSetting, id="port", type=ArtifactSettingType.INTEGER, unique=False, value=""
+            ),
+            "index": Mock(
+                ResourceDependencyInjectedSetting, id="index", type=ArtifactSettingType.STRING, unique=True, value=""
+            ),
+            "username": Mock(
+                ResourceDependencyInjectedSetting, id="username", type=ArtifactSettingType.STRING, unique=True, value=""
+            ),
+            "password": Mock(
+                ResourceDependencyInjectedSetting,
+                id="password",
+                type=ArtifactSettingType.PASSWORD,
+                unique=True,
+                value=None,
+            ),
+        }
+        redis = Mock(Resource, id="redis", requirements=RedisRequirements, settings=redis_settings)
+        redis.name = "Redis"
+
+        return [postgres, redis]
 
     def list_services(self, environment: Environment) -> list[ExecutableArtifact]:
         return []
