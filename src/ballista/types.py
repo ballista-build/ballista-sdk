@@ -34,13 +34,13 @@ class ResourceDependencyInjectedSetting(Protocol):
         ...
 
     @property
-    def type(self) -> ArtifactSettingType:
-        """Type of secret value."""
+    def shared(self) -> bool:
+        """Indicates setting is shared across multiple projects."""
         ...
 
     @property
-    def unique(self) -> bool:
-        """Indicates dependency setting is unique to dependency."""
+    def type(self) -> ArtifactSettingType:
+        """Type of value."""
         ...
 
     @property
@@ -53,6 +53,11 @@ class Resource(Protocol):
     """A platform Resource."""
 
     @property
+    def configs(self) -> Mapping[str, ResourceDependencyInjectedSetting]:
+        """Configs given to dependents."""
+        ...
+
+    @property
     def id(self) -> str:
         """Identifier."""
         ...
@@ -63,13 +68,18 @@ class Resource(Protocol):
         ...
 
     @property
+    def prefix(self) -> str:
+        """Default prefix."""
+        ...
+
+    @property
     def requirements(self) -> ResourceDependencyRequirements:
         """Requirements for a dependency."""
         ...
 
     @property
-    def settings(self) -> Mapping[str, ResourceDependencyInjectedSetting]:
-        """Settings given back to dependents."""
+    def secrets(self) -> Mapping[str, ResourceDependencyInjectedSetting]:
+        """Secrets given to dependents."""
         ...
 
 

@@ -19,10 +19,12 @@ class Resource(BaseModel, frozen=True):
 class ArtifactExecutionResourceDependency(BaseOneOfModel, frozen=True, title="Artifact Execution Resource Dependency"):
     @property
     def config(self) -> dict:
+        """Requirement data for dependency."""
         return {}
 
     @property
     def resource_id(self) -> str:
+        print(self.model_fields_set)
         return "TEST"
 
 
