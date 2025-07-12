@@ -33,7 +33,7 @@ def _get_metadata_labels(bolt: Bolt, environment: Environment) -> dict[str, str]
         "app.kubernetes.io/managed-by": "Ballista",
         "app.kubernetes.io/part-of": bolt.project_id,
         "app.kubernetes.io/version": bolt.version,
-        "ballista/environment": environment.id,
+        "ballista-dev.com/environment": environment.id,
     }
 
 
@@ -132,7 +132,7 @@ def _generate_artifact_resources(
 
         container["resources"] = pod_resources
 
-    has_secrets = bool(artifact.execution.secrets)
+    has_service_secrets = bool(artifact.execution.secrets)
 
     # Platform Resources
     if resource_dependencies := artifact.execution.resources:
@@ -149,26 +149,22 @@ def _generate_artifact_resources(
             if handler is None:
                 raise ValueError(f'No resource for "{dependency.resource_id}".')
 
-            has_shared_secrets = False
-            for setting in handler.secrets.values():
-                if setting.shared:
-                    has_shared_secrets = True
-                else:
-                    has_secrets = True
+            # Handle will store service secrets
+            has_service_secrets = has_service_secrets or bool(handler.secrets)
 
-            if has_shared_secrets:
+            if handler.configs:
                 env_from.append(
                     {
                         "secretRef": {
                             "name": f"{handler.id}-shared",
                             "optional": False,
-                            "prefix": dependency.config.get("prefix", handler.prefix) + "_",
+                            "prefix": (dependency.config.get("prefix") or handler.prefix) + "_",
                         }
                     }
                 )
 
     # Secrets
-    if has_secrets:
+    if has_service_secrets:
         env_from.append({"secretRef": {"name": service_env_name, "optional": False}})
 
     # Services

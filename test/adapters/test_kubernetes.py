@@ -31,6 +31,7 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
+                                    "ballista-dev.com/environment": "test",
                                 },
                                 "name": "api",
                                 "namespace": "simple-test",
@@ -48,6 +49,7 @@ def kubernetes_adapter():
                                             "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/part-of": "simple",
                                             "app.kubernetes.io/version": "1",
+                                            "ballista-dev.com/environment": "test",
                                         },
                                         "name": "api",
                                         "namespace": "simple-test",
@@ -59,7 +61,17 @@ def kubernetes_adapter():
                                                     {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                                 ],
                                                 "envFrom": [
+                                                    # Unique configs are added first
                                                     {"configMapRef": {"name": "api", "optional": True}},
+                                                    # Shared secrets are addesd before service secrets
+                                                    {
+                                                        "secretRef": {
+                                                            "name": "postgres-shared",
+                                                            "optional": False,
+                                                            "prefix": "POSTGRES_",
+                                                        }
+                                                    },
+                                                    # Service secrets are added last
                                                     {"secretRef": {"name": "api", "optional": False}},
                                                 ],
                                                 "image": "hello-world:latest",
@@ -100,6 +112,7 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
+                                    "ballista-dev.com/environment": "test",
                                 },
                                 "name": "api-http",
                                 "namespace": "simple-test",
@@ -118,6 +131,7 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
+                                    "ballista-dev.com/environment": "test",
                                 },
                                 "name": "api-volume_a",
                                 "namespace": "simple-test",

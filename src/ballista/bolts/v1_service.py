@@ -1,15 +1,85 @@
-from typing import Any
+from __future__ import annotations
+
+import inspect
+from collections.abc import Collection
+from typing import Annotated, Any
+
+from pydantic import Field, create_model
 
 from ballista.api.v1 import models
 
-from ..types import (
-    BoltService as BaseBoltService,
-)
+from ..types import BoltService as BaseBoltService
+from ..types import Resource
 
 
 class BoltService(BaseBoltService):
+    resources: Collection[Resource]
+
+    def __init__(self, resources: Collection[Resource]):
+        self.resources = resources
+
+    def generate_bolt_class(self) -> type[models.Bolt]:
+        resource_fields = {
+            r.id: Annotated[
+                _create_resource_dependency_model(r) | None,
+                Field(default=None, description=f'Dependency on a "{r.name}" resource.'),
+            ]
+            for r in self.resources
+        }
+
+        # Resources
+        dynamic_resource_dependency = create_model(
+            models.ArtifactExecutionResourceDependency.__name__,
+            **resource_fields,
+            __base__=models.ArtifactExecutionResourceDependency,
+        )
+
+        dynamic_artifact_execution_requirements = create_model(
+            models.ArtifactExecutionRequirements.__name__,
+            resources=Annotated[
+                list[dynamic_resource_dependency] | None,
+                Field(default=None, description="List of Resources required for execution."),
+            ],
+            __base__=models.ArtifactExecutionRequirements,
+        )
+
+        dynamic_artifact = create_model(
+            models.Artifact.__name__,
+            execution=Annotated[
+                dynamic_artifact_execution_requirements | None, Field(default=None, description="DYNAMIC EXECUTION")
+            ],
+            __base__=models.Artifact,
+        )
+
+        dynamic_bolt = create_model(
+            models.Bolt.__name__,
+            artifacts=Annotated[list[dynamic_artifact], Field(description="DYNAMIC List of artifacts.", min_length=1)],
+            __base__=models.Bolt,
+        )
+
+        return dynamic_bolt
+
     def create_bolt(self, project_id: str) -> models.Bolt:
-        return models.Bolt(artifacts=[], project_id=project_id, version="0.1.0")
+        bolt_cls = self.generate_bolt_class()
+        return bolt_cls(artifacts=[], project_id=project_id, version="0.1.0")
 
     def get_bolt(self, bolt_data: dict[str, Any]) -> models.Bolt:
-        return models.Bolt.model_validate(bolt_data)
+        bolt_cls = self.generate_bolt_class()
+        return bolt_cls.model_validate(bolt_data)
+
+
+def _create_resource_dependency_model(resource: Resource) -> type[models.ArtifactExecutionResourceDependency]:
+    # TODO: THIS IS REAL JANK
+    annotations = inspect.get_annotations(resource.requirements)
+    requirement_fields = {}
+
+    for prop, annotation in annotations.items():
+        field = Field(description="DESCRIPTION")
+        if hasattr(resource.requirements, prop):
+            field.default = getattr(resource.requirements, prop)
+
+        requirement_fields[prop] = Annotated[annotation, field]
+
+    return create_model(
+        f"ArtifactExecution{resource.name}Resource", **requirement_fields, __base__=models.BaseArtifactExecutionResource
+    )

@@ -20,12 +20,13 @@ class ArtifactExecutionResourceDependency(BaseOneOfModel, frozen=True, title="Ar
     @property
     def config(self) -> dict:
         """Requirement data for dependency."""
-        return {}
+        return getattr(self, self.resource_id).model_dump()
 
     @property
     def resource_id(self) -> str:
-        print(self.model_fields_set)
-        return "TEST"
+        for f in self.model_fields_set:
+            return f
+        raise ValueError("No fields set")
 
 
 class BaseArtifactExecutionResource(BaseModel, frozen=True):

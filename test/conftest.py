@@ -65,7 +65,13 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                             ),
                             started=None,
                         ),
-                        resources=[Mock(ArtifactExecutionResourceDependency, resource_id="postgres", config={})],
+                        resources=[
+                            Mock(
+                                ArtifactExecutionResourceDependency,
+                                resource_id="postgres",
+                                config={"database_id": "testdatabase"},
+                            )
+                        ],
                         secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
                         services=[Mock(ArtifactExecutionService, id="http", port=80)],
                         volumes=[volume_a],
