@@ -155,11 +155,8 @@ def _generate_artifact_resources(
             if handler.configs:
                 env_from.append(
                     {
-                        "secretRef": {
-                            "name": f"{handler.id}-shared",
-                            "optional": False,
-                            "prefix": (dependency.config.get("prefix") or handler.prefix) + "_",
-                        }
+                        "prefix": (dependency.config.get("prefix") or handler.prefix) + "_",
+                        "secretRef": {"name": f"{handler.id}-shared", "optional": False},
                     }
                 )
 

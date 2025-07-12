@@ -98,9 +98,9 @@ cli = typer.Typer()
 def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
     # TODO: Need to pick an api, so just use v1 for now. We'll probably want a default version with compatibility for old ones up to a certain date.
     environment, adapter, _ = get_local_environment()
-    resources = adapter.list_platform_resources(environment)
 
     if True:
+        resources = adapter.list_platform_resources(environment)
         bolt_service = v1_service.BoltService(resources)
 
     # Check if that project (folder) already exists

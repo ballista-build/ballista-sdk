@@ -65,11 +65,11 @@ def kubernetes_adapter():
                                                     {"configMapRef": {"name": "api", "optional": True}},
                                                     # Shared secrets are addesd before service secrets
                                                     {
+                                                        "prefix": "POSTGRES_",
                                                         "secretRef": {
                                                             "name": "postgres-shared",
                                                             "optional": False,
-                                                            "prefix": "POSTGRES_",
-                                                        }
+                                                        },
                                                     },
                                                     # Service secrets are added last
                                                     {"secretRef": {"name": "api", "optional": False}},
