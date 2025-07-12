@@ -43,7 +43,7 @@ class LocalEnvironmentArtifactExecutionParameters(BaseModel):
     volumes: dict[str, LocalEnvironmentArtifactExecutionVolume]
 
 
-def get_local_bolt(origin: str) -> Bolt:
+def get_local_bolt(origin: str, environment: Environment, adapter: EnvironmentExecutionAdapter) -> Bolt:
     """Get a Bolt from local path."""
     filename = "./ballista.yaml" if os.path.isfile("./ballista.yaml") else None
     if not filename:
@@ -59,7 +59,7 @@ def get_local_bolt(origin: str) -> Bolt:
     bolt_service = None
 
     if api_version == "v1":
-        bolt_service = v1_service.BoltService()
+        bolt_service = v1_service.BoltService(adapter.list_platform_resources(environment))
 
     if bolt_service:
         return bolt_service.get_bolt(ballista_yaml)
@@ -97,8 +97,11 @@ cli = typer.Typer()
 @cli.command(short_help="initialize a new ballista powered project")
 def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
     # TODO: Need to pick an api, so just use v1 for now. We'll probably want a default version with compatibility for old ones up to a certain date.
+    environment, adapter, _ = get_local_environment()
+
     if True:
-        bolt_service = v1_service.BoltService()
+        resources = adapter.list_platform_resources(environment)
+        bolt_service = v1_service.BoltService(resources)
 
     # Check if that project (folder) already exists
     if os.path.exists(project):
@@ -122,7 +125,8 @@ def build(
     artifact_types: Annotated[list[str] | None, typer.Option(help="List of specified Artifact Types to build.")] = None,
 ):
     origin = get_origin()
-    ballista_bolt = get_local_bolt(origin)
+    environment, adapter, _ = get_local_environment()
+    ballista_bolt = get_local_bolt(origin, environment, adapter)
 
     for artifact in ballista_bolt.artifacts:
         if not (build := artifact.build):
@@ -153,7 +157,8 @@ def build(
 @cli.command(short_help="start ballista environment")
 def up():
     origin = get_origin()
-    ballista_bolt = get_local_bolt(origin)
+    environment, adapter, execution_parameters = get_local_environment()
+    ballista_bolt = get_local_bolt(origin, environment, adapter)
 
     environment, adapter, execution_parameters = get_local_environment()
     executable_artifacts = [a for a in ballista_bolt.artifacts if a.execution]

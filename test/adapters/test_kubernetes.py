@@ -1,12 +1,16 @@
 import pytest
 
-from ballista.adapters.kubernetes import KubernetesResource, _generate_bolt_resources
+from ballista.adapters.kubernetes import (
+    KubernetesExecutionEnvironmentAdapter,
+    KubernetesResource,
+    _generate_bolt_resources,
+)
 from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
 
 @pytest.fixture
 def kubernetes_adapter():
-    pass
+    return KubernetesExecutionEnvironmentAdapter()
 
 
 @pytest.mark.parametrize(
@@ -27,6 +31,7 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
+                                    "ballista-dev.com/environment": "test",
                                 },
                                 "name": "api",
                                 "namespace": "simple-test",
@@ -44,6 +49,7 @@ def kubernetes_adapter():
                                             "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/part-of": "simple",
                                             "app.kubernetes.io/version": "1",
+                                            "ballista-dev.com/environment": "test",
                                         },
                                         "name": "api",
                                         "namespace": "simple-test",
@@ -55,7 +61,17 @@ def kubernetes_adapter():
                                                     {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                                 ],
                                                 "envFrom": [
+                                                    # Unique configs are added first
                                                     {"configMapRef": {"name": "api", "optional": True}},
+                                                    # Shared secrets are addesd before service secrets
+                                                    {
+                                                        "prefix": "POSTGRES_",
+                                                        "secretRef": {
+                                                            "name": "postgres-shared",
+                                                            "optional": False,
+                                                        },
+                                                    },
+                                                    # Service secrets are added last
                                                     {"secretRef": {"name": "api", "optional": False}},
                                                 ],
                                                 "image": "hello-world:latest",
@@ -96,6 +112,7 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
+                                    "ballista-dev.com/environment": "test",
                                 },
                                 "name": "api-http",
                                 "namespace": "simple-test",
@@ -114,6 +131,7 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
                                     "app.kubernetes.io/version": "1",
+                                    "ballista-dev.com/environment": "test",
                                 },
                                 "name": "api-volume_a",
                                 "namespace": "simple-test",
@@ -136,12 +154,14 @@ def test_resource_generation(
     bolt: Bolt,
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
     environment: Environment,
+    kubernetes_adapter: KubernetesExecutionEnvironmentAdapter,
     environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
     executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert resources == _generate_bolt_resources(
         artifacts=executable_artifacts,
         bolt=bolt,
+        adapter=kubernetes_adapter,
         environment=environment,
         execution_parameters=environment_artifact_execution_parameters,
     )
