@@ -16,6 +16,35 @@ class ArtifactSettingType(StrEnum):
     """String."""
 
 
+class ArtifactInjectedValue(Protocol):
+    """Setting injected back to dependents."""
+
+    @property
+    def description(self) -> str:
+        """Description of setting."""
+        ...
+
+    @property
+    def id(self) -> str:
+        """Identifier."""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Human-readable name of ResourceDependencyInjectedSetting."""
+        ...
+
+    @property
+    def template(self) -> str | None:
+        """Value template injected."""
+        ...
+
+    @property
+    def type(self) -> ArtifactSettingType:
+        """Type of value."""
+        ...
+
+
 class ResourceDependencyRequirements(Protocol):
     """Values required for a Resource dependency."""
 
@@ -25,27 +54,12 @@ class ResourceDependencyRequirements(Protocol):
         ...
 
 
-class ResourceDependencyInjectedSetting(Protocol):
+class ResourceDependencyInjectedValue(ArtifactInjectedValue, Protocol):
     """Setting injected back to dependents."""
-
-    @property
-    def id(self) -> str:
-        """Identifier."""
-        ...
 
     @property
     def shared(self) -> bool:
         """Indicates setting is shared across multiple projects."""
-        ...
-
-    @property
-    def type(self) -> ArtifactSettingType:
-        """Type of value."""
-        ...
-
-    @property
-    def value(self) -> str | None:
-        """Value template injected."""
         ...
 
 
@@ -53,8 +67,13 @@ class Resource(Protocol):
     """A platform Resource."""
 
     @property
-    def configs(self) -> Mapping[str, ResourceDependencyInjectedSetting]:
+    def configs(self) -> Collection[ResourceDependencyInjectedValue]:
         """Configs given to dependents."""
+        ...
+
+    @property
+    def description(self) -> str:
+        """Description."""
         ...
 
     @property
@@ -78,7 +97,7 @@ class Resource(Protocol):
         ...
 
     @property
-    def secrets(self) -> Mapping[str, ResourceDependencyInjectedSetting]:
+    def secrets(self) -> Collection[ResourceDependencyInjectedValue]:
         """Secrets given to dependents."""
         ...
 
@@ -139,25 +158,6 @@ class ArtifactBuildRequirements(Protocol):
     @property
     def dockerfile_target(self) -> str:
         """Dockerfile target used when building artifact."""
-        ...
-
-
-class ArtifactExecutionSetting(Protocol):
-    """Single setting exposed as an Environment Variable to service."""
-
-    @property
-    def alias(self) -> str | None:
-        """Alias to use when injecting value."""
-        ...
-
-    @property
-    def id(self) -> str:
-        """Identifier."""
-        ...
-
-    @property
-    def type(self) -> ArtifactSettingType:
-        """Type of secret value."""
         ...
 
 
@@ -281,7 +281,7 @@ class ArtifactExecutionRequirements(Protocol):
     """Artifact's declared requirements for execution."""
 
     @property
-    def configs(self) -> Collection[ArtifactExecutionSetting]:
+    def configs(self) -> Collection[ArtifactInjectedValue]:
         """Collection of non-sensitive settings optional for artifact execution."""
         ...
 
@@ -296,7 +296,7 @@ class ArtifactExecutionRequirements(Protocol):
         ...
 
     @property
-    def secrets(self) -> Collection[ArtifactExecutionSetting]:
+    def secrets(self) -> Collection[ArtifactInjectedValue]:
         """Collection of sensitive settings required for artifact execution."""
         ...
 

@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 from collections.abc import Collection
 from typing import Any, TypedDict
 from unittest.mock import Mock
@@ -16,7 +18,7 @@ from ballista.types import (
     EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
     Resource,
-    ResourceDependencyInjectedSetting,
+    ResourceDependencyInjectedValue,
     ResourceDependencyRequirements,
 )
 
@@ -28,6 +30,10 @@ class KubernetesResource(TypedDict):
     spec: dict[str, Any]
 
 
+PER_PROJECT_NAMESPACES = True
+"""Eventually a setting in an environment to create namespaces per project."""
+
+
 def _get_metadata_labels(bolt: Bolt, environment: Environment) -> dict[str, str]:
     return {
         "app.kubernetes.io/managed-by": "Ballista",
@@ -37,10 +43,26 @@ def _get_metadata_labels(bolt: Bolt, environment: Environment) -> dict[str, str]
     }
 
 
+def _get_bolt_kubernetes_namespace(bolt: Bolt, environment: Environment) -> str:
+    # TODO: This will need to be changed and allow customization
+    if PER_PROJECT_NAMESPACES:
+        return f"{bolt.project_id}-{environment.id}"
+    else:
+        return environment.id
+
+
+def _get_artifact_kubernetes_name(bolt: Bolt, artifact: ExecutableArtifact, environment: Environment) -> str:
+    # TODO: This will need to be changed and allow customization
+    if PER_PROJECT_NAMESPACES:
+        return artifact.id
+    else:
+        return f"{bolt.project_id}-{artifact.id}"
+
+
 def _generate_bolt_resources(
     bolt: Bolt,
     artifacts: Collection[ExecutableArtifact],
-    adapter: EnvironmentExecutionAdapter,
+    adapter: KubernetesExecutionEnvironmentAdapter,
     environment: Environment,
     execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
@@ -90,7 +112,7 @@ def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactE
 def _generate_artifact_resources(
     bolt: Bolt,
     artifact: ExecutableArtifact,
-    adapter: EnvironmentExecutionAdapter,
+    adapter: KubernetesExecutionEnvironmentAdapter,
     environment: Environment,
     execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
@@ -99,10 +121,11 @@ def _generate_artifact_resources(
     # Common metadata
     service_name = artifact.id
     service_env_name = artifact.id
+
     metadata = {
         "labels": _get_metadata_labels(bolt, environment) | {"app.kubernetes.io/name": service_name},
-        "name": service_name,
-        "namespace": f"{bolt.project_id}-{environment.id}",
+        "name": _get_artifact_kubernetes_name(bolt, artifact, environment),
+        "namespace": _get_bolt_kubernetes_namespace(bolt, environment),
     }
 
     env = []
@@ -113,10 +136,6 @@ def _generate_artifact_resources(
         image = f"{bolt.project_id}_{artifact.id}:{bolt.version}"
 
     container = {"name": service_name, "image": image}
-
-    # Configs
-    if artifact.execution.configs:
-        env_from.append({"configMapRef": {"name": service_env_name, "optional": True}})
 
     # Execution Parameters Resources
     if execution_resources := execution_parameters.resources:
@@ -132,6 +151,7 @@ def _generate_artifact_resources(
 
         container["resources"] = pod_resources
 
+    has_service_configs = bool(artifact.execution.configs)
     has_service_secrets = bool(artifact.execution.secrets)
 
     # Platform Resources
@@ -149,20 +169,48 @@ def _generate_artifact_resources(
             if handler is None:
                 raise ValueError(f'No resource for "{dependency.resource_id}".')
 
-            # Handle will store service secrets
-            has_service_secrets = has_service_secrets or bool(handler.secrets)
+            prefix = (dependency.config.get("prefix") or handler.prefix) + "_"
+            ref_name = f"{handler.id}-shared"
 
-            if handler.configs:
+            has_shared_configs = False
+            for config in handler.configs:
+                if config.shared:
+                    has_shared_configs = True
+                else:
+                    has_service_configs = True
+
+            if has_shared_configs:
                 env_from.append(
                     {
-                        "prefix": (dependency.config.get("prefix") or handler.prefix) + "_",
-                        "secretRef": {"name": f"{handler.id}-shared", "optional": False},
+                        "prefix": prefix,
+                        "configMapRef": {"name": ref_name, "optional": False},
+                    }
+                )
+
+            has_shared_secrets = False
+            for secret in handler.secrets:
+                if secret.shared:
+                    has_shared_secrets = True
+                else:
+                    has_service_secrets = True
+
+            if has_shared_secrets:
+                env_from.append(
+                    {
+                        "prefix": prefix,
+                        "secretRef": {"name": ref_name, "optional": False},
                     }
                 )
 
     # Secrets
     if has_service_secrets:
-        env_from.append({"secretRef": {"name": service_env_name, "optional": False}})
+        # Service secrets are either first or second item
+        env_from.insert(0, {"secretRef": {"name": service_env_name, "optional": False}})
+
+    # Configs
+    if has_service_configs:
+        # Service configs are always first item and marked as optional
+        env_from.insert(0, {"configMapRef": {"name": service_env_name, "optional": True}})
 
     # Services
     services = {}
@@ -310,6 +358,7 @@ def _generate_artifact_resources(
         container["volumeMounts"] = volume_mounts
         pod_spec["volumes"] = volumes
 
+    # TODO: Figure this sucker out
     # Ingress
     external_services = []
 
@@ -364,15 +413,13 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             execution_parameters=execution_parameters,
         )
 
-        # TODO: This needs expanding to not rely on the local kubeconf
-        config.load_kube_config()
-        k8s_client = client.ApiClient()
+        k8s_client = self._get_kubernetes_client(environment)
 
-        namespace = f"{bolt.project_id}-{environment.id}"
+        namespace = _get_bolt_kubernetes_namespace(bolt, environment)
 
         if True:
             # Create namespace
-            api = client.CoreV1Api()
+            api = client.CoreV1Api(api_client=k8s_client)
             try:
                 api.read_namespace(namespace)
             except client.ApiException:
@@ -385,13 +432,10 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
                     )
                 )
 
-        [utils.create_from_dict(k8s_client, resource, apply=True, namespace=namespace) for resource in bolt_resources]
+        [utils.create_from_dict(k8s_client, resource, apply=True) for resource in bolt_resources]
 
         for artifact_id, artifact_resources in all_artifact_resources.items():
-            [
-                utils.create_from_dict(k8s_client, resource, apply=True, namespace=namespace)
-                for resource in artifact_resources
-            ]
+            [utils.create_from_dict(k8s_client, resource, apply=True) for resource in artifact_resources]
 
     def fulfill_platform_resource_dependency(self, environment: Environment, artifact: ExecutableArtifact):
         pass
@@ -411,48 +455,52 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
 
         postgres = Mock(
             Resource,
-            configs={
-                "host": Mock(
-                    ResourceDependencyInjectedSetting,
+            configs=[
+                Mock(
+                    ResourceDependencyInjectedValue,
+                    description="Host of Postgres server.",
                     id="host",
+                    name="Host",
                     shared=True,
                     type=ArtifactSettingType.STRING,
                     value="",
                 ),
-                "port": Mock(
-                    ResourceDependencyInjectedSetting,
+                Mock(
+                    ResourceDependencyInjectedValue,
+                    description="Port Postgres server listens on.",
                     id="port",
+                    name="Port",
                     shared=True,
                     type=ArtifactSettingType.INTEGER,
                     value="",
                 ),
-            },
+            ],
             id="postgres",
             prefix="POSTGRES",
             requirements=PostgresRequirements,
-            secrets={
-                "database": Mock(
-                    ResourceDependencyInjectedSetting,
+            secrets=[
+                Mock(
+                    ResourceDependencyInjectedValue,
                     id="database",
                     shared=False,
                     type=ArtifactSettingType.STRING,
                     value="",
                 ),
-                "username": Mock(
-                    ResourceDependencyInjectedSetting,
+                Mock(
+                    ResourceDependencyInjectedValue,
                     id="username",
                     shared=False,
                     type=ArtifactSettingType.STRING,
                     value="",
                 ),
-                "password": Mock(
-                    ResourceDependencyInjectedSetting,
+                Mock(
+                    ResourceDependencyInjectedValue,
                     id="password",
                     shared=False,
                     type=ArtifactSettingType.PASSWORD,
                     value=None,
                 ),
-            },
+            ],
         )
         postgres.name = "Postgres"
 
@@ -467,14 +515,14 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             Resource,
             configs={
                 "host": Mock(
-                    ResourceDependencyInjectedSetting,
+                    ResourceDependencyInjectedValue,
                     id="host",
                     shared=True,
                     type=ArtifactSettingType.STRING,
                     value="",
                 ),
                 "port": Mock(
-                    ResourceDependencyInjectedSetting,
+                    ResourceDependencyInjectedValue,
                     id="port",
                     shared=True,
                     type=ArtifactSettingType.INTEGER,
@@ -486,21 +534,21 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             requirements=RedisRequirements,
             secrets={
                 "index": Mock(
-                    ResourceDependencyInjectedSetting,
+                    ResourceDependencyInjectedValue,
                     id="index",
                     shared=False,
                     type=ArtifactSettingType.STRING,
                     value="",
                 ),
                 "username": Mock(
-                    ResourceDependencyInjectedSetting,
+                    ResourceDependencyInjectedValue,
                     id="username",
                     shared=False,
                     type=ArtifactSettingType.STRING,
                     value="",
                 ),
                 "password": Mock(
-                    ResourceDependencyInjectedSetting,
+                    ResourceDependencyInjectedValue,
                     id="password",
                     shared=False,
                     type=ArtifactSettingType.PASSWORD,
@@ -514,6 +562,10 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
 
     def list_services(self, environment: Environment) -> list[ExecutableArtifact]:
         return []
+
+    def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
+        config.load_kube_config()
+        return client.ApiClient()
 
 
 class ArgoCDGitOpsKubernetesExecutionEnvironmentAdapter(KubernetesExecutionEnvironmentAdapter):

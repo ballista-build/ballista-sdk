@@ -188,4 +188,5 @@ def generate(type: GenerationTypes):
 @cli.command(short_help="launch")
 def launch(launch_target_url: str):
     origin = get_origin()
-    bolt = get_local_bolt(origin)
+    environment, adapter, _ = get_local_environment()
+    bolt = get_local_bolt(origin, environment, adapter)

@@ -61,18 +61,18 @@ def kubernetes_adapter():
                                                     {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                                 ],
                                                 "envFrom": [
-                                                    # Unique configs are added first
+                                                    # Service configs are always first
                                                     {"configMapRef": {"name": "api", "optional": True}},
-                                                    # Shared secrets are addesd before service secrets
+                                                    # Service secrets are either first or second
+                                                    {"secretRef": {"name": "api", "optional": False}},
+                                                    # Shared configs and secrets are next
                                                     {
                                                         "prefix": "POSTGRES_",
-                                                        "secretRef": {
+                                                        "configMapRef": {
                                                             "name": "postgres-shared",
                                                             "optional": False,
                                                         },
                                                     },
-                                                    # Service secrets are added last
-                                                    {"secretRef": {"name": "api", "optional": False}},
                                                 ],
                                                 "image": "hello-world:latest",
                                                 "name": "api",

@@ -10,8 +10,8 @@ from ballista.types import (
     ArtifactExecutionRequirements,
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
-    ArtifactExecutionSetting,
     ArtifactExecutionVolume,
+    ArtifactInjectedValue,
     ArtifactTypeDependency,
     Bolt,
     Environment,
@@ -52,7 +52,7 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                     build=None,
                     execution=Mock(
                         ArtifactExecutionRequirements,
-                        configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
+                        configs=[Mock(ArtifactInjectedValue, alias=None, id="option_a", type="string")],
                         healthchecks=Mock(
                             ArtifactExecutionHealthChecks,
                             alive=None,
@@ -72,7 +72,7 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                                 config={"database_id": "testdatabase"},
                             )
                         ],
-                        secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
+                        secrets=[Mock(ArtifactInjectedValue, alias=None, id="secret_a", type="password")],
                         services=[Mock(ArtifactExecutionService, id="http", port=80)],
                         volumes=[volume_a],
                     ),
@@ -104,8 +104,8 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                     build=None,
                     execution=Mock(
                         ArtifactExecutionRequirements,
-                        configs=[Mock(ArtifactExecutionSetting, alias=None, id="option_a", type="string")],
-                        secrets=[Mock(ArtifactExecutionSetting, alias=None, id="secret_a", type="password")],
+                        configs=[Mock(ArtifactInjectedValue, alias=None, id="option_a", type="string")],
+                        secrets=[Mock(ArtifactInjectedValue, alias=None, id="secret_a", type="password")],
                         services=[],
                         volumes=[volume_a, volume_b],
                     ),
