@@ -33,8 +33,8 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/version": "1",
                                     "ballista-dev.com/environment": "test",
                                 },
-                                "name": "api",
-                                "namespace": "simple-test",
+                                "name": "simple-api",
+                                "namespace": "test",
                             },
                             "spec": {
                                 "selector": {"matchLabels": {"app.kubernetes.io/name": "api"}},
@@ -51,8 +51,8 @@ def kubernetes_adapter():
                                             "app.kubernetes.io/version": "1",
                                             "ballista-dev.com/environment": "test",
                                         },
-                                        "name": "api",
-                                        "namespace": "simple-test",
+                                        "name": "simple-api",
+                                        "namespace": "test",
                                     },
                                     "spec": {
                                         "containers": [
@@ -80,9 +80,9 @@ def kubernetes_adapter():
                                                 "readinessProbe": {"httpGet": {"path": "/healthz", "port": "http"}},
                                                 "resources": {
                                                     "limits": {
-                                                        "memory": "1.0G",
+                                                        "memory": "1.0Gi",
                                                     },
-                                                    "requests": {"cpu": "0.25G", "memory": "0.1G"},
+                                                    "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
                                                 },
                                                 "volumeMounts": [
                                                     {
@@ -96,7 +96,7 @@ def kubernetes_adapter():
                                         "volumes": [
                                             {
                                                 "name": "volume_a",
-                                                "persistentVolumeClaim": {"claimName": "api-volume_a"},
+                                                "persistentVolumeClaim": {"claimName": "simple-api-volume_a"},
                                             },
                                         ],
                                     },
@@ -114,8 +114,8 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/version": "1",
                                     "ballista-dev.com/environment": "test",
                                 },
-                                "name": "api-http",
-                                "namespace": "simple-test",
+                                "name": "simple-api-http",
+                                "namespace": "test",
                             },
                             "spec": {
                                 "selector": {"app.kubernetes.io/name": "api"},
@@ -133,8 +133,8 @@ def kubernetes_adapter():
                                     "app.kubernetes.io/version": "1",
                                     "ballista-dev.com/environment": "test",
                                 },
-                                "name": "api-volume_a",
-                                "namespace": "simple-test",
+                                "name": "simple-api-volume_a",
+                                "namespace": "test",
                             },
                             "spec": {
                                 "accessModes": ["ReadWriteMany"],

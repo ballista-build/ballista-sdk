@@ -30,7 +30,7 @@ class KubernetesResource(TypedDict):
     spec: dict[str, Any]
 
 
-PER_PROJECT_NAMESPACES = True
+PER_PROJECT_NAMESPACES = False
 """Eventually a setting in an environment to create namespaces per project."""
 
 
@@ -51,12 +51,12 @@ def _get_bolt_kubernetes_namespace(bolt: Bolt, environment: Environment) -> str:
         return environment.id
 
 
-def _get_artifact_kubernetes_name(bolt: Bolt, artifact: ExecutableArtifact, environment: Environment) -> str:
+def _get_artifact_kubernetes_name(name: str, bolt: Bolt, environment: Environment) -> str:
     # TODO: This will need to be changed and allow customization
     if PER_PROJECT_NAMESPACES:
-        return artifact.id
+        return name
     else:
-        return f"{bolt.project_id}-{artifact.id}"
+        return f"{bolt.project_id}-{name}"
 
 
 def _generate_bolt_resources(
@@ -124,7 +124,7 @@ def _generate_artifact_resources(
 
     metadata = {
         "labels": _get_metadata_labels(bolt, environment) | {"app.kubernetes.io/name": service_name},
-        "name": _get_artifact_kubernetes_name(bolt, artifact, environment),
+        "name": _get_artifact_kubernetes_name(artifact.id, bolt, environment),
         "namespace": _get_bolt_kubernetes_namespace(bolt, environment),
     }
 
@@ -143,11 +143,11 @@ def _generate_artifact_resources(
         if execution_resources.min_cpu:
             pod_resources["requests"]["cpu"] = f"{execution_resources.min_cpu}G"
         if execution_resources.min_memory:
-            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}G"
+            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}Gi"
         if execution_resources.max_cpu:
             pod_resources["limits"]["cpu"] = f"{execution_resources.max_cpu}G"
         if execution_resources.max_memory:
-            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}G"
+            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}Gi"
 
         container["resources"] = pod_resources
 
@@ -282,7 +282,7 @@ def _generate_artifact_resources(
                     "kind": "Service",
                     "metadata": {
                         "labels": metadata["labels"],
-                        "name": f"{service_name}-{s.id}",
+                        "name": _get_artifact_kubernetes_name(f"{service_name}-{s.id}", bolt, environment),
                         "namespace": metadata["namespace"],
                     },
                     "spec": {
@@ -301,7 +301,7 @@ def _generate_artifact_resources(
         for volume in artifact.execution.volumes:
             volume_claim_metadata = {
                 "labels": metadata["labels"],
-                "name": f"{service_name}-{volume.id}",
+                "name": _get_artifact_kubernetes_name(f"{service_name}-{volume.id}", bolt, environment),
                 "namespace": metadata["namespace"],
             }
 
