@@ -118,13 +118,14 @@ def _generate_artifact_resources(
 ) -> list[KubernetesResource]:
     k8s_resources: list[KubernetesResource] = []
 
-    # Common metadata
-    service_name = artifact.id
-    service_env_name = artifact.id
+    artifact_name = artifact.id
+    """Local context name of artifact."""
+    artifact_ref_name = _get_artifact_kubernetes_name(artifact_name, bolt, environment)
+    """Reference name of artifact."""
 
     metadata = {
-        "labels": _get_metadata_labels(bolt, environment) | {"app.kubernetes.io/name": service_name},
-        "name": _get_artifact_kubernetes_name(artifact.id, bolt, environment),
+        "labels": _get_metadata_labels(bolt, environment) | {"app.kubernetes.io/name": artifact_name},
+        "name": artifact_ref_name,
         "namespace": _get_bolt_kubernetes_namespace(bolt, environment),
     }
 
@@ -135,7 +136,7 @@ def _generate_artifact_resources(
     if (image := artifact.type.config.get("image")) is None:
         image = f"{bolt.project_id}_{artifact.id}:{bolt.version}"
 
-    container = {"name": service_name, "image": image}
+    container = {"name": artifact_name, "image": image}
 
     # Execution Parameters Resources
     if execution_resources := execution_parameters.resources:
@@ -205,12 +206,12 @@ def _generate_artifact_resources(
     # Secrets
     if has_service_secrets:
         # Service secrets are either first or second item
-        env_from.insert(0, {"secretRef": {"name": service_env_name, "optional": False}})
+        env_from.insert(0, {"secretRef": {"name": artifact_ref_name, "optional": False}})
 
     # Configs
     if has_service_configs:
         # Service configs are always first item and marked as optional
-        env_from.insert(0, {"configMapRef": {"name": service_env_name, "optional": True}})
+        env_from.insert(0, {"configMapRef": {"name": artifact_ref_name, "optional": True}})
 
     # Services
     services = {}
@@ -262,7 +263,7 @@ def _generate_artifact_resources(
             "metadata": metadata,
             "spec": {
                 "selector": {  # LabelSelector
-                    "matchLabels": {"app.kubernetes.io/name": service_name}
+                    "matchLabels": {"app.kubernetes.io/name": artifact_name}
                 },
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
@@ -282,11 +283,11 @@ def _generate_artifact_resources(
                     "kind": "Service",
                     "metadata": {
                         "labels": metadata["labels"],
-                        "name": _get_artifact_kubernetes_name(f"{service_name}-{s.id}", bolt, environment),
+                        "name": f"{artifact_ref_name}-{s.id}",
                         "namespace": metadata["namespace"],
                     },
                     "spec": {
-                        "selector": {"app.kubernetes.io/name": service_name},
+                        "selector": {"app.kubernetes.io/name": artifact_name},
                         "ports": [{"port": s.port, "name": s.id, "targetPort": s.id}],
                     },
                 }
@@ -301,7 +302,7 @@ def _generate_artifact_resources(
         for volume in artifact.execution.volumes:
             volume_claim_metadata = {
                 "labels": metadata["labels"],
-                "name": _get_artifact_kubernetes_name(f"{service_name}-{volume.id}", bolt, environment),
+                "name": f"{artifact_ref_name}-{volume.id}",
                 "namespace": metadata["namespace"],
             }
 
@@ -432,10 +433,13 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
                     )
                 )
 
-        [utils.create_from_dict(k8s_client, resource, apply=True) for resource in bolt_resources]
+        [utils.create_from_dict(k8s_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
 
         for artifact_id, artifact_resources in all_artifact_resources.items():
-            [utils.create_from_dict(k8s_client, resource, apply=True) for resource in artifact_resources]
+            [
+                utils.create_from_dict(k8s_client, resource, namespace=namespace, apply=True)
+                for resource in artifact_resources
+            ]
 
     def fulfill_platform_resource_dependency(self, environment: Environment, artifact: ExecutableArtifact):
         pass

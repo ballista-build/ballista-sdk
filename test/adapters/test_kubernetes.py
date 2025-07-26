@@ -62,9 +62,9 @@ def kubernetes_adapter():
                                                 ],
                                                 "envFrom": [
                                                     # Service configs are always first
-                                                    {"configMapRef": {"name": "api", "optional": True}},
+                                                    {"configMapRef": {"name": "simple-api", "optional": True}},
                                                     # Service secrets are either first or second
-                                                    {"secretRef": {"name": "api", "optional": False}},
+                                                    {"secretRef": {"name": "simple-api", "optional": False}},
                                                     # Shared configs and secrets are next
                                                     {
                                                         "prefix": "POSTGRES_",
