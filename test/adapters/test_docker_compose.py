@@ -3,6 +3,7 @@ import contextlib
 import pytest
 
 from ballista.adapters.docker_compose import (
+    DockerComposeExecutionEnvironmentAdapter,
     DockerComposeProject,
     DockerComposeProjectVolume,
     DockerComposeService,
@@ -10,6 +11,11 @@ from ballista.adapters.docker_compose import (
     _generate_docker_compose_project_from_bolt,
 )
 from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
+
+
+@pytest.fixture
+def docker_compose_adapter():
+    return DockerComposeExecutionEnvironmentAdapter()
 
 
 @pytest.mark.parametrize(
@@ -28,7 +34,7 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
                                 "reservations": {"cpus": 0.25, "memory": "0.1g"},
                             }
                         },
-                        healthcheck=None,
+                        environment={"HTTP_SERVICE_PORT": "80"},
                         image="hello-world:latest",
                         networks=[],
                         ports=[{"name": "http", "target": 80}],
@@ -42,7 +48,7 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
                         ],
                     )
                 },
-                volumes={"volume_a": DockerComposeProjectVolume(driver="local", name="Volume A")},
+                volumes={"volume_a": DockerComposeProjectVolume(driver="local", name="volume_a")},
             ),
         )
     ],
@@ -52,6 +58,7 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
 def test_generate_docker_compose(
     bolt: Bolt,
     docker_compose_project: DockerComposeProject,
+    docker_compose_adapter: DockerComposeExecutionEnvironmentAdapter,
     environment: Environment,
     environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
@@ -61,6 +68,7 @@ def test_generate_docker_compose(
         == _generate_docker_compose_project_from_bolt(
             artifacts=executable_artifacts,
             bolt=bolt,
+            adapter=docker_compose_adapter,
             environment=environment,
             execution_parameters=environment_artifact_execution_parameters,
         ).model_dump()
@@ -69,6 +77,7 @@ def test_generate_docker_compose(
 
 def test_generate_requires_artifacts(
     bolt: Bolt,
+    docker_compose_adapter: DockerComposeExecutionEnvironmentAdapter,
     environment: Environment,
     environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
@@ -80,6 +89,7 @@ def test_generate_requires_artifacts(
         _generate_docker_compose_project_from_bolt(
             bolt,
             artifacts=executable_artifacts,
+            adapter=docker_compose_adapter,
             environment=environment,
             execution_parameters=environment_artifact_execution_parameters,
         )

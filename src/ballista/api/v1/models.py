@@ -9,11 +9,27 @@ class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minPrope
     pass
 
 
+class BaseArtifactInjectedValue(BaseModel, frozen=True):
+    description: Annotated[str, Field(description="Description of injected value.")]
+    id: Annotated[str, Field(description="Unique identifier of injected value.", title="ID")]
+    name: Annotated[str, Field(description="Human-readable name of injected value.")]
+    template: Annotated[str | None, Field(description="Generation template for new dependency values.")] = None
+    type: Annotated[ArtifactSettingType, Field(description="Type of value.")]
+
+
+class ResourceInjectedValue(BaseArtifactInjectedValue, frozen=True):
+    shared: Annotated[bool, Field(description="Indicates if value is shared across artifacts.")]
+
+
 class Resource(BaseModel, frozen=True):
     """Resource available to use as an artifact dependency."""
 
+    configs: Annotated[list[ResourceInjectedValue], Field(description="Configs")] = []
+    description: Annotated[str, Field()] = ""
     id: Annotated[str, Field(description="Unique identifier of Resource.", title="ID")]
-    name: Annotated[str, Field(description="Human-readable name of Resource.")]
+    name: Annotated[str, Field(description="Human-readable name of Resource.")] = ""
+    prefix: Annotated[str, Field(description="Default prefix of injected values.")]
+    secrets: Annotated[list[ResourceInjectedValue], Field(description="Secrets")] = []
 
 
 class ArtifactExecutionResourceDependency(BaseOneOfModel, frozen=True, title="Artifact Execution Resource Dependency"):
@@ -47,18 +63,6 @@ class ArtifactBuildRequirements(BaseModel, frozen=True, title="Artifact Build Re
             title="Dockerfile Target",
         ),
     ] = None
-
-
-class BaseArtifactExecutionSetting(BaseModel, frozen=True):
-    alias: Annotated[str | None, Field(description="Alias used when injecting value.")] = None
-    id: Annotated[str, Field(description="Identifier", title="ID")]
-    type: Annotated[ArtifactSettingType, Field(description="Type of secret value.", title="Type")]
-
-
-class ArtifactExecutionConfig(BaseArtifactExecutionSetting, title="Artifact Execution Config"):
-    """ArtifactExecution config value. Non-sensitive and optional."""
-
-    pass
 
 
 class ArtifactExecutionExecProbe(BaseModel, frozen=True):
@@ -105,7 +109,13 @@ class ArtifactExecutionHealthchecks(BaseModel):
     started: ArtifactExecutionProbe | None = None
 
 
-class ArtifactExecutionSecret(BaseArtifactExecutionSetting, title="Artifact Execution Secret"):
+class ArtifactExecutionConfig(BaseArtifactInjectedValue, title="Artifact Execution Config"):
+    """ArtifactExecution config value. Non-sensitive and optional."""
+
+    pass
+
+
+class ArtifactExecutionSecret(BaseArtifactInjectedValue, title="Artifact Execution Secret"):
     """ArtifactExecution secret value. Sensitive and required."""
 
     pass
@@ -186,6 +196,7 @@ class Artifact(BaseModel, frozen=True):
         ArtifactExecutionRequirements | None, Field(description="Requirements for artifact execution.")
     ] = None
     id: Annotated[str, Field(description="Unique identifier of artifact within project.", title="ID")]
+    resource: Annotated[Resource | None, Field(description="Resource provided by this artifact.")] = None
     type: Annotated[
         ArtifactTypeDependency,
         Field(description="Type of artifact."),
