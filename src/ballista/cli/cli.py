@@ -2,12 +2,15 @@ import os.path
 from enum import StrEnum
 from typing import Annotated
 
+import prettytable
 import typer
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
-from ballista.adapters.types import EnvironmentExecutionAdapter
+from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
+
+# from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
+from ballista.adapters.types import EnvironmentExecutionAdapter, EnvironmentWithExecutionAdapter
 from ballista.bolts import v1_service
 from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
@@ -67,12 +70,10 @@ def get_local_bolt(origin: str, environment: Environment, adapter: EnvironmentEx
     raise ValueError()
 
 
-def get_local_environment() -> tuple[Environment, EnvironmentExecutionAdapter, EnvironmentArtifactExecutionParameters]:
+def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, EnvironmentArtifactExecutionParameters]:
     # Create ephemeral DockerCompose environment for local development
-    # local_adapter = DockerComposeExecutionEnvironmentAdapter()
-    adapter = KubernetesExecutionEnvironmentAdapter()
-
-    # Deploy platform resources
+    adapter = DockerComposeExecutionEnvironmentAdapter()
+    # adapter = KubernetesExecutionEnvironmentAdapter()
 
     environment = LocalEnvironment(hostname="localhost", id="local", name="Local")
 
@@ -83,7 +84,7 @@ def get_local_environment() -> tuple[Environment, EnvironmentExecutionAdapter, E
         volumes={},
     )
 
-    return environment, adapter, execution_parameters
+    return adapter, environment, execution_parameters
 
 
 def get_origin() -> str:
@@ -97,7 +98,7 @@ cli = typer.Typer()
 @cli.command(short_help="initialize a new ballista powered project")
 def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
     # TODO: Need to pick an api, so just use v1 for now. We'll probably want a default version with compatibility for old ones up to a certain date.
-    environment, adapter, _ = get_local_environment()
+    adapter, environment, _ = get_local_environment()
 
     if True:
         resources = adapter.list_platform_resources(environment)
@@ -125,7 +126,7 @@ def build(
     artifact_types: Annotated[list[str] | None, typer.Option(help="List of specified Artifact Types to build.")] = None,
 ):
     origin = get_origin()
-    environment, adapter, _ = get_local_environment()
+    adapter, environment, _ = get_local_environment()
     ballista_bolt = get_local_bolt(origin, environment, adapter)
 
     for artifact in ballista_bolt.artifacts:
@@ -157,10 +158,9 @@ def build(
 @cli.command(short_help="start ballista environment")
 def up():
     origin = get_origin()
-    environment, adapter, execution_parameters = get_local_environment()
+    adapter, environment, execution_parameters = get_local_environment()
     ballista_bolt = get_local_bolt(origin, environment, adapter)
 
-    environment, adapter, execution_parameters = get_local_environment()
     executable_artifacts = [a for a in ballista_bolt.artifacts if a.execution]
     adapter.deploy(
         bolt=ballista_bolt,
@@ -188,5 +188,90 @@ def generate(type: GenerationTypes):
 @cli.command(short_help="launch")
 def launch(launch_target_url: str):
     origin = get_origin()
-    environment, adapter, _ = get_local_environment()
+    adapter, environment, _ = get_local_environment()
     bolt = get_local_bolt(origin, environment, adapter)
+
+
+class ListTypes(StrEnum):
+    artifact_types = "artifact_types"
+    executable_artifacts = "executable_artifacts"
+    resources = "resources"
+
+
+@cli.command(name="list", short_help="list available stuff from environments")
+def list_items(type: ListTypes, environment: str | None = None, verbose: bool = False):
+    environments: list[EnvironmentWithExecutionAdapter] = []
+
+    # TODO: Add remote environments
+    # environments.append((RemoteEnvironmentExecutionAdapter(), remote_environment))
+
+    # Add local environment to list of environments to check
+    local = get_local_environment()
+    environments.append((local[0], local[1]))
+
+    if environment:
+        environments = [e for e in environments if e[1].id == environment]
+    if not environments:
+        print(f'Unknown environment "{environment}".')
+        typer.Exit(1)
+
+    table = prettytable.PrettyTable()
+    table.align = "l"
+    match type:
+        case type.artifact_types:
+            table.field_names = ["Artifact Type", "Configs"]
+
+            for adapter, environment in environments:
+                for artifact_type in adapter.list_artifact_types(environment):
+                    table.add_row([f"{artifact_type.name} ({artifact_type.id})", "NYI"], divider=True)
+
+        case type.executable_artifacts:
+            table.field_names = ["Artifact", "Project"]
+
+            for adapter, environment in environments:
+                for artifact, artifact_version, project_id in adapter.list_executable_artifacts(environment):
+                    table.add_row([f"{artifact.id} v{artifact_version}", project_id])
+
+        case type.resources:
+            table.field_names = ["Resource", "Configs", "Secrets", "Requirements"]
+
+            for adapter, environment in environments:
+                for resource, _ in adapter.list_resources(environment):
+                    configs = None
+                    if resource.configs:
+                        configs = prettytable.PrettyTable(align="l")
+                        configs.set_style(prettytable.TableStyle.PLAIN_COLUMNS)
+                        configs.header = False
+                        if verbose:
+                            configs.add_rows(
+                                [[f"{c.name} ({c.id})", c.description, c.shared] for c in resource.configs]
+                            )
+                        else:
+                            configs.add_rows([[f"{c.name} ({c.id})"] for c in resource.configs])
+
+                    secrets = None
+                    if resource.secrets:
+                        secrets = prettytable.PrettyTable(align="l")
+                        secrets.set_style(prettytable.TableStyle.PLAIN_COLUMNS)
+                        secrets.header = False
+                        if verbose:
+                            secrets.add_rows(
+                                [[f"{s.name} ({s.id})", s.description, s.shared] for s in resource.secrets]
+                            )
+                        else:
+                            secrets.add_rows([[f"{s.name} ({s.id})"] for s in resource.secrets])
+                    requirements = None
+                    if resource.requirements:
+                        requirements = "NYI"
+
+                    table.add_row(
+                        [
+                            f"{resource.name} ({resource.id})",
+                            configs,
+                            secrets,
+                            requirements,
+                        ],
+                        divider=True,
+                    )
+
+    print(table.get_string())

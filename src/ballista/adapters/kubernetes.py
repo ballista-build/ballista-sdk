@@ -2,24 +2,22 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from typing import Any, TypedDict
-from unittest.mock import Mock
 
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import EnvironmentExecutionAdapter
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
 from ballista.types import (
     ArtifactExecutionProbe,
+    ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
-    ArtifactSettingType,
     ArtifactType,
     Bolt,
     Environment,
     EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
-    Resource,
-    ResourceDependencyInjectedValue,
-    ResourceDependencyRequirements,
+    ExecutableArtifactReference,
+    ResourceWithArtifactProvider,
 )
 
 
@@ -157,24 +155,14 @@ def _generate_artifact_resources(
 
     # Platform Resources
     if resource_dependencies := artifact.execution.resources:
-        platform_resources = adapter.list_platform_resources(environment=environment)
-
         for dependency in resource_dependencies:
-            # Get resource handler
-            handler: Resource | None = None
-            for platform_resource in platform_resources:
-                if platform_resource.id == dependency.resource_id:
-                    handler = platform_resource
-                    break
+            resource, _ = adapter.resolve_resource_dependency(dependency, environment)
 
-            if handler is None:
-                raise ValueError(f'No resource for "{dependency.resource_id}".')
-
-            prefix = (dependency.config.get("prefix") or handler.prefix) + "_"
-            ref_name = f"{handler.id}-shared"
+            prefix = (dependency.config.get("prefix") or resource.prefix) + "_"
+            ref_name = f"{resource.id}-shared"
 
             has_shared_configs = False
-            for config in handler.configs:
+            for config in resource.configs:
                 if config.shared:
                     has_shared_configs = True
                 else:
@@ -189,7 +177,7 @@ def _generate_artifact_resources(
                 )
 
             has_shared_secrets = False
-            for secret in handler.secrets:
+            for secret in resource.secrets:
                 if secret.shared:
                     has_shared_secrets = True
                 else:
@@ -310,12 +298,12 @@ def _generate_artifact_resources(
             volume_mount = {"mountPath": volume.path, "name": volume.id}
             volume_mounts.append(volume_mount)
 
-            volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}Gi"}}}
+            volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}G"}}}
 
             # Claim resources
             if execution_volume := execution_parameters.volumes.get(volume.id):
                 if execution_volume.max_capacity:
-                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}Gi"}
+                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
 
                 if execution_volume.path:
                     # Set a subPath in the volume for this specific mount
@@ -441,131 +429,24 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
                 for resource in artifact_resources
             ]
 
-    def fulfill_platform_resource_dependency(self, environment: Environment, artifact: ExecutableArtifact):
-        pass
-
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
-        return []
+        return fake_artifact_types()
 
-    def list_platform_resources(self, environment: Environment) -> list[Resource]:
-        # DO THIS FOR REAL
+    def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
+        return [(ref[0].resource, ref) for ref in self.list_executable_artifacts(environment) if ref[0].resource]
 
-        # Fake Postgres
-        class PostgresRequirements(ResourceDependencyRequirements):
-            prefix: str | None = None
-            """Key prefix."""
-            database_id: str
-            """ID of database."""
+    def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
+        # TODO: DO THIS FOR REAL. Extract this from annotations on something running? CRD?
+        return fake_executable_artifacts()
 
-        postgres = Mock(
-            Resource,
-            configs=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Host of Postgres server.",
-                    id="host",
-                    name="Host",
-                    shared=True,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Port Postgres server listens on.",
-                    id="port",
-                    name="Port",
-                    shared=True,
-                    type=ArtifactSettingType.INTEGER,
-                    value="",
-                ),
-            ],
-            id="postgres",
-            prefix="POSTGRES",
-            requirements=PostgresRequirements,
-            secrets=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    id="database",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    id="username",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    id="password",
-                    shared=False,
-                    type=ArtifactSettingType.PASSWORD,
-                    value=None,
-                ),
-            ],
-        )
-        postgres.name = "Postgres"
+    def resolve_resource_dependency(
+        self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
+    ) -> ResourceWithArtifactProvider:
+        for item in self.list_resources(environment):
+            if item[0].id == resource_dependency.resource_id:
+                return item
 
-        # Fake Redis
-        class RedisRequirements(ResourceDependencyRequirements):
-            prefix: str | None = None
-            """Key prefix."""
-            index_id: str | None = None
-            """ID of index."""
-
-        redis = Mock(
-            Resource,
-            configs={
-                "host": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="host",
-                    shared=True,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                "port": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="port",
-                    shared=True,
-                    type=ArtifactSettingType.INTEGER,
-                    value="",
-                ),
-            },
-            id="redis",
-            prefix="REDIS",
-            requirements=RedisRequirements,
-            secrets={
-                "index": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="index",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                "username": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="username",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                "password": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="password",
-                    shared=False,
-                    type=ArtifactSettingType.PASSWORD,
-                    value=None,
-                ),
-            },
-        )
-        redis.name = "Redis"
-
-        return [postgres, redis]
-
-    def list_services(self, environment: Environment) -> list[ExecutableArtifact]:
-        return []
+        raise ValueError(f'Unknown resource "{resource_dependency.resource_id}"')
 
     def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
         config.load_kube_config()

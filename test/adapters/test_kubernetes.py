@@ -138,7 +138,7 @@ def kubernetes_adapter():
                             },
                             "spec": {
                                 "accessModes": ["ReadWriteMany"],
-                                "resources": {"limits": {"storage": "1.0Gi"}, "requests": {"storage": "0.01Gi"}},
+                                "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.01G"}},
                                 "storageClassName": "generic-storage",
                             },
                         },

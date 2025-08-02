@@ -20,6 +20,11 @@ class ArtifactInjectedValue(Protocol):
     """Setting injected back to dependents."""
 
     @property
+    def alias(self) -> str | None:
+        """Alias to use to inject value instead of automatically generating it."""
+        ...
+
+    @property
     def description(self) -> str:
         """Description of setting."""
         ...
@@ -179,7 +184,14 @@ class ArtifactExecutionExecProbe(Protocol):
     """Probe that executes a collection of commands. A return code of 0 indicates a successful probe. A return code of anything else indicates a failure."""
 
     @property
-    def commands(self) -> Collection[str]: ...
+    def commands(self) -> Collection[str]:
+        """List of commands to run."""
+        ...
+
+    @property
+    def shell(self) -> bool | None:
+        """Indicates if commands are ran in a shell."""
+        ...
 
 
 class BaseArtifactExecutionPortProbe(Protocol):
@@ -253,7 +265,7 @@ class ArtifactExecutionVolume(Protocol):
 
     @property
     def capacity(self) -> float:
-        """Minimum storage capacity required, measured in Gibibytes."""
+        """Minimum storage capacity required, measured in Gigabytes."""
         ...
 
     @property
@@ -327,6 +339,11 @@ class Artifact(Protocol):
     @property
     def id(self) -> str:
         """Unique identifier of artifact."""
+        ...
+
+    @property
+    def resource(self) -> Resource | None:
+        """Resource provided by artifact."""
         ...
 
     @property
@@ -482,6 +499,19 @@ class EnvironmentProjectExecutionParameters(Protocol):
     def artifacts(self) -> Mapping[str, EnvironmentArtifactExecutionParameters]:
         """Mapping of artifact IDs to individual EnvironmentArtifactExecutionParameters."""
         ...
+
+
+# TODO: These should be something better than tuples
+ArtifactReference = tuple[Artifact, str, str]
+"""Reference to a version of an Artifact in a project. artifact,version,project_id"""
+
+
+ExecutableArtifactReference = tuple[ExecutableArtifact, str, str]
+"""Reference to a version of an ExecutableArtifact in a project."""
+
+
+ResourceWithArtifactProvider = tuple[Resource, ArtifactReference]
+"""A Resource paired with the Artifact providing it."""
 
 
 #
