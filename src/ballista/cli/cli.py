@@ -62,7 +62,7 @@ def get_local_bolt(origin: str, environment: Environment, adapter: EnvironmentEx
     bolt_service = None
 
     if api_version == "v1":
-        bolt_service = v1_service.BoltService(adapter.list_platform_resources(environment))
+        bolt_service = v1_service.BoltService(adapter.list_resources(environment))
 
     if bolt_service:
         return bolt_service.get_bolt(ballista_yaml)
@@ -101,7 +101,7 @@ def init(project: Annotated[str, typer.Argument(help="Name of new project.")]):
     adapter, environment, _ = get_local_environment()
 
     if True:
-        resources = adapter.list_platform_resources(environment)
+        resources = adapter.list_resources(environment)
         bolt_service = v1_service.BoltService(resources)
 
     # Check if that project (folder) already exists

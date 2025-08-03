@@ -21,17 +21,17 @@ class BoltService(BaseBoltService):
     def generate_bolt_class(self) -> type[models.Bolt]:
         resource_fields = {
             resource.id: Annotated[
-                _create_resource_dependency_model(resource) | None,
+                _create_resource_dependency_model(resource),
                 Field(default=None, description=f'Dependency on a "{resource.name}" resource.'),
             ]
-            for resource, artifact_ref in self.resources
+            for resource, _ in self.resources
         }
 
         # Resources
         dynamic_resource_dependency = create_model(
             models.ArtifactExecutionResourceDependency.__name__,
-            **resource_fields,
             __base__=models.ArtifactExecutionResourceDependency,
+            **resource_fields,
         )
 
         dynamic_artifact_execution_requirements = create_model(
