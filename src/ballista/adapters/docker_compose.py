@@ -86,10 +86,7 @@ def _generate_docker_compose_project_from_bolt(
     artifact_deque = deque([(artifact, version, project_id) for artifact in artifacts])
 
     # Translate our artifacts into docker compose services
-    while True:
-        if not artifact_deque:
-            break
-
+    while artifact_deque:
         item = artifact_deque.popleft()
         artifact, artifact_version, artifact_project_id = item
         artifact_ref_name = _get_artifact_ref_name(artifact_project_id, artifact)
@@ -312,8 +309,6 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
             d = docker_compose_project.model_dump(exclude_none=True)
-            # print(yaml.dump(d))
-            # return
             compose_yaml: bytes | None = yaml.dump(d, encoding="utf-8")
 
             if compose_yaml:
