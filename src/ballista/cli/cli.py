@@ -8,17 +8,12 @@ import yaml
 from pydantic import BaseModel
 
 from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
-
-# from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
+from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
 from ballista.adapters.types import EnvironmentExecutionAdapter, EnvironmentWithExecutionAdapter
 from ballista.bolts import v1_service
 from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
-
-class LocalEnvironment(BaseModel):
-    hostname: str
-    id: str
-    name: str
+LOCAL_KUBERNETES_CONTEXT: str | None = "minikube"
 
 
 class LocalEnvironmentArtifactExecutionResources(BaseModel):
@@ -71,11 +66,14 @@ def get_local_bolt(origin: str, environment: Environment, adapter: EnvironmentEx
 
 
 def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, EnvironmentArtifactExecutionParameters]:
-    # Create ephemeral DockerCompose environment for local development
-    adapter = DockerComposeExecutionEnvironmentAdapter()
-    # adapter = KubernetesExecutionEnvironmentAdapter()
+    if LOCAL_KUBERNETES_CONTEXT:
+        # If set to use a Kubernetes context for local environment, use it here.
+        adapter = KubernetesExecutionEnvironmentAdapter()
 
-    environment = LocalEnvironment(hostname="localhost", id="local", name="Local")
+    else:
+        adapter = DockerComposeExecutionEnvironmentAdapter()
+
+    environment = Environment(id="local", name="Local")
 
     # TODO: Need a mechanism to get defaults for these
     execution_parameters = LocalEnvironmentArtifactExecutionParameters(
@@ -85,6 +83,12 @@ def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, E
     )
 
     return adapter, environment, execution_parameters
+
+
+def get_remote_environments() -> list:
+    # Read in remote Kubernetes environments
+
+    return []
 
 
 def get_origin() -> str:

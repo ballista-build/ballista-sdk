@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Collection, Protocol
+from typing import Protocol, Sequence
 from unittest.mock import Mock
 
 from ballista.types import (
@@ -33,23 +33,27 @@ class EnvironmentExecutionAdapter(Protocol):
     def deploy(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: EnvironmentArtifactExecutionParameters,
     ):
         """Deploy a Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
         ...
 
-    def list_artifact_types(self, environment: Environment) -> Collection[ArtifactType]:
-        """List executable ArtifactTypes available in environment."""
+    def list_artifact_types(self, environment: Environment) -> Sequence[ArtifactType]:
+        """List available ArtifactTypes in the specified environment."""
         ...
 
-    def list_resources(self, environment: Environment) -> Collection[ResourceWithArtifactProvider]:
-        """List Resources with their providing ArtifactReference in the specified Environment."""
-        ...
-
-    def list_executable_artifacts(self, environment: Environment) -> Collection[ExecutableArtifactReference]:
+    def list_executable_artifacts(self, environment: Environment) -> Sequence[ExecutableArtifactReference]:
         """List ExecutableArtifacts in the specified Environment."""
+        ...
+
+    def list_project_bolts(self, projecte_id: str) -> Sequence[Bolt]:
+        """List Bolts associated with a Project."""
+        ...
+
+    def list_resources(self, environment: Environment) -> Sequence[ResourceWithArtifactProvider]:
+        """List available Resources with a providing ArtifactReference in the specified Environment."""
         ...
 
     def resolve_resource_dependency(

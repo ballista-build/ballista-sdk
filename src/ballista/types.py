@@ -1,4 +1,5 @@
 from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from enum import StrEnum, auto
 from typing import Any, Protocol
 
@@ -403,23 +404,18 @@ class ExecutableArtifact(Artifact, Protocol):
         ...
 
 
-class Environment(Protocol):
-    """An environment that can execute artifacts."""
+@dataclass(frozen=True)
+class Environment:
+    """An environment that can execute ExecutableArtifacts."""
 
-    @property
-    def hostname(self) -> str:
-        """Name of the environment host. Typically used for cluster name, server name, etc."""
-        ...
+    id: str
+    """Unique identifier of environment."""
 
-    @property
-    def id(self) -> str:
-        """Unique identifier."""
-        ...
+    name: str
+    """Human-readable name of environment."""
 
-    @property
-    def name(self) -> str:
-        """Human-readable name of environment."""
-        ...
+    config: dict | None = None
+    """Configuration for environment, adapter specific."""
 
 
 class EnvironmentArtifactExecutionResources(Protocol):

@@ -133,8 +133,8 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
 
 @pytest.fixture(scope="session")
-def environment():
-    return Mock(Environment, hostname="localhost", id="test", name="Test Environment")
+def environment() -> Environment:
+    return Environment(id="test", name="Teset Environment")
 
 
 @pytest.fixture(scope="session")

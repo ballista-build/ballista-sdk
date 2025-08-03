@@ -31,14 +31,28 @@ class KubernetesResource(TypedDict):
 PER_PROJECT_NAMESPACES = False
 """Eventually a setting in an environment to create namespaces per project."""
 
+METADATA_MANAGED_BY = "Ballista"
+METADATA_LABEL_ENVIRONMENT = "ballista.build/environment"
 
-def _get_metadata_labels(bolt: Bolt, environment: Environment) -> dict[str, str]:
-    return {
-        "app.kubernetes.io/managed-by": "Ballista",
-        "app.kubernetes.io/part-of": bolt.project_id,
-        "app.kubernetes.io/version": bolt.version,
-        "ballista-dev.com/environment": environment.id,
+
+def _get_metadata_labels(
+    environment: Environment, bolt: Bolt | None = None, artifact: ExecutableArtifact | None = None
+) -> dict[str, str]:
+    labels = {
+        "app.kubernetes.io/managed-by": METADATA_MANAGED_BY,
+        METADATA_LABEL_ENVIRONMENT: environment.id,
     }
+    if bolt:
+        labels.update(
+            {
+                "app.kubernetes.io/part-of": bolt.project_id,
+                "app.kubernetes.io/version": bolt.version,
+            }
+        )
+    if artifact:
+        labels.update({"app.kubernetes.io/name": artifact.id})
+
+    return labels
 
 
 def _get_bolt_kubernetes_namespace(bolt: Bolt, environment: Environment) -> str:
@@ -122,7 +136,7 @@ def _generate_artifact_resources(
     """Reference name of artifact."""
 
     metadata = {
-        "labels": _get_metadata_labels(bolt, environment) | {"app.kubernetes.io/name": artifact_name},
+        "labels": _get_metadata_labels(environment=environment, bolt=bolt, artifact=artifact),
         "name": artifact_ref_name,
         "namespace": _get_bolt_kubernetes_namespace(bolt, environment),
     }
@@ -251,7 +265,7 @@ def _generate_artifact_resources(
             "metadata": metadata,
             "spec": {
                 "selector": {  # LabelSelector
-                    "matchLabels": {"app.kubernetes.io/name": artifact_name}
+                    "matchLabels": _get_metadata_labels(environment=environment, bolt=bolt, artifact=artifact)
                 },
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
@@ -402,42 +416,64 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             execution_parameters=execution_parameters,
         )
 
-        k8s_client = self._get_kubernetes_client(environment)
+        api_client = self._get_kubernetes_client(environment)
 
         namespace = _get_bolt_kubernetes_namespace(bolt, environment)
 
         if True:
             # Create namespace
-            api = client.CoreV1Api(api_client=k8s_client)
+            api = client.CoreV1Api(api_client)
             try:
-                api.read_namespace(namespace)
+                existing_namespace = api.read_namespace(namespace)
+
+                # TODO: Make sure the namespace is labelled correctly.
             except client.ApiException:
                 api.create_namespace(
                     client.V1Namespace(
                         metadata=client.V1ObjectMeta(
-                            labels=_get_metadata_labels(bolt, environment),
+                            labels=_get_metadata_labels(environment=environment),
                             name=namespace,
                         )
                     )
                 )
 
-        [utils.create_from_dict(k8s_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
+        [utils.create_from_dict(api_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
 
         for artifact_id, artifact_resources in all_artifact_resources.items():
             [
-                utils.create_from_dict(k8s_client, resource, namespace=namespace, apply=True)
+                utils.create_from_dict(api_client, resource, namespace=namespace, apply=True)
                 for resource in artifact_resources
             ]
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return fake_artifact_types()
 
-    def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
-        return [(ref[0].resource, ref) for ref in self.list_executable_artifacts(environment) if ref[0].resource]
+    def list_environments(self) -> list[Environment]:
+        environments = []
+        # Use all kube contexts to assemble a list of Ballista Environments
+        contexts, _ = config.list_kube_config_contexts()
+
+        for context in contexts:
+            api_client = config.new_client_from_config(context=context["name"])
+
+            # TODO: We don't have an Environment type, so use Namespace for now.
+            corev1_api = client.CoreV1Api(api_client=api_client)
+            ballista_namespaces = corev1_api.list_namespace(
+                label_selector=f"app.kubernetes.io/managed-by={METADATA_MANAGED_BY},{METADATA_LABEL_ENVIRONMENT}"
+            )
+
+            environments.extend(
+                [Environment(id=n.metadata.name, name=n.metadata.name) for n in ballista_namespaces.items]
+            )
+
+        return environments
 
     def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
         # TODO: DO THIS FOR REAL. Extract this from annotations on something running? CRD?
-        return fake_executable_artifacts()
+        return []
+
+    def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
+        return [(ref[0].resource, ref) for ref in fake_executable_artifacts() if ref[0].resource]
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
@@ -449,9 +485,7 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         raise ValueError(f'Unknown resource "{resource_dependency.resource_id}"')
 
     def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
-        config.load_kube_config()
-        return client.ApiClient()
+        # TODO: Get context where environment is
+        context = None
 
-
-class ArgoCDGitOpsKubernetesExecutionEnvironmentAdapter(KubernetesExecutionEnvironmentAdapter):
-    pass
+        return config.new_client_from_config(context=context)

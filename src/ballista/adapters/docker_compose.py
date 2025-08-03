@@ -348,10 +348,12 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         return fake_artifact_types()
 
     def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
-        return [(ref[0].resource, ref) for ref in self.list_executable_artifacts(environment) if ref[0].resource]
+        """List available Resources with a providing ArtifactReference in the specified Environment."""
+
+        return [(ref[0].resource, ref) for ref in fake_executable_artifacts() if ref[0].resource]
 
     def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
-        return fake_executable_artifacts()
+        return []
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
