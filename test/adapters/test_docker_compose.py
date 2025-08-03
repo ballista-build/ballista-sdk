@@ -15,7 +15,9 @@ from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParame
 
 @pytest.fixture
 def docker_compose_adapter():
-    return DockerComposeExecutionEnvironmentAdapter()
+    adapter = DockerComposeExecutionEnvironmentAdapter()
+    # TODO: Load available resources into the adapter
+    return adapter
 
 
 @pytest.mark.parametrize(
@@ -27,28 +29,60 @@ def docker_compose_adapter():
                 name="simple",
                 networks={},
                 services={
-                    "api": DockerComposeService(
+                    "simple-api": DockerComposeService(
+                        container_name="simple-api",
+                        depends_on=["postgres-server"],
                         deploy={
                             "resources": {
                                 "limits": {"memory": "1.0g"},
-                                "reservations": {"cpus": 0.25, "memory": "0.1g"},
+                                "reservations": {"cpus": "0.25", "memory": "0.1g"},
                             }
                         },
                         environment={"HTTP_SERVICE_PORT": "80"},
+                        env_file=[
+                            {"format": "raw", "path": "postgres-shared-configs.env", "required": True},
+                            {"format": "raw", "path": "simple-api-configs.env", "required": False},
+                            {"format": "raw", "path": "simple-api-secrets.env", "required": True},
+                        ],
+                        healthcheck={"test": ["CMD-SHELL", "curl -f http://localhost/healthz:80"]},
                         image="hello-world:latest",
                         networks=[],
                         ports=[{"name": "http", "target": 80}],
                         volumes=[
                             DockerComposeServiceVolume(
-                                source="volume_a",
+                                source="simple-api-volume_a",
                                 target="/var/volume_a",
                                 type="volume",
                                 volume={"subpath": "/custom/path"},
                             ),
                         ],
-                    )
+                    ),
+                    "postgres-server": DockerComposeService(
+                        container_name="postgres-server",
+                        deploy={
+                            "resources": {
+                                "limits": {"memory": "1.0g"},
+                                "reservations": {"cpus": "0.25", "memory": "0.1g"},
+                            }
+                        },
+                        environment={"POSTGRES_SERVICE_PORT": "5432"},
+                        env_file=[{"format": "raw", "path": "postgres-server-secrets.env", "required": True}],
+                        healthcheck={"test": ["CMD-SHELL", "pg_isready -U $POSTGRES_USER"]},
+                        image="postgres:17.5",
+                        ports=[{"name": "postgres", "target": 5432}],
+                        volumes=[
+                            DockerComposeServiceVolume(
+                                source="postgres-server-data",
+                                target="/var/lib/postgresql/data",
+                                type="volume",
+                            )
+                        ],
+                    ),
                 },
-                volumes={"volume_a": DockerComposeProjectVolume(driver="local", name="volume_a")},
+                volumes={
+                    "simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A"),
+                    "postgres-server-data": DockerComposeProjectVolume(driver="local", name="PostgreSQL-Data"),
+                },
             ),
         )
     ],
@@ -66,8 +100,9 @@ def test_generate_docker_compose(
     assert (
         docker_compose_project.model_dump()
         == _generate_docker_compose_project_from_bolt(
+            project_id=bolt.project_id,
+            version=bolt.version,
             artifacts=executable_artifacts,
-            bolt=bolt,
             adapter=docker_compose_adapter,
             environment=environment,
             execution_parameters=environment_artifact_execution_parameters,
@@ -87,7 +122,8 @@ def test_generate_requires_artifacts(
 
     with context:
         _generate_docker_compose_project_from_bolt(
-            bolt,
+            project_id=bolt.project_id,
+            version=bolt.version,
             artifacts=executable_artifacts,
             adapter=docker_compose_adapter,
             environment=environment,

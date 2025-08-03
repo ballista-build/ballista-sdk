@@ -2,24 +2,22 @@ from __future__ import annotations
 
 from collections.abc import Collection
 from typing import Any, TypedDict
-from unittest.mock import Mock
 
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import EnvironmentExecutionAdapter
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
 from ballista.types import (
     ArtifactExecutionProbe,
+    ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
-    ArtifactSettingType,
     ArtifactType,
     Bolt,
     Environment,
     EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
-    Resource,
-    ResourceDependencyInjectedValue,
-    ResourceDependencyRequirements,
+    ExecutableArtifactReference,
+    ResourceWithArtifactProvider,
 )
 
 
@@ -33,14 +31,28 @@ class KubernetesResource(TypedDict):
 PER_PROJECT_NAMESPACES = False
 """Eventually a setting in an environment to create namespaces per project."""
 
+METADATA_MANAGED_BY = "Ballista"
+METADATA_LABEL_ENVIRONMENT = "ballista.build/environment"
 
-def _get_metadata_labels(bolt: Bolt, environment: Environment) -> dict[str, str]:
-    return {
-        "app.kubernetes.io/managed-by": "Ballista",
-        "app.kubernetes.io/part-of": bolt.project_id,
-        "app.kubernetes.io/version": bolt.version,
-        "ballista-dev.com/environment": environment.id,
+
+def _get_metadata_labels(
+    environment: Environment, bolt: Bolt | None = None, artifact: ExecutableArtifact | None = None
+) -> dict[str, str]:
+    labels = {
+        "app.kubernetes.io/managed-by": METADATA_MANAGED_BY,
+        METADATA_LABEL_ENVIRONMENT: environment.id,
     }
+    if bolt:
+        labels.update(
+            {
+                "app.kubernetes.io/part-of": bolt.project_id,
+                "app.kubernetes.io/version": bolt.version,
+            }
+        )
+    if artifact:
+        labels.update({"app.kubernetes.io/name": artifact.id})
+
+    return labels
 
 
 def _get_bolt_kubernetes_namespace(bolt: Bolt, environment: Environment) -> str:
@@ -124,7 +136,7 @@ def _generate_artifact_resources(
     """Reference name of artifact."""
 
     metadata = {
-        "labels": _get_metadata_labels(bolt, environment) | {"app.kubernetes.io/name": artifact_name},
+        "labels": _get_metadata_labels(environment=environment, bolt=bolt, artifact=artifact),
         "name": artifact_ref_name,
         "namespace": _get_bolt_kubernetes_namespace(bolt, environment),
     }
@@ -157,24 +169,14 @@ def _generate_artifact_resources(
 
     # Platform Resources
     if resource_dependencies := artifact.execution.resources:
-        platform_resources = adapter.list_platform_resources(environment=environment)
-
         for dependency in resource_dependencies:
-            # Get resource handler
-            handler: Resource | None = None
-            for platform_resource in platform_resources:
-                if platform_resource.id == dependency.resource_id:
-                    handler = platform_resource
-                    break
+            resource, _ = adapter.resolve_resource_dependency(dependency, environment)
 
-            if handler is None:
-                raise ValueError(f'No resource for "{dependency.resource_id}".')
-
-            prefix = (dependency.config.get("prefix") or handler.prefix) + "_"
-            ref_name = f"{handler.id}-shared"
+            prefix = (dependency.config.get("prefix") or resource.prefix) + "_"
+            ref_name = f"{resource.id}-shared"
 
             has_shared_configs = False
-            for config in handler.configs:
+            for config in resource.configs:
                 if config.shared:
                     has_shared_configs = True
                 else:
@@ -189,7 +191,7 @@ def _generate_artifact_resources(
                 )
 
             has_shared_secrets = False
-            for secret in handler.secrets:
+            for secret in resource.secrets:
                 if secret.shared:
                     has_shared_secrets = True
                 else:
@@ -263,7 +265,7 @@ def _generate_artifact_resources(
             "metadata": metadata,
             "spec": {
                 "selector": {  # LabelSelector
-                    "matchLabels": {"app.kubernetes.io/name": artifact_name}
+                    "matchLabels": _get_metadata_labels(environment=environment, bolt=bolt, artifact=artifact)
                 },
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
@@ -310,12 +312,12 @@ def _generate_artifact_resources(
             volume_mount = {"mountPath": volume.path, "name": volume.id}
             volume_mounts.append(volume_mount)
 
-            volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}Gi"}}}
+            volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}G"}}}
 
             # Claim resources
             if execution_volume := execution_parameters.volumes.get(volume.id):
                 if execution_volume.max_capacity:
-                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}Gi"}
+                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
 
                 if execution_volume.path:
                     # Set a subPath in the volume for this specific mount
@@ -414,163 +416,76 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             execution_parameters=execution_parameters,
         )
 
-        k8s_client = self._get_kubernetes_client(environment)
+        api_client = self._get_kubernetes_client(environment)
 
         namespace = _get_bolt_kubernetes_namespace(bolt, environment)
 
         if True:
             # Create namespace
-            api = client.CoreV1Api(api_client=k8s_client)
+            api = client.CoreV1Api(api_client)
             try:
-                api.read_namespace(namespace)
+                existing_namespace = api.read_namespace(namespace)
+
+                # TODO: Make sure the namespace is labelled correctly.
             except client.ApiException:
                 api.create_namespace(
                     client.V1Namespace(
                         metadata=client.V1ObjectMeta(
-                            labels=_get_metadata_labels(bolt, environment),
+                            labels=_get_metadata_labels(environment=environment),
                             name=namespace,
                         )
                     )
                 )
 
-        [utils.create_from_dict(k8s_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
+        [utils.create_from_dict(api_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
 
         for artifact_id, artifact_resources in all_artifact_resources.items():
             [
-                utils.create_from_dict(k8s_client, resource, namespace=namespace, apply=True)
+                utils.create_from_dict(api_client, resource, namespace=namespace, apply=True)
                 for resource in artifact_resources
             ]
 
-    def fulfill_platform_resource_dependency(self, environment: Environment, artifact: ExecutableArtifact):
-        pass
-
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
+        return fake_artifact_types()
+
+    def list_environments(self) -> list[Environment]:
+        environments = []
+        # Use all kube contexts to assemble a list of Ballista Environments
+        contexts, _ = config.list_kube_config_contexts()
+
+        for context in contexts:
+            api_client = config.new_client_from_config(context=context["name"])
+
+            # TODO: We don't have an Environment type, so use Namespace for now.
+            corev1_api = client.CoreV1Api(api_client=api_client)
+            ballista_namespaces = corev1_api.list_namespace(
+                label_selector=f"app.kubernetes.io/managed-by={METADATA_MANAGED_BY},{METADATA_LABEL_ENVIRONMENT}"
+            )
+
+            environments.extend(
+                [Environment(id=n.metadata.name, name=n.metadata.name) for n in ballista_namespaces.items]
+            )
+
+        return environments
+
+    def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
+        # TODO: DO THIS FOR REAL. Extract this from annotations on something running? CRD?
         return []
 
-    def list_platform_resources(self, environment: Environment) -> list[Resource]:
-        # DO THIS FOR REAL
+    def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
+        return [(ref[0].resource, ref) for ref in fake_executable_artifacts() if ref[0].resource]
 
-        # Fake Postgres
-        class PostgresRequirements(ResourceDependencyRequirements):
-            prefix: str | None = None
-            """Key prefix."""
-            database_id: str
-            """ID of database."""
+    def resolve_resource_dependency(
+        self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
+    ) -> ResourceWithArtifactProvider:
+        for item in self.list_resources(environment):
+            if item[0].id == resource_dependency.resource_id:
+                return item
 
-        postgres = Mock(
-            Resource,
-            configs=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Host of Postgres server.",
-                    id="host",
-                    name="Host",
-                    shared=True,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Port Postgres server listens on.",
-                    id="port",
-                    name="Port",
-                    shared=True,
-                    type=ArtifactSettingType.INTEGER,
-                    value="",
-                ),
-            ],
-            id="postgres",
-            prefix="POSTGRES",
-            requirements=PostgresRequirements,
-            secrets=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    id="database",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    id="username",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    id="password",
-                    shared=False,
-                    type=ArtifactSettingType.PASSWORD,
-                    value=None,
-                ),
-            ],
-        )
-        postgres.name = "Postgres"
-
-        # Fake Redis
-        class RedisRequirements(ResourceDependencyRequirements):
-            prefix: str | None = None
-            """Key prefix."""
-            index_id: str | None = None
-            """ID of index."""
-
-        redis = Mock(
-            Resource,
-            configs={
-                "host": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="host",
-                    shared=True,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                "port": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="port",
-                    shared=True,
-                    type=ArtifactSettingType.INTEGER,
-                    value="",
-                ),
-            },
-            id="redis",
-            prefix="REDIS",
-            requirements=RedisRequirements,
-            secrets={
-                "index": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="index",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                "username": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="username",
-                    shared=False,
-                    type=ArtifactSettingType.STRING,
-                    value="",
-                ),
-                "password": Mock(
-                    ResourceDependencyInjectedValue,
-                    id="password",
-                    shared=False,
-                    type=ArtifactSettingType.PASSWORD,
-                    value=None,
-                ),
-            },
-        )
-        redis.name = "Redis"
-
-        return [postgres, redis]
-
-    def list_services(self, environment: Environment) -> list[ExecutableArtifact]:
-        return []
+        raise ValueError(f'Unknown resource "{resource_dependency.resource_id}"')
 
     def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
-        config.load_kube_config()
-        return client.ApiClient()
+        # TODO: Get context where environment is
+        context = None
 
-
-class ArgoCDGitOpsKubernetesExecutionEnvironmentAdapter(KubernetesExecutionEnvironmentAdapter):
-    pass
+        return config.new_client_from_config(context=context)

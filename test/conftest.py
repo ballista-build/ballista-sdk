@@ -105,6 +105,13 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                     execution=Mock(
                         ArtifactExecutionRequirements,
                         configs=[Mock(ArtifactInjectedValue, alias=None, id="option_a", type="string")],
+                        healthchecks=Mock(
+                            ArtifactExecutionHealthChecks,
+                            alive=None,
+                            ready=None,
+                            started=None,
+                        ),
+                        resources=[],
                         secrets=[Mock(ArtifactInjectedValue, alias=None, id="secret_a", type="password")],
                         services=[],
                         volumes=[volume_a, volume_b],
@@ -126,8 +133,8 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
 
 @pytest.fixture(scope="session")
-def environment():
-    return Mock(Environment, hostname="localhost", id="test", name="Test Environment")
+def environment() -> Environment:
+    return Environment(id="test", name="Teset Environment")
 
 
 @pytest.fixture(scope="session")

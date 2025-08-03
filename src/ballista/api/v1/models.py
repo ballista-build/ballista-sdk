@@ -224,14 +224,6 @@ class Bolt(BaseModel, frozen=True):
         return [a for a in self.artifacts if a.execution]
 
 
-class Environment(BaseModel, frozen=True):
-    """Environment that executes Artifacts."""
-
-    hostname: Annotated[str, Field(description="Hostname of environment.")]
-    id: Annotated[str, Field(description="Unique environment identifier.")]
-    name: Annotated[str, Field(description="Human-readable name of environment.")]
-
-
 class EnvironmentArtifactExecutionResources(BaseModel, frozen=True):
     max_cpu: Annotated[
         float | None,

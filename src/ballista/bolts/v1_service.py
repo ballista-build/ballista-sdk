@@ -9,29 +9,29 @@ from pydantic import Field, create_model
 from ballista.api.v1 import models
 
 from ..types import BoltService as BaseBoltService
-from ..types import Resource
+from ..types import Resource, ResourceWithArtifactProvider
 
 
 class BoltService(BaseBoltService):
-    resources: Collection[Resource]
+    resources: Collection[ResourceWithArtifactProvider]
 
-    def __init__(self, resources: Collection[Resource]):
+    def __init__(self, resources: Collection[ResourceWithArtifactProvider]):
         self.resources = resources
 
     def generate_bolt_class(self) -> type[models.Bolt]:
         resource_fields = {
-            r.id: Annotated[
-                _create_resource_dependency_model(r) | None,
-                Field(default=None, description=f'Dependency on a "{r.name}" resource.'),
+            resource.id: Annotated[
+                _create_resource_dependency_model(resource),
+                Field(default=None, description=f'Dependency on a "{resource.name}" resource.'),
             ]
-            for r in self.resources
+            for resource, _ in self.resources
         }
 
         # Resources
         dynamic_resource_dependency = create_model(
             models.ArtifactExecutionResourceDependency.__name__,
-            **resource_fields,
             __base__=models.ArtifactExecutionResourceDependency,
+            **resource_fields,
         )
 
         dynamic_artifact_execution_requirements = create_model(

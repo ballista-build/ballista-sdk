@@ -1,4 +1,5 @@
 from collections.abc import Collection, Mapping
+from dataclasses import dataclass
 from enum import StrEnum, auto
 from typing import Any, Protocol
 
@@ -18,6 +19,11 @@ class ArtifactSettingType(StrEnum):
 
 class ArtifactInjectedValue(Protocol):
     """Setting injected back to dependents."""
+
+    @property
+    def alias(self) -> str | None:
+        """Alias to use to inject value instead of automatically generating it."""
+        ...
 
     @property
     def description(self) -> str:
@@ -179,7 +185,14 @@ class ArtifactExecutionExecProbe(Protocol):
     """Probe that executes a collection of commands. A return code of 0 indicates a successful probe. A return code of anything else indicates a failure."""
 
     @property
-    def commands(self) -> Collection[str]: ...
+    def commands(self) -> Collection[str]:
+        """List of commands to run."""
+        ...
+
+    @property
+    def shell(self) -> bool | None:
+        """Indicates if commands are ran in a shell."""
+        ...
 
 
 class BaseArtifactExecutionPortProbe(Protocol):
@@ -253,7 +266,7 @@ class ArtifactExecutionVolume(Protocol):
 
     @property
     def capacity(self) -> float:
-        """Minimum storage capacity required, measured in Gibibytes."""
+        """Minimum storage capacity required, measured in Gigabytes."""
         ...
 
     @property
@@ -330,6 +343,11 @@ class Artifact(Protocol):
         ...
 
     @property
+    def resource(self) -> Resource | None:
+        """Resource provided by artifact."""
+        ...
+
+    @property
     def type(self) -> ArtifactTypeDependency:
         """Type of artifact."""
         ...
@@ -386,23 +404,18 @@ class ExecutableArtifact(Artifact, Protocol):
         ...
 
 
-class Environment(Protocol):
-    """An environment that can execute artifacts."""
+@dataclass(frozen=True)
+class Environment:
+    """An environment that can execute ExecutableArtifacts."""
 
-    @property
-    def hostname(self) -> str:
-        """Name of the environment host. Typically used for cluster name, server name, etc."""
-        ...
+    id: str
+    """Unique identifier of environment."""
 
-    @property
-    def id(self) -> str:
-        """Unique identifier."""
-        ...
+    name: str
+    """Human-readable name of environment."""
 
-    @property
-    def name(self) -> str:
-        """Human-readable name of environment."""
-        ...
+    config: dict | None = None
+    """Configuration for environment, adapter specific."""
 
 
 class EnvironmentArtifactExecutionResources(Protocol):
@@ -482,6 +495,19 @@ class EnvironmentProjectExecutionParameters(Protocol):
     def artifacts(self) -> Mapping[str, EnvironmentArtifactExecutionParameters]:
         """Mapping of artifact IDs to individual EnvironmentArtifactExecutionParameters."""
         ...
+
+
+# TODO: These should be something better than tuples
+ArtifactReference = tuple[Artifact, str, str]
+"""Reference to a version of an Artifact in a project. artifact,version,project_id"""
+
+
+ExecutableArtifactReference = tuple[ExecutableArtifact, str, str]
+"""Reference to a version of an ExecutableArtifact in a project."""
+
+
+ResourceWithArtifactProvider = tuple[Resource, ArtifactReference]
+"""A Resource paired with the Artifact providing it."""
 
 
 #
