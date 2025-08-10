@@ -15,6 +15,7 @@ from ballista.types import (
     Bolt,
     Environment,
     EnvironmentArtifactExecutionParameters,
+    EnvironmentArtifactExecutionServiceParameters,
     ExecutableArtifact,
     ExecutableArtifactReference,
     ResourceWithArtifactProvider,
@@ -26,6 +27,16 @@ class KubernetesResource(TypedDict):
     kind: str
     metadata: dict[str, Any]
     spec: dict[str, Any]
+
+
+"""
+
+Environments:
+    - cluster per environment
+    - namespace per environment
+    - namespace per project-environment pair
+
+"""
 
 
 PER_PROJECT_NAMESPACES = False
@@ -103,7 +114,7 @@ def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactE
         return {"exec": {"command": probe.exec.commands}}
 
     # Get port common in grpc, http, and port probes
-    common = probe.grpc or probe.http or probe.port
+    common = probe.grpc or probe.http or probe.tcp
     if common is None:
         return None
 
@@ -112,13 +123,15 @@ def _generate_probe(probe: ArtifactExecutionProbe, services: dict[str, ArtifactE
 
     if probe.grpc:
         # GRPC cannot use a named port
-        return {"grpc": {"port": service.port if service else port}}
+        return {"grpc": {"port": service.grpc.port if service and service.grpc else port}}
 
     if probe.http:
-        return {"httpGet": {"path": probe.http.path or "/healthz", "port": service.id if service else port}}
+        return {
+            "httpGet": {"path": probe.http.path or "/healthz", "port": service.id if service and service.http else port}
+        }
 
-    if probe.port:
-        return {"tcpSocket": {"port": service.id if service else port}}
+    if probe.tcp:
+        return {"tcpSocket": {"port": service.id if service and service.tcp else port}}
 
 
 def _generate_artifact_resources(
@@ -128,6 +141,8 @@ def _generate_artifact_resources(
     environment: Environment,
     execution_parameters: EnvironmentArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
+    execution = artifact.execution
+
     k8s_resources: list[KubernetesResource] = []
 
     artifact_name = artifact.id
@@ -164,11 +179,11 @@ def _generate_artifact_resources(
 
         container["resources"] = pod_resources
 
-    has_service_configs = bool(artifact.execution.configs)
-    has_service_secrets = bool(artifact.execution.secrets)
+    has_service_configs = bool(execution.configs)
+    has_service_secrets = bool(execution.secrets)
 
     # Platform Resources
-    if resource_dependencies := artifact.execution.resources:
+    if resource_dependencies := execution.resources:
         for dependency in resource_dependencies:
             resource, _ = adapter.resolve_resource_dependency(dependency, environment)
 
@@ -217,21 +232,28 @@ def _generate_artifact_resources(
 
     # Services
     services = {}
-    if execution_services := artifact.execution.services:
+    external_services: list[tuple[ArtifactExecutionService, EnvironmentArtifactExecutionServiceParameters]] = []
+    if execution_services := execution.services:
         ports = []
         for service in execution_services:
             services[service.id] = service
 
             key = f"{service.id.upper()}_SERVICE"
 
-            ports.append({"containerPort": service.port, "name": service.id})
+            port_service = service.grpc or service.http or service.tcp
+            if port_service:
+                ports.append({"containerPort": port_service.port, "name": service.id})
 
-            env.append({"name": f"{key}_PORT", "value": str(service.port)})
+                env.append({"name": f"{key}_PORT", "value": str(port_service.port)})
+
+            service_execution_parameters = execution_parameters.services.get(service.id)
+            if service_execution_parameters:
+                external_services.append((service, service_execution_parameters))
 
         container["ports"] = ports
 
     # Healthchecks; processed after Services since they can refer to them
-    if healthchecks := artifact.execution.healthchecks:
+    if healthchecks := execution.healthchecks:
         if (ready := healthchecks.ready) and (probe := _generate_probe(ready, services)):
             container["readinessProbe"] = probe
 
@@ -265,7 +287,7 @@ def _generate_artifact_resources(
             "metadata": metadata,
             "spec": {
                 "selector": {  # LabelSelector
-                    "matchLabels": _get_metadata_labels(environment=environment, bolt=bolt, artifact=artifact)
+                    "matchLabels": metadata["labels"]
                 },
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
@@ -278,30 +300,33 @@ def _generate_artifact_resources(
 
     # Services
     if services:
-        k8s_resources.extend(
-            [
-                {
-                    "apiVersion": "v1",
-                    "kind": "Service",
-                    "metadata": {
-                        "labels": metadata["labels"],
-                        "name": f"{artifact_ref_name}-{s.id}",
-                        "namespace": metadata["namespace"],
-                    },
-                    "spec": {
-                        "selector": {"app.kubernetes.io/name": artifact_name},
-                        "ports": [{"port": s.port, "name": s.id, "targetPort": s.id}],
-                    },
-                }
-                for s in services.values()
-            ]
-        )
+        for service in services.values():
+            ports = []
+            resource: KubernetesResource = {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "labels": metadata["labels"],
+                    "name": f"{artifact_ref_name}-{service.id}",
+                    "namespace": metadata["namespace"],
+                },
+                "spec": {"selector": metadata["labels"], "ports": ports},
+            }
+
+            if http_service := (service.grpc or service.http):
+                ports.append({"port": http_service.port, "name": service.id, "targetPort": service.id})
+
+            elif service.tcp:
+                # TODO: Need to create a different kind of service for TCP traffic
+                pass
+
+            k8s_resources.append(resource)
 
     # Volumes
-    if artifact.execution.volumes:
+    if execution.volumes:
         volumes = []
         volume_mounts = []
-        for volume in artifact.execution.volumes:
+        for volume in execution.volumes:
             volume_claim_metadata = {
                 "labels": metadata["labels"],
                 "name": f"{artifact_ref_name}-{volume.id}",
@@ -361,37 +386,36 @@ def _generate_artifact_resources(
         container["volumeMounts"] = volume_mounts
         pod_spec["volumes"] = volumes
 
-    # TODO: Figure this sucker out
+    # TODO: Generate GatewayRoutes instead
     # Ingress
-    external_services = []
-
     if external_services:
-        k8s_resources.append(
-            {
-                "apiVersion": "networking.k8s.io/v1",
-                "kind": "Ingress",
-                "metadata": metadata,
-                "spec": {
-                    "rules": [
-                        {
-                            "host": "host",
-                            "http": {
-                                "paths": [
-                                    {
-                                        "path": s["external_path"],
-                                        "pathType": "Prefix",
-                                        "backend": {
-                                            "service": {"name": s["name"], "port": {"number": s["target_port"]}}
-                                        },
-                                    }
-                                    for s in external_services
-                                ]
-                            },
-                        }
-                    ]
+        hosts = {}
+        for service, service_execution_parameters in external_services:
+            if service.tcp:
+                # Can't expose TCP this way
+                continue
+
+            path = {
+                "path": service_execution_parameters.path or "/",
+                "pathType": "Prefix",
+                "backend": {"service": {"name": service.id, "port": {"number": service_execution_parameters.port}}},
+            }
+
+            host = service_execution_parameters.host
+            if host in hosts:
+                hosts[host]["http"]["paths"].append(path)
+            else:
+                hosts[host] = {"host": host, "http": {"paths": [path]}}
+
+        if hosts:
+            k8s_resources.append(
+                {
+                    "apiVersion": "networking.k8s.io/v1",
+                    "kind": "Ingress",
+                    "metadata": metadata,
+                    "spec": {"rules": list(hosts.values())},
                 },
-            },
-        )
+            )
 
     return k8s_resources
 
@@ -483,6 +507,15 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
                 return item
 
         raise ValueError(f'Unknown resource "{resource_dependency.resource_id}"')
+
+    def teardown(
+        self,
+        bolt: Bolt,
+        artifacts: Collection[ExecutableArtifact],
+        environment: Environment,
+        execution_parameters: EnvironmentArtifactExecutionParameters,
+    ):
+        pass
 
     def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
         # TODO: Get context where environment is

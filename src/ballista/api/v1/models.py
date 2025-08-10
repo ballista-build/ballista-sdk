@@ -69,6 +69,7 @@ class ArtifactExecutionExecProbe(BaseModel, frozen=True):
     """Probe that executes a list of commands."""
 
     commands: Annotated[list[str], Field(description="List of commands executed.")]
+    shell: Annotated[bool, Field(description="Command needs to be ran as a shell command.")] = False
 
 
 class BaseArtifactExecutionPortProbe(BaseModel):
@@ -78,7 +79,7 @@ class BaseArtifactExecutionPortProbe(BaseModel):
     ] = None
 
 
-class ArtifactExecutionPortProbe(BaseArtifactExecutionPortProbe, frozen=True):
+class ArtifactExecutionTCPProbe(BaseArtifactExecutionPortProbe, frozen=True):
     """Probe that uses a TCP port."""
 
     pass
@@ -100,7 +101,7 @@ class ArtifactExecutionProbe(BaseOneOfModel):
     exec: Annotated[ArtifactExecutionExecProbe | None, Field()] = None
     grpc: Annotated[ArtifactExecutionGRPCProbe | None, Field()] = None
     http: Annotated[ArtifactExecutionHTTPProbe | None, Field()] = None
-    port: Annotated[ArtifactExecutionPortProbe | None, Field()] = None
+    tcp: Annotated[ArtifactExecutionTCPProbe | None, Field()] = None
 
 
 class ArtifactExecutionHealthchecks(BaseModel):
@@ -121,11 +122,29 @@ class ArtifactExecutionSecret(BaseArtifactInjectedValue, title="Artifact Executi
     pass
 
 
+class BaseArtifactExecutionPortService(BaseModel):
+    port: Annotated[int, Field(description="Port number service is listening on.")]
+
+
+class ArtifactExecutionGRPCService(BaseArtifactExecutionPortService):
+    pass
+
+
+class ArtifactExecutionHTTPService(BaseArtifactExecutionPortService):
+    pass
+
+
+class ArtifactExecutionTCPService(BaseArtifactExecutionPortService):
+    pass
+
+
 class ArtifactExecutionService(BaseModel):
     """A network-connected port with unique identifier."""
 
+    grpc: Annotated[ArtifactExecutionGRPCService | None, Field()] = None
+    http: Annotated[ArtifactExecutionHTTPService | None, Field()] = None
     id: Annotated[str, Field(description="Unique identifier of the service.", title="Service ID")]
-    port: Annotated[int, Field(description="Port number connected by the service.")]
+    tcp: Annotated[ArtifactExecutionTCPService | None, Field()] = None
 
 
 class ArtifactExecutionVolume(BaseModel, frozen=True, title="Artifact Execution Volume"):
@@ -218,6 +237,10 @@ class Bolt(BaseModel, frozen=True):
     artifacts: Annotated[list[Artifact], Field(description="List of artifacts.", min_length=1)]
     project_id: Annotated[str, Field(description="Project identifier.", title="Project ID")]
     version: Annotated[str, Field(description="Version of Bolt.")]
+
+    @property
+    def buildable_artifacts(self) -> list[Artifact]:
+        return [a for a in self.artifacts if a.build]
 
     @property
     def executable_artifacts(self) -> list[Artifact]:

@@ -155,9 +155,10 @@ def _generate_docker_compose_service_from_artifact(
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
 
+    execution = artifact.execution
     artifact_ref_name = _get_artifact_ref_name(project_id, artifact)
 
-    service = DockerComposeService(container_name=artifact_ref_name)
+    compose_service = DockerComposeService(container_name=artifact_ref_name)
 
     if execution_resources := execution_parameters.resources:
         resource_max = {}
@@ -171,16 +172,16 @@ def _generate_docker_compose_service_from_artifact(
         if min_memory := execution_resources.min_memory:
             resource_min["memory"] = f"{min_memory}g"
 
-        service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
+        compose_service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
 
     env = {}
     env_files = []
 
-    has_service_configs = bool(artifact.execution.configs)
-    has_service_secrets = bool(artifact.execution.secrets)
+    has_service_configs = bool(execution.configs)
+    has_service_secrets = bool(execution.secrets)
 
     # Resource dependencies
-    if resource_dependencies := artifact.execution.resources:
+    if resource_dependencies := execution.resources:
         for dependency in resource_dependencies:
             resource, _ = adapter.resolve_resource_dependency(dependency, environment)
 
@@ -214,32 +215,48 @@ def _generate_docker_compose_service_from_artifact(
         env_files.append({"format": "raw", "path": f"{artifact_ref_name}-secrets.env", "required": True})
 
     # Services
-    services = {}
-    if execution_services := artifact.execution.services:
-        for execution_service in execution_services:
-            key = f"{execution_service.id.upper()}_SERVICE"
-            services[execution_service.id] = execution_service
-            service.ports.append({"name": execution_service.id, "target": execution_service.port})
-            env[f"{key}_PORT"] = str(execution_service.port)
+    services_added = {}
+    for service in execution.services:
+        key = f"{service.id.upper()}_SERVICE"
+        services_added[service.id] = service
+
+        service_port = _get_service_port(service)
+        env[f"{key}_PORT"] = str(service_port)
+
+        service_execution_parameters = execution_parameters.services.get(service.id)
+        if service_execution_parameters is not None:
+            port = service_execution_parameters.port or service_port
+
+            compose_service.ports.append(
+                {
+                    "name": service.id,
+                    "published": str(port),
+                    "target": service_port,
+                }
+            )
 
     # Healthchecks; processed after services as they can depend on them.
-    if healthchecks := artifact.execution.healthchecks:
+    if healthchecks := execution.healthchecks:
         # Docker Compose only supports a single healthcheck
         if probe := healthchecks.ready or healthchecks.alive or healthchecks.started:
-            service.healthcheck = _generate_healthcheck(probe, services)
+            compose_service.healthcheck = _generate_healthcheck(probe, services_added)
 
+    # Building
     if build := artifact.build:
         context = "."
         dockerfile = build.dockerfile or "Dockerfile"
         if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
             context, dockerfile = pieces
 
-        service.build = {"context": context, "dockerfile": dockerfile, "target": build.dockerfile_target}
+        compose_service.build = {"context": context, "dockerfile": dockerfile, "target": build.dockerfile_target}
+
+        # TODO: Implement better development specs
+        compose_service.develop = {"watch": [{"action": "rebuild", "path": context}]}
     else:
-        service.image = artifact.type.config.get("image", artifact.id)
+        compose_service.image = artifact.type.config.get("image", artifact.id)
 
     # Volumes
-    if volumes := artifact.execution.volumes:
+    if volumes := execution.volumes:
         for volume in volumes:
             execution_volume = execution_parameters.volumes.get(volume.id)
 
@@ -248,7 +265,7 @@ def _generate_docker_compose_service_from_artifact(
                 if execution_volume and execution_volume.path:
                     volume_options = {"subpath": execution_volume.path}
 
-                service.volumes.append(
+                compose_service.volumes.append(
                     DockerComposeServiceVolume(
                         source=f"{artifact_ref_name}-{volume.id}",
                         target=volume.path,
@@ -259,16 +276,16 @@ def _generate_docker_compose_service_from_artifact(
             else:
                 tmpfs_options = {"size": f"{volume.capacity}G"}
 
-                service.volumes.append(
+                compose_service.volumes.append(
                     DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")
                 )
 
     if env:
-        service.environment = env
+        compose_service.environment = env
     if env_files:
-        service.env_file = env_files
+        compose_service.env_file = env_files
 
-    return service
+    return compose_service
 
 
 def _generate_compose_volume():
@@ -286,14 +303,29 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
 
         if service_id := probe.http.service_id:
             if service := services.get(service_id):
-                port = service.port
+                if service.http:
+                    port = service.http.port
+                else:
+                    # Must be an HTTP service
+                    raise ValueError("Cannot reference that service")
             else:
                 raise ValueError(f'Unknown service "{service_id}".')
 
         return {"test": ["CMD-SHELL", f"curl -f http://localhost{path}:{port}"]}
-    if probe.port:
+    if probe.tcp:
         pass
     return {}
+
+
+def _get_service_port(service: ArtifactExecutionService) -> int:
+    if service.grpc:
+        return service.grpc.port
+    elif service.http:
+        return service.http.port
+    elif service.tcp:
+        return service.tcp.port
+
+    raise ValueError("WTF")
 
 
 def _generate_env_files():
@@ -337,7 +369,12 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             execution_parameters=execution_parameters,
         )
 
-        self._call_compose(docker_compose_project, ["up", "--build", "--watch", "--remove-orphans"])
+        if True:
+            commands = ["up", "--watch", "--remove-orphans"]
+        else:
+            commands = ["up", "--remove-orphans"]
+        self._call_compose(docker_compose_project, commands)
+        # self._call_compose(docker_compose_project, ["down", "--remove-orphans"])
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return fake_artifact_types()
@@ -358,3 +395,21 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
                 return item
 
         raise Exception("Unknown resource")
+
+    def teardown(
+        self,
+        bolt: Bolt,
+        artifacts: Collection[ExecutableArtifact],
+        environment: Environment,
+        execution_parameters: EnvironmentArtifactExecutionParameters,
+    ):
+        docker_compose_project = _generate_docker_compose_project_from_bolt(
+            project_id=bolt.project_id,
+            version=bolt.version,
+            artifacts=artifacts,
+            adapter=self,
+            environment=environment,
+            execution_parameters=execution_parameters,
+        )
+
+        self._call_compose(docker_compose_project, ["down"])

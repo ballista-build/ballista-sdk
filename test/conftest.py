@@ -16,8 +16,9 @@ from ballista.types import (
     Bolt,
     Environment,
     EnvironmentArtifactExecutionParameters,
-    EnvironmentArtifactExecutionResources,
-    EnvironmentArtifactExecutionScaling,
+    EnvironmentArtifactExecutionResourceParameters,
+    EnvironmentArtifactExecutionScalingParameters,
+    EnvironmentArtifactExecutionServiceParameters,
     EnvironmentArtifactExecutionVolume,
     Project,
 )
@@ -38,7 +39,9 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
     match request.param:
         case "empty":
             # An empty project, having no artifacts. Invalid.
-            return Mock(Bolt, artifacts=[], project_id=project.id, version="1")
+            return Mock(
+                Bolt, buildable_artifacts=[], artifacts=[], executable_artifacts=[], project_id=project.id, version="1"
+            )
         case "simple":
             # A simple project with one ExecutableArtifact
             # Name cannot be mocked via the constructor.
@@ -73,7 +76,7 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
                             )
                         ],
                         secrets=[Mock(ArtifactInjectedValue, alias=None, id="secret_a", type="password")],
-                        services=[Mock(ArtifactExecutionService, id="http", port=80)],
+                        services=[Mock(ArtifactExecutionService, grpc=None, http=Mock(port=80), id="http", tcp=None)],
                         volumes=[volume_a],
                     ),
                     id="api",
@@ -83,6 +86,8 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
             return Mock(
                 Bolt,
                 artifacts=artifacts,
+                buildable_artifacts=[],
+                executable_artifacts=artifacts,
                 project_id="simple",
                 version="1",
             )
@@ -124,6 +129,8 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
             return Mock(
                 Bolt,
                 artifacts=artifacts,
+                buildable_artifacts=[],
+                executable_artifacts=[artifacts[0]],
                 project_id="typical",
                 version="1",
             )
@@ -134,7 +141,7 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
 @pytest.fixture(scope="session")
 def environment() -> Environment:
-    return Environment(id="test", name="Teset Environment")
+    return Environment(id="test", name="Test Environment")
 
 
 @pytest.fixture(scope="session")
@@ -142,9 +149,15 @@ def environment_artifact_execution_parameters():
     return Mock(
         EnvironmentArtifactExecutionParameters,
         resources=Mock(
-            EnvironmentArtifactExecutionResources, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
+            EnvironmentArtifactExecutionResourceParameters, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
         ),
-        scaling=Mock(EnvironmentArtifactExecutionScaling),
+        scaling=Mock(EnvironmentArtifactExecutionScalingParameters, max_replicas=None, min_replicas=None),
+        services={
+            "http": Mock(EnvironmentArtifactExecutionServiceParameters, host="test.ballista.build", path=None, port=80),
+            "postgres": Mock(
+                EnvironmentArtifactExecutionServiceParameters, host="test.ballista.build", path=None, port=5432
+            ),
+        },
         volumes={
             "volume_a": Mock(
                 EnvironmentArtifactExecutionVolume,

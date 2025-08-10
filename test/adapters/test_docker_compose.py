@@ -47,7 +47,7 @@ def docker_compose_adapter():
                         healthcheck={"test": ["CMD-SHELL", "curl -f http://localhost/healthz:80"]},
                         image="hello-world:latest",
                         networks=[],
-                        ports=[{"name": "http", "target": 80}],
+                        ports=[{"name": "http", "published": "80", "target": 80}],
                         volumes=[
                             DockerComposeServiceVolume(
                                 source="simple-api-volume_a",
@@ -69,7 +69,7 @@ def docker_compose_adapter():
                         env_file=[{"format": "raw", "path": "postgres-server-secrets.env", "required": True}],
                         healthcheck={"test": ["CMD-SHELL", "pg_isready -U $POSTGRES_USER"]},
                         image="postgres:17.5",
-                        ports=[{"name": "postgres", "target": 5432}],
+                        ports=[{"name": "postgres", "published": "5432", "target": 5432}],
                         volumes=[
                             DockerComposeServiceVolume(
                                 source="postgres-server-data",
@@ -96,13 +96,12 @@ def test_generate_docker_compose(
     environment: Environment,
     environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
-    executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert (
         docker_compose_project.model_dump()
         == _generate_docker_compose_project_from_bolt(
             project_id=bolt.project_id,
             version=bolt.version,
-            artifacts=executable_artifacts,
+            artifacts=bolt.executable_artifacts,
             adapter=docker_compose_adapter,
             environment=environment,
             execution_parameters=environment_artifact_execution_parameters,
@@ -116,15 +115,13 @@ def test_generate_requires_artifacts(
     environment: Environment,
     environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
 ):
-    executable_artifacts = [a for a in bolt.artifacts if a.execution]
-
-    context = pytest.raises(ValueError) if len(executable_artifacts) == 0 else contextlib.nullcontext()
+    context = pytest.raises(ValueError) if len(bolt.executable_artifacts) == 0 else contextlib.nullcontext()
 
     with context:
         _generate_docker_compose_project_from_bolt(
             project_id=bolt.project_id,
             version=bolt.version,
-            artifacts=executable_artifacts,
+            artifacts=bolt.executable_artifacts,
             adapter=docker_compose_adapter,
             environment=environment,
             execution_parameters=environment_artifact_execution_parameters,
