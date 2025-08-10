@@ -10,6 +10,7 @@ from ballista.types import (
     ArtifactExecutionRequirements,
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
+    ArtifactExecutionTCPService,
     ArtifactExecutionVolume,
     ArtifactInjectedValue,
     ArtifactSettingType,
@@ -60,6 +61,16 @@ class EnvironmentExecutionAdapter(Protocol):
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
     ) -> ResourceWithArtifactProvider:
         """Resolves a dependency for a resource in the specified Environment. Throws exception if dependency cannot be met."""
+        ...
+
+    def teardown(
+        self,
+        bolt: Bolt,
+        artifacts: Sequence[ExecutableArtifact],
+        environment: Environment,
+        execution_parameters: EnvironmentArtifactExecutionParameters,
+    ):
+        """Teardown a running bolt."""
         ...
 
 
@@ -134,7 +145,9 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
                     type=ArtifactSettingType.PASSWORD,
                 ),
             ],
-            services=[Mock(ArtifactExecutionService, port=5432)],
+            services=[
+                Mock(ArtifactExecutionService, grpc=None, http=None, tcp=Mock(ArtifactExecutionTCPService, port=5432))
+            ],
             volumes=[Mock(ArtifactExecutionVolume, capacity=0.1, path="/var/lib/postgresql/data", persistent=True)],
         ),
         resource=Mock(
@@ -229,7 +242,9 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
             healthchecks=Mock(ArtifactExecutionHealthChecks, alive=None, ready=None, started=None),
             resources=[],
             secrets=[],
-            services=[Mock(ArtifactExecutionService, port=6379)],
+            services=[
+                Mock(ArtifactExecutionService, grpc=None, http=None, tcp=Mock(ArtifactExecutionTCPService, port=6379))
+            ],
             volumes=[],
         ),
         resource=Mock(

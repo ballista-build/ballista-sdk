@@ -13,7 +13,7 @@ from ballista.adapters.types import EnvironmentExecutionAdapter, EnvironmentWith
 from ballista.bolts import v1_service
 from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
 
-LOCAL_KUBERNETES_CONTEXT: str | None = "minikube"
+LOCAL_KUBERNETES_CONTEXT: str | None = None
 
 
 class LocalEnvironmentArtifactExecutionResources(BaseModel):
@@ -35,9 +35,16 @@ class LocalEnvironmentArtifactExecutionVolume(BaseModel):
     type: str | None = None
 
 
+class LocalEnvironmentArtifactExecutionServiceParameters(BaseModel):
+    host: str
+    path: str | None = None
+    port: int
+
+
 class LocalEnvironmentArtifactExecutionParameters(BaseModel):
     resources: LocalEnvironmentArtifactExecutionResources
     scaling: LocalEnvironmentArtifactExecutionScaling
+    services: dict[str, LocalEnvironmentArtifactExecutionServiceParameters]
     volumes: dict[str, LocalEnvironmentArtifactExecutionVolume]
 
 
@@ -79,6 +86,7 @@ def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, E
     execution_parameters = LocalEnvironmentArtifactExecutionParameters(
         resources=LocalEnvironmentArtifactExecutionResources(),
         scaling=LocalEnvironmentArtifactExecutionScaling(),
+        services={"http": LocalEnvironmentArtifactExecutionServiceParameters(host="localhost", port=7007)},
         volumes={},
     )
 
@@ -165,10 +173,9 @@ def up():
     adapter, environment, execution_parameters = get_local_environment()
     ballista_bolt = get_local_bolt(origin, environment, adapter)
 
-    executable_artifacts = [a for a in ballista_bolt.artifacts if a.execution]
     adapter.deploy(
         bolt=ballista_bolt,
-        artifacts=executable_artifacts,
+        artifacts=ballista_bolt.executable_artifacts,
         environment=environment,
         execution_parameters=execution_parameters,
     )
@@ -176,7 +183,16 @@ def up():
 
 @cli.command(short_help="teardown ballista environment")
 def down():
-    print("BALLISTA DOWN")
+    origin = get_origin()
+    adapter, environment, execution_parameters = get_local_environment()
+    ballista_bolt = get_local_bolt(origin, environment, adapter)
+
+    adapter.teardown(
+        bolt=ballista_bolt,
+        artifacts=ballista_bolt.executable_artifacts,
+        environment=environment,
+        execution_parameters=execution_parameters,
+    )
 
 
 class GenerationTypes(StrEnum):

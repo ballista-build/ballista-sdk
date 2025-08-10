@@ -1,4 +1,4 @@
-from collections.abc import Collection, Mapping
+from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum, auto
 from typing import Any, Protocol
@@ -190,7 +190,7 @@ class ArtifactExecutionExecProbe(Protocol):
         ...
 
     @property
-    def shell(self) -> bool | None:
+    def shell(self) -> bool:
         """Indicates if commands are ran in a shell."""
         ...
 
@@ -218,7 +218,7 @@ class ArtifactExecutionHTTPProbe(BaseArtifactExecutionPortProbe, Protocol):
         ...
 
 
-class ArtifactExecutionPortProbe(BaseArtifactExecutionPortProbe, Protocol):
+class ArtifactExecutionTCPProbe(BaseArtifactExecutionPortProbe, Protocol):
     """Probe that executes a TCP socket connection. A connection indicates a successful probe. Inability to connect indicates a failure."""
 
     pass
@@ -237,7 +237,7 @@ class ArtifactExecutionProbe(Protocol):
     def http(self) -> ArtifactExecutionHTTPProbe | None: ...
 
     @property
-    def port(self) -> ArtifactExecutionPortProbe | None: ...
+    def tcp(self) -> ArtifactExecutionTCPProbe | None: ...
 
 
 class ArtifactExecutionHealthChecks(Protocol):
@@ -251,14 +251,51 @@ class ArtifactExecutionHealthChecks(Protocol):
     def started(self) -> ArtifactExecutionProbe | None: ...
 
 
+class BaseArtifactExecutionPortService(Protocol):
+    @property
+    def port(self) -> int:
+        """Port number service is listening."""
+        ...
+
+
+class ArtifactExecutionGRPCService(BaseArtifactExecutionPortService, Protocol):
+    """A GRPC service, running on a specified port."""
+
+    pass
+
+
+class ArtifactExecutionHTTPService(BaseArtifactExecutionPortService, Protocol):
+    """A HTTP service, running on a specified port."""
+
+    pass
+
+
+class ArtifactExecutionTCPService(BaseArtifactExecutionPortService, Protocol):
+    """A TCP-based service, running on a specified port."""
+
+    pass
+
+
 class ArtifactExecutionService(Protocol):
     """Networked communication on a specific port."""
+
+    @property
+    def grpc(self) -> ArtifactExecutionGRPCService | None:
+        """GRPC service."""
+        ...
+
+    @property
+    def http(self) -> ArtifactExecutionHTTPService | None:
+        """HTTP service."""
+        ...
 
     @property
     def id(self) -> str: ...
 
     @property
-    def port(self) -> int: ...
+    def tcp(self) -> ArtifactExecutionTCPService | None:
+        """TCP service."""
+        ...
 
 
 class ArtifactExecutionVolume(Protocol):
@@ -353,29 +390,6 @@ class Artifact(Protocol):
         ...
 
 
-class Bolt(Protocol):
-    """Multiple artifacts bundled together with a version and organized under a project."""
-
-    @property
-    def artifacts(self) -> Collection[Artifact]:
-        """Collection of artifacts included in Bolt."""
-        ...
-
-    @property
-    def project_id(self) -> str:
-        """Unique identifier of project the Bolt is associated with."""
-        ...
-
-    @property
-    def version(self) -> str:
-        """Version of entire bundle of artifacts."""
-        ...
-
-    def to_dict(self) -> dict[str, Any]:
-        """Get Bolt data in dictionary form."""
-        ...
-
-
 #
 # Building
 #
@@ -418,7 +432,7 @@ class Environment:
     """Configuration for environment, adapter specific."""
 
 
-class EnvironmentArtifactExecutionResources(Protocol):
+class EnvironmentArtifactExecutionResourceParameters(Protocol):
     """High-level execution resource requirements."""
 
     @property
@@ -442,7 +456,7 @@ class EnvironmentArtifactExecutionResources(Protocol):
         ...
 
 
-class EnvironmentArtifactExecutionScaling(Protocol):
+class EnvironmentArtifactExecutionScalingParameters(Protocol):
     @property
     def max_replicas(self) -> int | None:
         """Maximum number of replicas."""
@@ -451,6 +465,25 @@ class EnvironmentArtifactExecutionScaling(Protocol):
     @property
     def min_replicas(self) -> int | None:
         """Minimum number of replicas."""
+        ...
+
+
+class EnvironmentArtifactExecutionServiceParameters(Protocol):
+    """Parameters for an ArtifactExecutionService in an Environment."""
+
+    @property
+    def host(self) -> str:
+        """External host."""
+        ...
+
+    @property
+    def path(self) -> str | None:
+        """External path."""
+        ...
+
+    @property
+    def port(self) -> int:
+        """External port"""
         ...
 
 
@@ -474,14 +507,21 @@ class EnvironmentArtifactExecutionVolume(Protocol):
 class EnvironmentArtifactExecutionParameters(Protocol):
     """Parameters for executing artifacts in an environment."""
 
+    # TODO: Service ports!!
+
     @property
-    def resources(self) -> EnvironmentArtifactExecutionResources:
+    def resources(self) -> EnvironmentArtifactExecutionResourceParameters:
         """Compute resources."""
         ...
 
     @property
-    def scaling(self) -> EnvironmentArtifactExecutionScaling:
+    def scaling(self) -> EnvironmentArtifactExecutionScalingParameters:
         """Scaling parameters."""
+        ...
+
+    @property
+    def services(self) -> Mapping[str, EnvironmentArtifactExecutionServiceParameters]:
+        """Service parameters."""
         ...
 
     @property
@@ -508,6 +548,39 @@ ExecutableArtifactReference = tuple[ExecutableArtifact, str, str]
 
 ResourceWithArtifactProvider = tuple[Resource, ArtifactReference]
 """A Resource paired with the Artifact providing it."""
+
+
+class Bolt(Protocol):
+    """Multiple artifacts bundled together with a version and organized under a project."""
+
+    @property
+    def artifacts(self) -> Sequence[Artifact]:
+        """Collection of artifacts included in Bolt."""
+        ...
+
+    @property
+    def buildable_artifacts(self) -> Sequence[BuildableArtifact]:
+        """Collection of BuildableArtifacts from the Bolt artifact collection."""
+        ...
+
+    @property
+    def executable_artifacts(self) -> Sequence[ExecutableArtifact]:
+        """Collection of ExecutableArtifacts from the Bolt artifact collection."""
+        ...
+
+    @property
+    def project_id(self) -> str:
+        """Unique identifier of project the Bolt is associated with."""
+        ...
+
+    @property
+    def version(self) -> str:
+        """Version of entire bundle of artifacts."""
+        ...
+
+    def to_dict(self) -> dict[str, Any]:
+        """Get Bolt data in dictionary form."""
+        ...
 
 
 #

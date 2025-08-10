@@ -126,7 +126,13 @@ def kubernetes_adapter():
                                 "namespace": "test",
                             },
                             "spec": {
-                                "selector": {"app.kubernetes.io/name": "api"},
+                                "selector": {
+                                    "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/name": "api",
+                                    "app.kubernetes.io/part-of": "simple",
+                                    "app.kubernetes.io/version": "1",
+                                    "ballista.build/environment": "test",
+                                },
                                 "ports": [{"port": 80, "name": "http", "targetPort": "http"}],
                             },
                         },
@@ -148,6 +154,37 @@ def kubernetes_adapter():
                                 "accessModes": ["ReadWriteMany"],
                                 "resources": {"limits": {"storage": "1.0G"}, "requests": {"storage": "0.01G"}},
                                 "storageClassName": "generic-storage",
+                            },
+                        },
+                        {
+                            "apiVersion": "networking.k8s.io/v1",
+                            "kind": "Ingress",
+                            "metadata": {
+                                "labels": {
+                                    "app.kubernetes.io/managed-by": "Ballista",
+                                    "app.kubernetes.io/name": "api",
+                                    "app.kubernetes.io/part-of": "simple",
+                                    "app.kubernetes.io/version": "1",
+                                    "ballista.build/environment": "test",
+                                },
+                                "name": "simple-api",
+                                "namespace": "test",
+                            },
+                            "spec": {
+                                "rules": [
+                                    {
+                                        "host": "test.ballista.build",
+                                        "http": {
+                                            "paths": [
+                                                {
+                                                    "backend": {"service": {"name": "http", "port": {"number": 80}}},
+                                                    "path": "/",
+                                                    "pathType": "Prefix",
+                                                }
+                                            ]
+                                        },
+                                    }
+                                ]
                             },
                         },
                     ]
