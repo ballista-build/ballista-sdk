@@ -100,6 +100,13 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
         database_id: str
         """ID of database."""
 
+    postgres_probe = Mock(
+        ArtifactExecutionProbe,
+        exec=Mock(ArtifactExecutionExecProbe, commands=["pg_isready -U $POSTGRES_USER"], shell=True),
+        grpc=None,
+        http=None,
+        port=None,
+    )
     postgres = Mock(
         ExecutableArtifact,
         build=None,
@@ -107,22 +114,7 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
             ArtifactExecutionRequirements,
             configs=[],
             healthchecks=Mock(
-                ArtifactExecutionHealthChecks,
-                alive=None,
-                ready=Mock(
-                    ArtifactExecutionProbe,
-                    exec=Mock(ArtifactExecutionExecProbe, commands=["pg_isready -U $POSTGRES_USER"], shell=True),
-                    grpc=None,
-                    http=None,
-                    port=None,
-                ),
-                started=Mock(
-                    ArtifactExecutionProbe,
-                    exec=Mock(ArtifactExecutionExecProbe, commands=["pg_isready -U $POSTGRES_USER"], shell=True),
-                    grpc=None,
-                    http=None,
-                    port=None,
-                ),
+                ArtifactExecutionHealthChecks, alive=postgres_probe, ready=postgres_probe, started=postgres_probe
             ),
             resources=[],
             secrets=[
@@ -233,13 +225,20 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
         index_id: str | None = None
         """ID of index."""
 
+    redis_probe = Mock(
+        ArtifactExecutionProbe,
+        exec=Mock(ArtifactExecutionExecProbe, commands=["redis-cli ping | grep PONG"], shell=True),
+        grpc=None,
+        http=None,
+        tcp=None,
+    )
     redis = Mock(
         ExecutableArtifact,
         build=None,
         execution=Mock(
             ArtifactExecutionRequirements,
             configs=[],
-            healthchecks=Mock(ArtifactExecutionHealthChecks, alive=None, ready=None, started=None),
+            healthchecks=Mock(ArtifactExecutionHealthChecks, alive=redis_probe, ready=redis_probe, started=redis_probe),
             resources=[],
             secrets=[],
             services=[

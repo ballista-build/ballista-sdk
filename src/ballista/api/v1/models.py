@@ -69,7 +69,7 @@ class ArtifactExecutionExecProbe(BaseModel, frozen=True):
     """Probe that executes a list of commands."""
 
     commands: Annotated[list[str], Field(description="List of commands executed.")]
-    shell: Annotated[bool, Field(description="Command needs to be ran as a shell command.")] = False
+    shell: Annotated[bool, Field(description="Indicates commands need to be ran as a shell command.")]
 
 
 class BaseArtifactExecutionPortProbe(BaseModel):
@@ -245,6 +245,9 @@ class Bolt(BaseModel, frozen=True):
     @property
     def executable_artifacts(self) -> list[Artifact]:
         return [a for a in self.artifacts if a.execution]
+
+    def to_dict(self) -> dict[str, Any]:
+        return self.model_dump()
 
 
 class EnvironmentArtifactExecutionResources(BaseModel, frozen=True):
