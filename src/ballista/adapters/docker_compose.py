@@ -39,7 +39,7 @@ class DockerComposeService(BaseModel):
     build: dict[str, Any] | None = None
     configs: list[str] | None = None
     container_name: str | None = None
-    depends_on: list[str] | None = None
+    depends_on: dict[str, dict[str, str]] | None = None
     deploy: dict[str, Any] | None = None
     develop: dict[str, Any] | None = None
     environment: dict[str, Any] | None = None
@@ -121,7 +121,10 @@ def _generate_docker_compose_project_from_bolt(
         )
 
         if artifact.execution.resources:
-            compose_service.depends_on = [resource_service_names[rd.resource_id] for rd in artifact.execution.resources]
+            compose_service.depends_on = {
+                resource_service_names[rd.resource_id]: {"condition": "service_healthy"}
+                for rd in artifact.execution.resources
+            }
 
         project.services[artifact_ref_name] = compose_service
 
@@ -293,27 +296,66 @@ def _generate_compose_volume():
 
 
 def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, ArtifactExecutionService]) -> dict:
+    options = {
+        "start_interval": "1s",
+        "start_period": "60s",
+    }
+
     if probe.exec:
-        return {"test": ["CMD-SHELL" if probe.exec.shell else "CMD", *probe.exec.commands]}
+        # Escape dollar signs so docker compose doesn't interpolate them.
+        commands = [c.replace("$", "$$") for c in probe.exec.commands]
+        return options | {"test": ["CMD-SHELL" if probe.exec.shell else "CMD", *commands]}
+
+    port_probe = probe.grpc or probe.http or probe.tcp
+    if port_probe is None:
+        return {}
+
+    # Retrieve services referenced by port-based probes.
+    service = None
+    if port_probe.service_id:
+        service = services.get(port_probe.service_id)
+        if service is None:
+            raise ValueError(f'Unknown referenced service "{port_probe.service_id}".')
+
     if probe.grpc:
-        pass
+        port = probe.grpc.port or 50051
+
+        if service:
+            if service.grpc is None:
+                raise ValueError("Must reference a grpc service for a grpc probe.")
+
+            port = service.grpc.port
+
+        # TODO: GRPC probe
+        return options | {}
+
     if probe.http:
         path = probe.http.path or "/healthz"
         port = probe.http.port or 80
 
-        if service_id := probe.http.service_id:
-            if service := services.get(service_id):
-                if service.http:
-                    port = service.http.port
-                else:
-                    # Must be an HTTP service
-                    raise ValueError("Cannot reference that service")
-            else:
-                raise ValueError(f'Unknown service "{service_id}".')
+        if service:
+            if service.http is None:
+                raise ValueError("Must reference an http service for an http probe.")
 
-        return {"test": ["CMD-SHELL", f"curl -f http://localhost{path}:{port}"]}
+            port = service.http.port
+
+        return options | {"test": ["CMD-SHELL", f"curl -f http://localhost:{port}{path}"]}
+
     if probe.tcp:
-        pass
+        port = probe.tcp.port
+
+        if service:
+            if service.tcp is None:
+                raise ValueError("Must reference a tcp service for a tcp probe.")
+
+            port = service.tcp.port
+
+        if not port:
+            raise ValueError("TCP probe needs a port.")
+
+        # TODO: TCP probe
+        return options | {}
+
     return {}
 
 
@@ -340,12 +382,8 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         """Call docker compose."""
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
-            d = docker_compose_project.model_dump(exclude_none=True)
-            compose_yaml: bytes | None = yaml.dump(d, encoding="utf-8")
-
-            if compose_yaml:
-                f.write(compose_yaml)
-                f.flush()
+            docker_compose_dict = docker_compose_project.model_dump(exclude_none=True)
+            yaml.dump(docker_compose_dict, stream=f, encoding="utf-8")
 
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
             subprocess.run(args)
@@ -370,7 +408,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         )
 
         if True:
-            commands = ["up", "--watch", "--remove-orphans"]
+            commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:
             commands = ["up", "--remove-orphans"]
         self._call_compose(docker_compose_project, commands)
