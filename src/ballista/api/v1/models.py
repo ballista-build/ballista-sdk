@@ -1,6 +1,7 @@
 from typing import Annotated, Any, ClassVar, Literal
 
-from pydantic import BaseModel, Field
+from openapi_pydantic import Schema
+from pydantic import BaseModel, Field, create_model
 
 from ballista.types import ArtifactSettingType
 
@@ -21,15 +22,57 @@ class ResourceInjectedValue(BaseArtifactInjectedValue, frozen=True):
     shared: Annotated[bool, Field(description="Indicates if value is shared across artifacts.")]
 
 
+class ResourceRequirements(BaseModel, frozen=True):
+    properties: Annotated[dict[str, Schema], Field()] = {}
+    required: list[str] = []
+
+
 class Resource(BaseModel, frozen=True):
     """Resource available to use as an artifact dependency."""
 
     configs: Annotated[list[ResourceInjectedValue], Field(description="Configs")] = []
-    description: Annotated[str, Field()] = ""
+    description: Annotated[str | None, Field(description="Longer, human-readable description of Resource.")] = None
     id: Annotated[str, Field(description="Unique identifier of Resource.", title="ID")]
-    name: Annotated[str, Field(description="Human-readable name of Resource.")] = ""
+    name: Annotated[
+        str | None, Field(description="Human-readable name of Resource. Defaults to `id` if not specified.")
+    ] = None
     prefix: Annotated[str, Field(description="Default prefix of injected values.")]
+    requirement_schemas: Annotated[
+        ResourceRequirements,
+        Field(validation_alias="requirements", description="OpenAPI Schemas representing requirements for a resource."),
+    ]
     secrets: Annotated[list[ResourceInjectedValue], Field(description="Secrets")] = []
+
+    @property
+    def requirements(self) -> type[BaseModel]:
+        fields = {}
+        required = self.requirement_schemas.required
+        for prop_name, prop in self.requirement_schemas.properties.items():
+            # TODO: This sucks
+            t = str
+            if prop.type == "string":
+                t = str
+            elif prop.type == "integer":
+                t = int
+            elif prop.type == "number":
+                t = float
+            elif prop.type == "boolean":
+                t = bool
+            else:
+                raise ValueError("Unsupported JSON Schema type.")
+
+            f = Field(description=prop.description, title=prop.title)
+            if prop_name not in required:
+                t |= None
+                f.default = None
+
+            fields[prop_name] = Annotated[t, f]
+
+        return create_model(
+            f"{self.name}ResourceRequirements",
+            prefix=Annotated[str, Field(default=self.prefix, description="Injected prefix.")],
+            **fields,
+        )
 
 
 class ArtifactExecutionResourceDependency(BaseOneOfModel, frozen=True, title="Artifact Execution Resource Dependency"):
@@ -69,7 +112,7 @@ class ArtifactExecutionExecProbe(BaseModel, frozen=True):
     """Probe that executes a list of commands."""
 
     commands: Annotated[list[str], Field(description="List of commands executed.")]
-    shell: Annotated[bool, Field(description="Indicates commands need to be ran as a shell command.")]
+    shell: Annotated[bool, Field(description="Indicates commands need to be ran as a shell command.")] = False
 
 
 class BaseArtifactExecutionPortProbe(BaseModel):

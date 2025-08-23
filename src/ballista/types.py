@@ -1,7 +1,7 @@
 from collections.abc import Collection, Mapping, Sequence
 from dataclasses import dataclass
 from enum import StrEnum, auto
-from typing import Any, Protocol
+from typing import Any, NamedTuple, Protocol
 
 
 class ArtifactSettingType(StrEnum):
@@ -78,7 +78,7 @@ class Resource(Protocol):
         ...
 
     @property
-    def description(self) -> str:
+    def description(self) -> str | None:
         """Description."""
         ...
 
@@ -88,7 +88,7 @@ class Resource(Protocol):
         ...
 
     @property
-    def name(self) -> str:
+    def name(self) -> str | None:
         """Human-readable name of Resource."""
         ...
 
@@ -537,16 +537,23 @@ class EnvironmentProjectExecutionParameters(Protocol):
         ...
 
 
-# TODO: These should be something better than tuples
-ArtifactReference = tuple[Artifact, str, str]
-"""Reference to a version of an Artifact in a project. artifact,version,project_id"""
+class ArtifactReference(NamedTuple):
+    """Reference to a version of an Artifact in a project."""
+
+    artifact: Artifact
+    version: str
+    project_id: str
 
 
-ExecutableArtifactReference = tuple[ExecutableArtifact, str, str]
-"""Reference to a version of an ExecutableArtifact in a project."""
+class ExecutableArtifactReference(NamedTuple):
+    """Reference to a version of an ExecutableArtifact in a project."""
+
+    artifact: ExecutableArtifact
+    version: str
+    project_id: str
 
 
-ResourceWithArtifactProvider = tuple[Resource, ArtifactReference]
+ResourceWithArtifactProvider = tuple[Resource, ArtifactReference | ExecutableArtifactReference]
 """A Resource paired with the Artifact providing it."""
 
 

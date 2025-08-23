@@ -1,5 +1,6 @@
 import os.path
 from enum import StrEnum
+from pathlib import Path
 from typing import Annotated
 
 import prettytable
@@ -11,7 +12,7 @@ from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAd
 from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
 from ballista.adapters.types import EnvironmentExecutionAdapter, EnvironmentWithExecutionAdapter
 from ballista.bolts import v1_service
-from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
+from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters, ExecutableArtifactReference
 
 LOCAL_KUBERNETES_CONTEXT: str | None = None
 
@@ -48,7 +49,7 @@ class LocalEnvironmentArtifactExecutionParameters(BaseModel):
     volumes: dict[str, LocalEnvironmentArtifactExecutionVolume]
 
 
-def get_local_bolt(origin: str, environment: Environment, adapter: EnvironmentExecutionAdapter) -> Bolt:
+def get_local_bolt(environment: Environment, adapter: EnvironmentExecutionAdapter) -> Bolt:
     """Get a Bolt from local path."""
     filename = "./ballista.yaml" if os.path.isfile("./ballista.yaml") else None
     if not filename:
@@ -72,6 +73,29 @@ def get_local_bolt(origin: str, environment: Environment, adapter: EnvironmentEx
     raise ValueError()
 
 
+def load_defaults(adapter: DockerComposeExecutionEnvironmentAdapter):
+    home = Path.home()
+
+    ballista_folder = home / ".ballista"
+
+    defaults_yaml = ballista_folder / "defaults.yaml"
+    if defaults_yaml.exists():
+        with open(defaults_yaml) as f:
+            for bolt_yaml in yaml.load_all(f, Loader=yaml.Loader):
+                api_version = bolt_yaml.get("api_version")
+                bolt_service = None
+                if api_version == "v1":
+                    bolt_service = v1_service.BoltService([])
+
+                if bolt_service:
+                    bolt = bolt_service.get_bolt(bolt_yaml)
+
+                    for ea in bolt.executable_artifacts:
+                        adapter._executable_artifacts.append(
+                            ExecutableArtifactReference(ea, bolt.version, bolt.project_id)
+                        )
+
+
 def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, EnvironmentArtifactExecutionParameters]:
     if LOCAL_KUBERNETES_CONTEXT:
         # If set to use a Kubernetes context for local environment, use it here.
@@ -79,6 +103,7 @@ def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, E
 
     else:
         adapter = DockerComposeExecutionEnvironmentAdapter()
+        load_defaults(adapter)
 
     environment = Environment(id="local", name="Local")
 
@@ -86,7 +111,11 @@ def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, E
     execution_parameters = LocalEnvironmentArtifactExecutionParameters(
         resources=LocalEnvironmentArtifactExecutionResources(),
         scaling=LocalEnvironmentArtifactExecutionScaling(),
-        services={"http": LocalEnvironmentArtifactExecutionServiceParameters(host="localhost", port=7007)},
+        services={
+            "api": LocalEnvironmentArtifactExecutionServiceParameters(host="localhost", port=8000),
+            "http": LocalEnvironmentArtifactExecutionServiceParameters(host="localhost", port=4200),
+            "mysql": LocalEnvironmentArtifactExecutionServiceParameters(host="localhost", port=3306),
+        },
         volumes={},
     )
 
@@ -96,12 +125,8 @@ def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment, E
 def get_remote_environments() -> list:
     # Read in remote Kubernetes environments
 
+    home = Path.home()
     return []
-
-
-def get_origin() -> str:
-    """Get the Ballista origin."""
-    return "http://localhost:8000"
 
 
 cli = typer.Typer()
@@ -137,9 +162,8 @@ def build(
     artifacts: Annotated[list[str] | None, typer.Argument(help="List of artifacts to buid.")] = None,
     artifact_types: Annotated[list[str] | None, typer.Option(help="List of specified Artifact Types to build.")] = None,
 ):
-    origin = get_origin()
     adapter, environment, _ = get_local_environment()
-    ballista_bolt = get_local_bolt(origin, environment, adapter)
+    ballista_bolt = get_local_bolt(environment, adapter)
 
     for artifact in ballista_bolt.artifacts:
         if not (build := artifact.build):
@@ -155,9 +179,9 @@ def build(
         path = "."
         dockerfile = build.dockerfile or "Dockerfile"
         # Process possible path for the Dockerfile
-        dockerfile_pieces = dockerfile.rsplit("/", 2)
+        dockerfile_pieces = dockerfile.rsplit("/", 1)
         if len(dockerfile_pieces) > 1:
-            path, dockerfile = dockerfile_pieces
+            path, _ = dockerfile_pieces
 
         # TODO: Auth to registries
         # TODO: Get cache setup from ballista instance
@@ -169,9 +193,8 @@ def build(
 
 @cli.command(short_help="start ballista environment")
 def up():
-    origin = get_origin()
     adapter, environment, execution_parameters = get_local_environment()
-    ballista_bolt = get_local_bolt(origin, environment, adapter)
+    ballista_bolt = get_local_bolt(environment, adapter)
 
     adapter.deploy(
         bolt=ballista_bolt,
@@ -183,9 +206,8 @@ def up():
 
 @cli.command(short_help="teardown ballista environment")
 def down():
-    origin = get_origin()
     adapter, environment, execution_parameters = get_local_environment()
-    ballista_bolt = get_local_bolt(origin, environment, adapter)
+    ballista_bolt = get_local_bolt(environment, adapter)
 
     adapter.teardown(
         bolt=ballista_bolt,
@@ -207,9 +229,8 @@ def generate(type: GenerationTypes):
 
 @cli.command(short_help="launch")
 def launch(launch_target_url: str):
-    origin = get_origin()
     adapter, environment, _ = get_local_environment()
-    bolt = get_local_bolt(origin, environment, adapter)
+    bolt = get_local_bolt(environment, adapter)
 
 
 class ListTypes(StrEnum):
@@ -219,7 +240,7 @@ class ListTypes(StrEnum):
 
 
 @cli.command(name="list", short_help="list available stuff from environments")
-def list_items(type: ListTypes, environment: str | None = None, verbose: bool = False):
+def list_items(type: ListTypes, environment_id: str | None = None, verbose: bool = False):
     environments: list[EnvironmentWithExecutionAdapter] = []
 
     # TODO: Add remote environments
@@ -229,10 +250,10 @@ def list_items(type: ListTypes, environment: str | None = None, verbose: bool = 
     local = get_local_environment()
     environments.append((local[0], local[1]))
 
-    if environment:
-        environments = [e for e in environments if e[1].id == environment]
+    if environment_id:
+        environments = [e for e in environments if e[1].id == environment_id]
     if not environments:
-        print(f'Unknown environment "{environment}".')
+        print(f'Unknown environment "{environment_id}".')
         typer.Exit(1)
 
     table = prettytable.PrettyTable()

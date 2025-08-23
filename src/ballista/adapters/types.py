@@ -49,7 +49,7 @@ class EnvironmentExecutionAdapter(Protocol):
         """List ExecutableArtifacts in the specified Environment."""
         ...
 
-    def list_project_bolts(self, projecte_id: str) -> Sequence[Bolt]:
+    def list_project_bolts(self, project_id: str) -> Sequence[Bolt]:
         """List Bolts associated with a Project."""
         ...
 
@@ -70,7 +70,7 @@ class EnvironmentExecutionAdapter(Protocol):
         environment: Environment,
         execution_parameters: EnvironmentArtifactExecutionParameters,
     ):
-        """Teardown a running bolt."""
+        """Teardown a running Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
         ...
 
 
@@ -316,4 +316,4 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
     secrets[2].id = "password"
     secrets[2].name = "Password"
 
-    return [(postgres, "17.5", "postgres"), (redis, "8", "redis")]
+    return [ExecutableArtifactReference(postgres, "17.5", "postgres"), ExecutableArtifactReference(redis, "8", "redis")]

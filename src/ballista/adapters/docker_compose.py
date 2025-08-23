@@ -10,7 +10,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista.types import (
     Artifact,
     ArtifactExecutionProbe,
@@ -22,7 +22,6 @@ from ballista.types import (
     EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
     ExecutableArtifactReference,
-    Resource,
     ResourceWithArtifactProvider,
 )
 
@@ -375,8 +374,10 @@ def _generate_env_files():
 
 
 class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
-    def add_platform_resource(self, platform_resource: Resource):
-        pass
+    _executable_artifacts: list[ExecutableArtifactReference]
+
+    def __init__(self):
+        self._executable_artifacts = []
 
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
         """Call docker compose."""
@@ -412,7 +413,6 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         else:
             commands = ["up", "--remove-orphans"]
         self._call_compose(docker_compose_project, commands)
-        # self._call_compose(docker_compose_project, ["down", "--remove-orphans"])
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return fake_artifact_types()
@@ -420,7 +420,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
-        return [(ref[0].resource, ref) for ref in fake_executable_artifacts() if ref[0].resource]
+        return [(ref[0].resource, ref) for ref in self._executable_artifacts if ref[0].resource]
 
     def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
         return []
