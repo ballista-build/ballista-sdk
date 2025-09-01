@@ -1,6 +1,7 @@
 from __future__ import annotations
 
-from typing import Protocol, Sequence
+from collections.abc import Sequence
+from typing import Protocol
 from unittest.mock import Mock
 
 from ballista.types import (
@@ -18,9 +19,9 @@ from ballista.types import (
     ArtifactTypeDependency,
     Bolt,
     Environment,
-    EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
     ExecutableArtifactReference,
+    ExecutionParameters,
     Resource,
     ResourceDependencyInjectedValue,
     ResourceDependencyRequirements,
@@ -36,7 +37,7 @@ class EnvironmentExecutionAdapter(Protocol):
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: EnvironmentArtifactExecutionParameters,
+        execution_parameters: ExecutionParameters,
     ):
         """Deploy a Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
         ...
@@ -68,7 +69,7 @@ class EnvironmentExecutionAdapter(Protocol):
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: EnvironmentArtifactExecutionParameters,
+        execution_parameters: ExecutionParameters,
     ):
         """Teardown a running Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
         ...

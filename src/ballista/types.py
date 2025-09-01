@@ -1,5 +1,5 @@
-from collections.abc import Collection, Mapping, Sequence
-from dataclasses import dataclass
+from collections.abc import Collection, Sequence
+from dataclasses import asdict, dataclass, field
 from enum import StrEnum, auto
 from typing import Any, NamedTuple, Protocol
 
@@ -290,7 +290,9 @@ class ArtifactExecutionService(Protocol):
         ...
 
     @property
-    def id(self) -> str: ...
+    def id(self) -> str:
+        """Unique identifier of service."""
+        ...
 
     @property
     def tcp(self) -> ArtifactExecutionTCPService | None:
@@ -418,125 +420,6 @@ class ExecutableArtifact(Artifact, Protocol):
         ...
 
 
-@dataclass(frozen=True)
-class Environment:
-    """An environment that can execute ExecutableArtifacts."""
-
-    id: str
-    """Unique identifier of environment."""
-
-    name: str
-    """Human-readable name of environment."""
-
-    config: dict | None = None
-    """Configuration for environment, adapter specific."""
-
-
-class EnvironmentArtifactExecutionResourceParameters(Protocol):
-    """High-level execution resource requirements."""
-
-    @property
-    def max_cpu(self) -> float | None:
-        """Maximum CPU allowed, measured in cores."""
-        ...
-
-    @property
-    def max_memory(self) -> float | None:
-        """Maximum memory allowed, measured in Gibibytes."""
-        ...
-
-    @property
-    def min_cpu(self) -> float | None:
-        """Minimum CPU required, measured in cores."""
-        ...
-
-    @property
-    def min_memory(self) -> float | None:
-        """Minimum memory required, measured in Gibibytes."""
-        ...
-
-
-class EnvironmentArtifactExecutionScalingParameters(Protocol):
-    @property
-    def max_replicas(self) -> int | None:
-        """Maximum number of replicas."""
-        ...
-
-    @property
-    def min_replicas(self) -> int | None:
-        """Minimum number of replicas."""
-        ...
-
-
-class EnvironmentArtifactExecutionServiceParameters(Protocol):
-    """Parameters for an ArtifactExecutionService in an Environment."""
-
-    @property
-    def host(self) -> str:
-        """External host."""
-        ...
-
-    @property
-    def path(self) -> str | None:
-        """External path."""
-        ...
-
-    @property
-    def port(self) -> int:
-        """External port"""
-        ...
-
-
-class EnvironmentArtifactExecutionVolume(Protocol):
-    @property
-    def max_capacity(self) -> float | None:
-        """Maximum storage capacity, measures in Gigabytes."""
-        ...
-
-    @property
-    def path(self) -> str | None:
-        """Path inside volume to use as mount root."""
-        ...
-
-    @property
-    def type(self) -> str | None:
-        """Specific type of volume to use."""
-        ...
-
-
-class EnvironmentArtifactExecutionParameters(Protocol):
-    """Parameters for executing artifacts in an environment."""
-
-    # TODO: Service ports!!
-
-    @property
-    def resources(self) -> EnvironmentArtifactExecutionResourceParameters:
-        """Compute resources."""
-        ...
-
-    @property
-    def scaling(self) -> EnvironmentArtifactExecutionScalingParameters:
-        """Scaling parameters."""
-        ...
-
-    @property
-    def services(self) -> Mapping[str, EnvironmentArtifactExecutionServiceParameters]:
-        """Service parameters."""
-        ...
-
-    @property
-    def volumes(self) -> Mapping[str, EnvironmentArtifactExecutionVolume]:
-        """Volume parameters"""
-        ...
-
-
-class EnvironmentProjectExecutionParameters(Protocol):
-    @property
-    def artifacts(self) -> Mapping[str, EnvironmentArtifactExecutionParameters]:
-        """Mapping of artifact IDs to individual EnvironmentArtifactExecutionParameters."""
-        ...
-
-
 class ArtifactReference(NamedTuple):
     """Reference to a version of an Artifact in a project."""
 
@@ -590,36 +473,159 @@ class Bolt(Protocol):
         ...
 
 
-#
-# Settings
-#
+@dataclass(frozen=True)
+class Environment:
+    """An environment that can execute ExecutableArtifacts."""
+
+    id: str
+    """Unique identifier of environment."""
+
+    name: str
+    """Human-readable name of environment."""
+
+    config: dict | None = None
+    """Configuration for environment, adapter specific."""
 
 
-class BaseSetting(Protocol):
-    @property
-    def alias(self) -> str: ...
+# TODO: It will probably be better if these are TypedDict, so we can more naturally merge them together?
+@dataclass(frozen=True)
+class ArtifactExecutionComputeParameters:
+    """High-level execution compute parameters."""
 
-    @property
-    def id(self) -> str: ...
-
-    @property
-    def type(self) -> ArtifactSettingType: ...
-
-
-class ServiceConfig(BaseSetting, Protocol):
-    pass
-
-
-class ServiceSecret(BaseSetting, Protocol):
-    pass
+    max_cpu: float | None = None
+    """Maximum CPU allowed, measured in cores."""
+    max_memory: float | None = None
+    """Maximum memory allowed, measured in Gibibytes."""
+    min_cpu: float | None = None
+    """Minimum CPU required, measured in cores."""
+    min_memory: float | None = None
+    """Minimum memory required, measured in Gibibytes."""
 
 
-class SharedConfig(BaseSetting, Protocol):
-    pass
+@dataclass(frozen=True)
+class ArtifactExecutionExternalServiceParameters:
+    """Parameters for an ArtifactExecutionService in an Environment."""
+
+    host: str | None = None
+    """External host."""
+
+    port: int | None = None
+    """External port."""
+
+    path: str | None = None
+    """External path."""
 
 
-class SharedSecret(BaseSetting, Protocol):
-    pass
+@dataclass(frozen=True)
+class ArtifactExecutionScalingParameters:
+    max_replicas: int | None = None
+    """Maximum number of replicas."""
+
+    min_replicas: int | None = None
+    """Minimum number of replicas."""
+
+
+@dataclass(frozen=True)
+class ArtifactExecutionVolumeParameters:
+    max_capacity: float | None = None
+    """Maximum storage capacity, measured in Gigabytes."""
+
+    path: str | None = None
+    """Path inside volume to use as mount root."""
+
+    type: str | None = None
+    """Specific type of volume to use."""
+
+
+@dataclass(frozen=True)
+class ArtifactExecutionParameters:
+    """Parameters for executing specific ExecutableArtifacts in an environment."""
+
+    compute: ArtifactExecutionComputeParameters = field(default_factory=ArtifactExecutionComputeParameters)
+    external_services: dict[str, ArtifactExecutionExternalServiceParameters] = field(default_factory=dict)
+    scaling: ArtifactExecutionScalingParameters = field(default_factory=ArtifactExecutionScalingParameters)
+    volumes: dict[str, ArtifactExecutionVolumeParameters] = field(default_factory=dict)
+
+
+@dataclass(frozen=True)
+class DefaultExecutionParameters:
+    """Default parameters for executing ExecutableArtifacts in an environment."""
+
+    compute: ArtifactExecutionComputeParameters = field(default_factory=ArtifactExecutionComputeParameters)
+    external_service: ArtifactExecutionExternalServiceParameters = field(
+        default_factory=ArtifactExecutionExternalServiceParameters
+    )
+    scaling: ArtifactExecutionScalingParameters = field(default_factory=ArtifactExecutionScalingParameters)
+    volume: ArtifactExecutionVolumeParameters = field(default_factory=ArtifactExecutionVolumeParameters)
+
+
+# TODO: Move this!
+@dataclass
+class ExecutionParameters:
+    initial: DefaultExecutionParameters = field(default_factory=DefaultExecutionParameters)
+    environments: dict[str, DefaultExecutionParameters] = field(default_factory=dict)
+    projects: dict[tuple[str, str], DefaultExecutionParameters] = field(default_factory=dict)
+    artifacts: dict[tuple[str, str, str], DefaultExecutionParameters] = field(default_factory=dict)
+    services: dict[tuple[str, str, str, str], ArtifactExecutionExternalServiceParameters] = field(default_factory=dict)
+    volumes: dict[tuple[str, str, str, str], ArtifactExecutionVolumeParameters] = field(default_factory=dict)
+
+    def params_for_artifact(
+        self, environment: Environment, project_id: str, artifact: ExecutableArtifact
+    ) -> ArtifactExecutionParameters:
+        defaults = self.defaults_for_artifact(environment, project_id, artifact)
+
+        default_service = asdict(defaults.external_service)
+        external_services = {
+            s.id: ArtifactExecutionExternalServiceParameters(**default_service) for s in artifact.execution.services
+        }
+
+        default_volume = asdict(defaults.volume)
+        volumes = {v.id: ArtifactExecutionVolumeParameters(**default_volume) for v in artifact.execution.volumes}
+
+        return ArtifactExecutionParameters(
+            compute=defaults.compute,
+            external_services=external_services,
+            scaling=defaults.scaling,
+            volumes=volumes,
+        )
+
+    def defaults_for_artifact(
+        self, environment: Environment, project_id: str, artifact: ExecutableArtifact
+    ) -> DefaultExecutionParameters:
+        defaults: dict = asdict(self.initial)
+
+        if environment_defaults := self.environments.get(environment.id):
+            defaults.update(asdict(environment_defaults))
+
+        if project_defaults := self.projects.get((environment.id, project_id)):
+            defaults.update(asdict(project_defaults))
+
+        if artifact_defaults := self.projects.get((environment.id, project_id, artifact.id)):
+            defaults.update(asdict(artifact_defaults))
+
+        return DefaultExecutionParameters(
+            compute=ArtifactExecutionComputeParameters(**defaults["compute"]),
+            external_service=ArtifactExecutionExternalServiceParameters(**defaults["external_service"]),
+            scaling=ArtifactExecutionScalingParameters(**defaults["scaling"]),
+            volume=ArtifactExecutionVolumeParameters(**defaults["volume"]),
+        )
+
+    def defaults_for_project(self, environment: Environment, project_id: str) -> DefaultExecutionParameters:
+        defaults: dict = asdict(self.initial)
+        if environment_defaults := self.environments.get(environment.id):
+            defaults.update(asdict(environment_defaults))
+
+        if project_defaults := self.projects.get((environment.id, project_id)):
+            defaults.update(asdict(project_defaults))
+
+        return DefaultExecutionParameters(**defaults)
+
+    def defaults_for_environment(self, environment: Environment) -> DefaultExecutionParameters:
+        params: dict = asdict(self.initial)
+        if environment_defaults := self.environments.get(environment.id):
+            params.update(asdict(environment_defaults))
+
+        return DefaultExecutionParameters(**params)
 
 
 class BoltService(Protocol):

@@ -293,7 +293,7 @@ class Bolt(BaseModel, frozen=True):
         return self.model_dump()
 
 
-class EnvironmentArtifactExecutionResources(BaseModel, frozen=True):
+class ArtifactExecutionComputeParameters(BaseModel, frozen=True):
     max_cpu: Annotated[
         float | None,
         Field(
@@ -332,10 +332,20 @@ class EnvironmentArtifactExecutionResources(BaseModel, frozen=True):
     ] = None
 
 
-class EnvironmentArtifactExecutionScaling(BaseModel, frozen=True):
+class ArtifactExecutionExternalServiceParamaters(BaseModel, frozen=True):
+    host: Annotated[str | None, Field(description="External host", min_length=1)] = None
+    path: Annotated[str | None, Field(description="Path", min_length=1)] = None
+    port: Annotated[int | None, Field(description="Port number", gt=0)] = None
+
+
+class ArtifactExecutionScalingParameters(BaseModel, frozen=True):
     max_replicas: Annotated[
         int | None, Field(description="Maximum number of replicas of executing artifact.", gt=0)
     ] = None
     min_replicas: Annotated[
         int | None, Field(description="Minimum number of replicas of executing artifact.", ge=0)
     ] = None
+
+
+class ArtifactExecutionVolumeParameters(BaseModel, frozen=True):
+    pass

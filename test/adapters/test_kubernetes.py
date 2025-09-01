@@ -5,7 +5,7 @@ from ballista.adapters.kubernetes import (
     KubernetesResource,
     _generate_bolt_resources,
 )
-from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
+from ballista.types import Bolt, Environment, ExecutionParameters
 
 
 @pytest.fixture
@@ -67,6 +67,8 @@ def kubernetes_adapter():
                                             {
                                                 "env": [
                                                     {"name": "HTTP_SERVICE_PORT", "value": "80"},
+                                                    {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
+                                                    {"name": "HTTP_SERVICE_PATH", "value": "/"},
                                                 ],
                                                 "envFrom": [
                                                     # Service configs are always first
@@ -200,7 +202,7 @@ def test_resource_generation(
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
     environment: Environment,
     kubernetes_adapter: KubernetesExecutionEnvironmentAdapter,
-    environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
+    execution_parameters: ExecutionParameters,
 ):
     executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert resources == _generate_bolt_resources(
@@ -208,5 +210,5 @@ def test_resource_generation(
         bolt=bolt,
         adapter=kubernetes_adapter,
         environment=environment,
-        execution_parameters=environment_artifact_execution_parameters,
+        execution_parameters=execution_parameters,
     )

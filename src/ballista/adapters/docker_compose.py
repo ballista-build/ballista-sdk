@@ -10,18 +10,19 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
 from ballista.types import (
     Artifact,
+    ArtifactExecutionParameters,
     ArtifactExecutionProbe,
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
     ArtifactType,
     Bolt,
     Environment,
-    EnvironmentArtifactExecutionParameters,
     ExecutableArtifact,
     ExecutableArtifactReference,
+    ExecutionParameters,
     ResourceWithArtifactProvider,
 )
 
@@ -71,12 +72,12 @@ def _generate_docker_compose_project_from_bolt(
     artifacts: Collection[ExecutableArtifact],
     adapter: DockerComposeExecutionEnvironmentAdapter,
     environment: Environment,
-    execution_parameters: EnvironmentArtifactExecutionParameters,
+    execution_parameters: ExecutionParameters,
 ) -> DockerComposeProject:
     """Generate a docker compose project."""
 
     if len(artifacts) == 0:
-        raise ValueError("No artifacts to generate with.")
+        raise ValueError("No ExecutableArtifactes to generate for.")
 
     project = DockerComposeProject(name=project_id, networks={}, services={}, volumes={})
 
@@ -116,7 +117,9 @@ def _generate_docker_compose_project_from_bolt(
             version=artifact_version,
             adapter=adapter,
             environment=environment,
-            execution_parameters=execution_parameters,
+            artifact_execution_parameters=execution_parameters.params_for_artifact(
+                environment=environment, project_id=artifact_project_id, artifact=artifact
+            ),
         )
 
         if artifact.execution.resources:
@@ -153,7 +156,7 @@ def _generate_docker_compose_service_from_artifact(
     version: str,
     adapter: DockerComposeExecutionEnvironmentAdapter,
     environment: Environment,
-    execution_parameters: EnvironmentArtifactExecutionParameters,
+    artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
 
@@ -162,19 +165,20 @@ def _generate_docker_compose_service_from_artifact(
 
     compose_service = DockerComposeService(container_name=artifact_ref_name)
 
-    if execution_resources := execution_parameters.resources:
+    if compute_parameters := artifact_execution_parameters.compute:
         resource_max = {}
         resource_min = {}
-        if max_cpu := execution_resources.max_cpu:
+        if max_cpu := compute_parameters.max_cpu:
             resource_max["cpus"] = str(max_cpu)
-        if max_memory := execution_resources.max_memory:
+        if max_memory := compute_parameters.max_memory:
             resource_max["memory"] = f"{max_memory}g"
-        if min_cpu := execution_resources.min_cpu:
+        if min_cpu := compute_parameters.min_cpu:
             resource_min["cpus"] = str(min_cpu)
-        if min_memory := execution_resources.min_memory:
+        if min_memory := compute_parameters.min_memory:
             resource_min["memory"] = f"{min_memory}g"
 
-        compose_service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
+        if resource_max or resource_min:
+            compose_service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
 
     env = {}
     env_files = []
@@ -219,23 +223,35 @@ def _generate_docker_compose_service_from_artifact(
     # Services
     services_added = {}
     for service in execution.services:
-        key = f"{service.id.upper()}_SERVICE"
+        port_service = service.grpc or service.http or service.tcp
+        if port_service is None:
+            # WTF is it, then? Needs a better abstraction.
+            continue
+
         services_added[service.id] = service
 
-        service_port = _get_service_port(service)
-        env[f"{key}_PORT"] = str(service_port)
+        key = f"{service.id.upper()}_SERVICE"
+        host = "localhost"
+        path = "/"
+        env[f"{key}_PORT"] = str(port_service.port)
 
-        service_execution_parameters = execution_parameters.services.get(service.id)
-        if service_execution_parameters is not None:
-            port = service_execution_parameters.port or service_port
+        external_service_parameters = artifact_execution_parameters.external_services.get(service.id)
+        if external_service_parameters and external_service_parameters.host is not None:
+            host = external_service_parameters.host
+            if external_service_parameters.path:
+                path = external_service_parameters.path
 
             compose_service.ports.append(
                 {
                     "name": service.id,
-                    "published": str(port),
-                    "target": service_port,
+                    "published": str(external_service_parameters.port or port_service.port),
+                    "target": port_service.port,
                 }
             )
+
+        env[f"{key}_HOST"] = host
+        if service.http:
+            env[f"{key}_PATH"] = path
 
     # Healthchecks; processed after services as they can depend on them.
     if healthchecks := execution.healthchecks:
@@ -260,12 +276,12 @@ def _generate_docker_compose_service_from_artifact(
     # Volumes
     if volumes := execution.volumes:
         for volume in volumes:
-            execution_volume = execution_parameters.volumes.get(volume.id)
+            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.id)
 
             if volume.persistent:
                 volume_options = None
-                if execution_volume and execution_volume.path:
-                    volume_options = {"subpath": execution_volume.path}
+                if execution_volume_parameters and execution_volume_parameters.path:
+                    volume_options = {"subpath": execution_volume_parameters.path}
 
                 compose_service.volumes.append(
                     DockerComposeServiceVolume(
@@ -358,17 +374,6 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
     return {}
 
 
-def _get_service_port(service: ArtifactExecutionService) -> int:
-    if service.grpc:
-        return service.grpc.port
-    elif service.http:
-        return service.http.port
-    elif service.tcp:
-        return service.tcp.port
-
-    raise ValueError("WTF")
-
-
 def _generate_env_files():
     pass
 
@@ -377,7 +382,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     _executable_artifacts: list[ExecutableArtifactReference]
 
     def __init__(self):
-        self._executable_artifacts = []
+        self._executable_artifacts = fake_executable_artifacts()
 
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
         """Call docker compose."""
@@ -394,7 +399,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: EnvironmentArtifactExecutionParameters,
+        execution_parameters: ExecutionParameters,
     ):
         # Generate .env files
         _generate_env_files()
@@ -439,7 +444,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: EnvironmentArtifactExecutionParameters,
+        execution_parameters: ExecutionParametersManager,
     ):
         docker_compose_project = _generate_docker_compose_project_from_bolt(
             project_id=bolt.project_id,
