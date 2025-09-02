@@ -6,7 +6,7 @@ from typing import Any, TypedDict
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista.types import (
     ArtifactExecutionExternalServiceParameters,
     ArtifactExecutionParameters,
@@ -54,15 +54,23 @@ def _get_metadata_labels(
         "app.kubernetes.io/managed-by": METADATA_MANAGED_BY,
         METADATA_LABEL_ENVIRONMENT: environment.id,
     }
-    if bolt:
-        labels.update(
-            {
-                "app.kubernetes.io/part-of": bolt.project_id,
-                "app.kubernetes.io/version": bolt.version,
-            }
-        )
-    if artifact:
-        labels.update({"app.kubernetes.io/name": artifact.id})
+
+    if bolt is None:
+        return labels
+
+    labels.update(
+        {
+            "app.kubernetes.io/part-of": bolt.project_id,
+            "app.kubernetes.io/version": bolt.version,
+        }
+    )
+
+    if artifact is None:
+        return labels
+
+    labels.update(
+        {"app.kubernetes.io/instance": f"{artifact.id}-{bolt.version}", "app.kubernetes.io/name": artifact.id}
+    )
 
     return labels
 
@@ -446,6 +454,9 @@ def _generate_yaml_files(k8s_resources: Collection[KubernetesResource]) -> dict[
 
 
 class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
+    def __init__(self, executable_artifact_references: list[ExecutableArtifactReference] = []):
+        self._executable_artifact_references = executable_artifact_references
+
     def deploy(
         self,
         bolt: Bolt,
@@ -518,7 +529,9 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         return []
 
     def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
-        return [(ref[0].resource, ref) for ref in fake_executable_artifacts() if ref[0].resource]
+        """List available Resources with a providing ArtifactReference in the specified Environment."""
+
+        return [(ref[0].resource, ref) for ref in self._executable_artifact_references if ref[0].resource]
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment

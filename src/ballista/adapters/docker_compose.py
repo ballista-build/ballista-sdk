@@ -10,7 +10,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista.types import (
     Artifact,
     ArtifactExecutionParameters,
@@ -379,10 +379,10 @@ def _generate_env_files():
 
 
 class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
-    _executable_artifacts: list[ExecutableArtifactReference]
+    _executable_artifact_references: list[ExecutableArtifactReference]
 
-    def __init__(self):
-        self._executable_artifacts = fake_executable_artifacts()
+    def __init__(self, executable_artifact_references: list[ExecutableArtifactReference] = []):
+        self._executable_artifact_references = executable_artifact_references
 
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
         """Call docker compose."""
@@ -425,7 +425,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
-        return [(ref[0].resource, ref) for ref in self._executable_artifacts if ref[0].resource]
+        return [(ref[0].resource, ref) for ref in self._executable_artifact_references if ref[0].resource]
 
     def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
         return []
@@ -444,7 +444,7 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: ExecutionParametersManager,
+        execution_parameters: ExecutionParameters,
     ):
         docker_compose_project = _generate_docker_compose_project_from_bolt(
             project_id=bolt.project_id,

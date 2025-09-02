@@ -10,13 +10,13 @@ from ballista.adapters.docker_compose import (
     DockerComposeServiceVolume,
     _generate_docker_compose_project_from_bolt,
 )
-from ballista.types import Bolt, Environment, ExecutionParameters
+from ballista.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
 
 
 @pytest.fixture
-def docker_compose_adapter():
-    adapter = DockerComposeExecutionEnvironmentAdapter()
-    # TODO: Load available resources into the adapter
+def docker_compose_adapter(fake_executable_artifacts: list[ExecutableArtifactReference]):
+    adapter = DockerComposeExecutionEnvironmentAdapter(fake_executable_artifacts)
+
     return adapter
 
 

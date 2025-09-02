@@ -140,6 +140,11 @@ def bolt(project: Project, docker_image_artifact_type_dependency: ArtifactTypeDe
 
 
 @pytest.fixture(scope="session")
+def environment() -> Environment:
+    return Environment(id="test", name="Test Environment")
+
+
+@pytest.fixture(scope="session")
 def execution_parameters() -> ExecutionParameters:
     return ExecutionParameters(
         DefaultExecutionParameters(
@@ -148,8 +153,3 @@ def execution_parameters() -> ExecutionParameters:
             volume=ArtifactExecutionVolumeParameters(max_capacity=1.0, path="/custom/path", type="generic-storage"),
         )
     )
-
-
-@pytest.fixture(scope="session")
-def environment() -> Environment:
-    return Environment(id="test", name="Test Environment")

@@ -48,11 +48,11 @@ def get_local_bolt(environment: Environment, adapter: EnvironmentExecutionAdapte
     raise ValueError()
 
 
-def load_defaults(adapter: DockerComposeExecutionEnvironmentAdapter):
+def get_default_executable_artifact_references() -> list[ExecutableArtifactReference]:
+    executable_artifact_references = []
+
     home = Path.home()
-
     ballista_folder = home / ".ballista"
-
     defaults_yaml = ballista_folder / "defaults.yaml"
     if defaults_yaml.exists():
         with open(defaults_yaml) as f:
@@ -66,19 +66,22 @@ def load_defaults(adapter: DockerComposeExecutionEnvironmentAdapter):
                     bolt = bolt_service.get_bolt(bolt_yaml)
 
                     for ea in bolt.executable_artifacts:
-                        adapter._executable_artifacts.append(
+                        executable_artifact_references.append(
                             ExecutableArtifactReference(ea, bolt.version, bolt.project_id)
                         )
 
+    return executable_artifact_references
+
 
 def get_local_environment() -> tuple[EnvironmentExecutionAdapter, Environment]:
+    executable_artifact_references = get_default_executable_artifact_references()
+
     if LOCAL_KUBERNETES_CONTEXT:
         # If set to use a Kubernetes context for local environment, use it here.
-        adapter = KubernetesExecutionEnvironmentAdapter()
+        adapter = KubernetesExecutionEnvironmentAdapter(executable_artifact_references)
 
     else:
-        adapter = DockerComposeExecutionEnvironmentAdapter()
-        load_defaults(adapter)
+        adapter = DockerComposeExecutionEnvironmentAdapter(executable_artifact_references)
 
     environment = Environment(id="local", name="Local")
 
