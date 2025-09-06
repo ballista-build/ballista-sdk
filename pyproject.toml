@@ -1,7 +1,7 @@
 [project]
-name = "ballista"
+name = "ballista-sdk"
 version = "0.1.0"
-description = "Ballista"
+description = "Ballista.build SDK"
 readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 requires-python = ">=3.11"

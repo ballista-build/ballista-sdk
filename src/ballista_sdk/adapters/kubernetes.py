@@ -6,8 +6,8 @@ from typing import Any, TypedDict
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
-from ballista.types import (
+from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
+from ballista_sdk.types import (
     ArtifactExecutionExternalServiceParameters,
     ArtifactExecutionParameters,
     ArtifactExecutionProbe,

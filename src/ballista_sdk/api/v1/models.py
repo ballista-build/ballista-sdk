@@ -3,7 +3,7 @@ from typing import Annotated, Any, ClassVar, Literal
 from openapi_pydantic import Schema
 from pydantic import BaseModel, Field, create_model
 
-from ballista.types import ArtifactSettingType
+from ballista_sdk.types import ArtifactSettingType
 
 
 class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minProperties": 1}):

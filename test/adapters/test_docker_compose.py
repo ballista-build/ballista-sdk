@@ -2,7 +2,7 @@ import contextlib
 
 import pytest
 
-from ballista.adapters.docker_compose import (
+from ballista_sdk.adapters.docker_compose import (
     DockerComposeExecutionEnvironmentAdapter,
     DockerComposeProject,
     DockerComposeProjectVolume,
@@ -10,7 +10,7 @@ from ballista.adapters.docker_compose import (
     DockerComposeServiceVolume,
     _generate_docker_compose_project_from_bolt,
 )
-from ballista.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
+from ballista_sdk.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
 
 
 @pytest.fixture

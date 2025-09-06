@@ -7,11 +7,11 @@ import prettytable
 import typer
 import yaml
 
-from ballista.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
-from ballista.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
-from ballista.adapters.types import EnvironmentExecutionAdapter, EnvironmentWithExecutionAdapter
-from ballista.bolts import v1_service
-from ballista.types import (
+from ballista_sdk.adapters.docker_compose import DockerComposeExecutionEnvironmentAdapter
+from ballista_sdk.adapters.kubernetes import KubernetesExecutionEnvironmentAdapter
+from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, EnvironmentWithExecutionAdapter
+from ballista_sdk.bolts import v1_service
+from ballista_sdk.types import (
     ArtifactExecutionExternalServiceParameters,
     ArtifactExecutionVolumeParameters,
     Bolt,

@@ -2,7 +2,7 @@ from unittest.mock import Mock
 
 import pytest
 
-from ballista.types import (
+from ballista_sdk.types import (
     Artifact,
     ArtifactExecutionComputeParameters,
     ArtifactExecutionExternalServiceParameters,
