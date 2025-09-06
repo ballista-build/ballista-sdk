@@ -5,12 +5,12 @@ from ballista.adapters.kubernetes import (
     KubernetesResource,
     _generate_bolt_resources,
 )
-from ballista.types import Bolt, Environment, EnvironmentArtifactExecutionParameters
+from ballista.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
 
 
 @pytest.fixture
-def kubernetes_adapter():
-    return KubernetesExecutionEnvironmentAdapter()
+def kubernetes_adapter(fake_executable_artifacts: list[ExecutableArtifactReference]):
+    return KubernetesExecutionEnvironmentAdapter(fake_executable_artifacts)
 
 
 @pytest.mark.parametrize(
@@ -27,6 +27,7 @@ def kubernetes_adapter():
                             "kind": "Deployment",
                             "metadata": {
                                 "labels": {
+                                    "app.kubernetes.io/instance": "api-1",
                                     "app.kubernetes.io/managed-by": "Ballista",
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
@@ -39,6 +40,7 @@ def kubernetes_adapter():
                             "spec": {
                                 "selector": {
                                     "matchLabels": {
+                                        "app.kubernetes.io/instance": "api-1",
                                         "app.kubernetes.io/managed-by": "Ballista",
                                         "app.kubernetes.io/name": "api",
                                         "app.kubernetes.io/part-of": "simple",
@@ -53,6 +55,7 @@ def kubernetes_adapter():
                                 "template": {
                                     "metadata": {
                                         "labels": {
+                                            "app.kubernetes.io/instance": "api-1",
                                             "app.kubernetes.io/managed-by": "Ballista",
                                             "app.kubernetes.io/name": "api",
                                             "app.kubernetes.io/part-of": "simple",
@@ -67,6 +70,8 @@ def kubernetes_adapter():
                                             {
                                                 "env": [
                                                     {"name": "HTTP_SERVICE_PORT", "value": "80"},
+                                                    {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
+                                                    {"name": "HTTP_SERVICE_PATH", "value": "/"},
                                                 ],
                                                 "envFrom": [
                                                     # Service configs are always first
@@ -116,6 +121,7 @@ def kubernetes_adapter():
                             "kind": "Service",
                             "metadata": {
                                 "labels": {
+                                    "app.kubernetes.io/instance": "api-1",
                                     "app.kubernetes.io/managed-by": "Ballista",
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
@@ -127,6 +133,7 @@ def kubernetes_adapter():
                             },
                             "spec": {
                                 "selector": {
+                                    "app.kubernetes.io/instance": "api-1",
                                     "app.kubernetes.io/managed-by": "Ballista",
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
@@ -141,6 +148,7 @@ def kubernetes_adapter():
                             "kind": "PersistentVolumeClaim",
                             "metadata": {
                                 "labels": {
+                                    "app.kubernetes.io/instance": "api-1",
                                     "app.kubernetes.io/managed-by": "Ballista",
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
@@ -161,6 +169,7 @@ def kubernetes_adapter():
                             "kind": "Ingress",
                             "metadata": {
                                 "labels": {
+                                    "app.kubernetes.io/instance": "api-1",
                                     "app.kubernetes.io/managed-by": "Ballista",
                                     "app.kubernetes.io/name": "api",
                                     "app.kubernetes.io/part-of": "simple",
@@ -200,7 +209,7 @@ def test_resource_generation(
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
     environment: Environment,
     kubernetes_adapter: KubernetesExecutionEnvironmentAdapter,
-    environment_artifact_execution_parameters: EnvironmentArtifactExecutionParameters,
+    execution_parameters: ExecutionParameters,
 ):
     executable_artifacts = [a for a in bolt.artifacts if a.execution]
     assert resources == _generate_bolt_resources(
@@ -208,5 +217,5 @@ def test_resource_generation(
         bolt=bolt,
         adapter=kubernetes_adapter,
         environment=environment,
-        execution_parameters=environment_artifact_execution_parameters,
+        execution_parameters=execution_parameters,
     )

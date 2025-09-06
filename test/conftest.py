@@ -4,6 +4,8 @@ import pytest
 
 from ballista.types import (
     Artifact,
+    ArtifactExecutionComputeParameters,
+    ArtifactExecutionExternalServiceParameters,
     ArtifactExecutionHealthChecks,
     ArtifactExecutionHTTPProbe,
     ArtifactExecutionProbe,
@@ -11,15 +13,13 @@ from ballista.types import (
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
     ArtifactExecutionVolume,
+    ArtifactExecutionVolumeParameters,
     ArtifactInjectedValue,
     ArtifactTypeDependency,
     Bolt,
+    DefaultExecutionParameters,
     Environment,
-    EnvironmentArtifactExecutionParameters,
-    EnvironmentArtifactExecutionResourceParameters,
-    EnvironmentArtifactExecutionScalingParameters,
-    EnvironmentArtifactExecutionServiceParameters,
-    EnvironmentArtifactExecutionVolume,
+    ExecutionParameters,
     Project,
 )
 
@@ -145,31 +145,11 @@ def environment() -> Environment:
 
 
 @pytest.fixture(scope="session")
-def environment_artifact_execution_parameters():
-    return Mock(
-        EnvironmentArtifactExecutionParameters,
-        resources=Mock(
-            EnvironmentArtifactExecutionResourceParameters, max_cpu=None, max_memory=1.0, min_cpu=0.25, min_memory=0.1
-        ),
-        scaling=Mock(EnvironmentArtifactExecutionScalingParameters, max_replicas=None, min_replicas=None),
-        services={
-            "http": Mock(EnvironmentArtifactExecutionServiceParameters, host="test.ballista.build", path=None, port=80),
-            "postgres": Mock(
-                EnvironmentArtifactExecutionServiceParameters, host="test.ballista.build", path=None, port=5432
-            ),
-        },
-        volumes={
-            "volume_a": Mock(
-                EnvironmentArtifactExecutionVolume,
-                max_capacity=1.0,
-                path="/custom/path",
-                type="generic-storage",
-            ),
-            "volume_b": Mock(
-                EnvironmentArtifactExecutionVolume,
-                max_capacity=None,
-                path="/custom/path",
-                type="generic-storage",
-            ),
-        },
+def execution_parameters() -> ExecutionParameters:
+    return ExecutionParameters(
+        DefaultExecutionParameters(
+            compute=ArtifactExecutionComputeParameters(max_memory=1.0, min_cpu=0.25, min_memory=0.1),
+            external_service=ArtifactExecutionExternalServiceParameters(host="test.ballista.build"),
+            volume=ArtifactExecutionVolumeParameters(max_capacity=1.0, path="/custom/path", type="generic-storage"),
+        )
     )

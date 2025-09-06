@@ -6,18 +6,19 @@ from typing import Any, TypedDict
 import yaml
 from kubernetes import client, config, utils
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types, fake_executable_artifacts
+from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista.types import (
+    ArtifactExecutionExternalServiceParameters,
+    ArtifactExecutionParameters,
     ArtifactExecutionProbe,
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
     ArtifactType,
     Bolt,
     Environment,
-    EnvironmentArtifactExecutionParameters,
-    EnvironmentArtifactExecutionServiceParameters,
     ExecutableArtifact,
     ExecutableArtifactReference,
+    ExecutionParameters,
     ResourceWithArtifactProvider,
 )
 
@@ -53,15 +54,23 @@ def _get_metadata_labels(
         "app.kubernetes.io/managed-by": METADATA_MANAGED_BY,
         METADATA_LABEL_ENVIRONMENT: environment.id,
     }
-    if bolt:
-        labels.update(
-            {
-                "app.kubernetes.io/part-of": bolt.project_id,
-                "app.kubernetes.io/version": bolt.version,
-            }
-        )
-    if artifact:
-        labels.update({"app.kubernetes.io/name": artifact.id})
+
+    if bolt is None:
+        return labels
+
+    labels.update(
+        {
+            "app.kubernetes.io/part-of": bolt.project_id,
+            "app.kubernetes.io/version": bolt.version,
+        }
+    )
+
+    if artifact is None:
+        return labels
+
+    labels.update(
+        {"app.kubernetes.io/instance": f"{artifact.id}-{bolt.version}", "app.kubernetes.io/name": artifact.id}
+    )
 
     return labels
 
@@ -87,7 +96,7 @@ def _generate_bolt_resources(
     artifacts: Collection[ExecutableArtifact],
     adapter: KubernetesExecutionEnvironmentAdapter,
     environment: Environment,
-    execution_parameters: EnvironmentArtifactExecutionParameters,
+    execution_parameters: ExecutionParameters,
 ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
     """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
     if len(artifacts) == 0:
@@ -98,8 +107,10 @@ def _generate_bolt_resources(
             bolt=bolt,
             artifact=artifact,
             adapter=adapter,
-            execution_parameters=execution_parameters,
             environment=environment,
+            artifact_execution_parameters=execution_parameters.params_for_artifact(
+                environment=environment, project_id=bolt.project_id, artifact=artifact
+            ),
         )
         for artifact in artifacts
     }
@@ -139,7 +150,7 @@ def _generate_artifact_resources(
     artifact: ExecutableArtifact,
     adapter: KubernetesExecutionEnvironmentAdapter,
     environment: Environment,
-    execution_parameters: EnvironmentArtifactExecutionParameters,
+    artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     execution = artifact.execution
 
@@ -166,17 +177,18 @@ def _generate_artifact_resources(
     container = {"name": artifact_name, "image": image}
 
     # Execution Parameters Resources
-    if execution_resources := execution_parameters.resources:
-        pod_resources = {"requests": {}, "limits": {}}
-        if execution_resources.min_cpu:
-            pod_resources["requests"]["cpu"] = f"{execution_resources.min_cpu}G"
-        if execution_resources.min_memory:
-            pod_resources["requests"]["memory"] = f"{execution_resources.min_memory}Gi"
-        if execution_resources.max_cpu:
-            pod_resources["limits"]["cpu"] = f"{execution_resources.max_cpu}G"
-        if execution_resources.max_memory:
-            pod_resources["limits"]["memory"] = f"{execution_resources.max_memory}Gi"
+    pod_resources = {"requests": {}, "limits": {}}
+    compute_parameters = artifact_execution_parameters.compute
+    if compute_parameters.min_cpu:
+        pod_resources["requests"]["cpu"] = f"{compute_parameters.min_cpu}G"
+    if compute_parameters.min_memory:
+        pod_resources["requests"]["memory"] = f"{compute_parameters.min_memory}Gi"
+    if compute_parameters.max_cpu:
+        pod_resources["limits"]["cpu"] = f"{compute_parameters.max_cpu}G"
+    if compute_parameters.max_memory:
+        pod_resources["limits"]["memory"] = f"{compute_parameters.max_memory}Gi"
 
+    if pod_resources["requests"] or pod_resources["limits"]:
         container["resources"] = pod_resources
 
     has_service_configs = bool(execution.configs)
@@ -231,36 +243,47 @@ def _generate_artifact_resources(
         env_from.insert(0, {"configMapRef": {"name": artifact_ref_name, "optional": True}})
 
     # Services
-    services = {}
-    external_services: list[tuple[ArtifactExecutionService, EnvironmentArtifactExecutionServiceParameters]] = []
-    if execution_services := execution.services:
-        ports = []
-        for service in execution_services:
-            services[service.id] = service
+    services_added = {}
+    ports = []
+    external_services: list[tuple[ArtifactExecutionService, ArtifactExecutionExternalServiceParameters]] = []
+    for service in execution.services:
+        port_service = service.grpc or service.http or service.tcp
+        if port_service is None:
+            # TODO: WTF is it, then? Probably need a better abstraction haha
+            continue
 
-            key = f"{service.id.upper()}_SERVICE"
+        services_added[service.id] = service
 
-            port_service = service.grpc or service.http or service.tcp
-            if port_service:
-                ports.append({"containerPort": port_service.port, "name": service.id})
+        key = f"{service.id.upper()}_SERVICE"
+        host = "localhost"
+        path = "/"
+        ports.append({"containerPort": port_service.port, "name": service.id})
+        env.append({"name": f"{key}_PORT", "value": str(port_service.port)})
 
-                env.append({"name": f"{key}_PORT", "value": str(port_service.port)})
+        external_service_parameters = artifact_execution_parameters.external_services.get(service.id)
+        if external_service_parameters and external_service_parameters.host:
+            host = external_service_parameters.host
+            if external_service_parameters.path:
+                path = external_service_parameters.path
 
-            service_execution_parameters = execution_parameters.services.get(service.id)
-            if service_execution_parameters:
-                external_services.append((service, service_execution_parameters))
+            external_services.append((service, external_service_parameters))
 
+        env.append({"name": f"{key}_HOST", "value": host})
+        if service.http:
+            env.append({"name": f"{key}_PATH", "value": path})
+
+    if ports:
         container["ports"] = ports
 
     # Healthchecks; processed after Services since they can refer to them
     if healthchecks := execution.healthchecks:
-        if (ready := healthchecks.ready) and (probe := _generate_probe(ready, services)):
+        if (ready := healthchecks.ready) and (probe := _generate_probe(ready, services_added)):
             container["readinessProbe"] = probe
 
-        if (alive := healthchecks.alive) and (probe := _generate_probe(alive, services)):
+        if (alive := healthchecks.alive) and (probe := _generate_probe(alive, services_added)):
             container["livenessProbe"] = probe
 
-        if (started := healthchecks.started) and (probe := _generate_probe(started, services)):
+        if (started := healthchecks.started) and (probe := _generate_probe(started, services_added)):
             container["startupProbe"] = probe
 
     if env:
@@ -299,8 +322,8 @@ def _generate_artifact_resources(
     )
 
     # Services
-    if services:
-        for service in services.values():
+    if services_added:
+        for service in services_added.values():
             ports = []
             resource: KubernetesResource = {
                 "apiVersion": "v1",
@@ -340,15 +363,15 @@ def _generate_artifact_resources(
             volume_claim = {"resources": {"requests": {"storage": f"{volume.capacity}G"}}}
 
             # Claim resources
-            if execution_volume := execution_parameters.volumes.get(volume.id):
-                if execution_volume.max_capacity:
-                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume.max_capacity}G"}
+            if execution_volume_parameters := artifact_execution_parameters.volumes.get(volume.id):
+                if execution_volume_parameters.max_capacity:
+                    volume_claim["resources"]["limits"] = {"storage": f"{execution_volume_parameters.max_capacity}G"}
 
-                if execution_volume.path:
+                if execution_volume_parameters.path:
                     # Set a subPath in the volume for this specific mount
-                    volume_mount["subPath"] = f"{execution_volume.path}/{volume.id}"
-                if execution_volume.type:
-                    volume_claim["storageClassName"] = execution_volume.type
+                    volume_mount["subPath"] = f"{execution_volume_parameters.path}/{volume.id}"
+                if execution_volume_parameters.type:
+                    volume_claim["storageClassName"] = execution_volume_parameters.type
 
             if volume.persistent:
                 volumes.append(
@@ -391,14 +414,20 @@ def _generate_artifact_resources(
     if external_services:
         hosts = {}
         for service, service_execution_parameters in external_services:
-            if service.tcp:
+            port_service = service.grpc or service.http
+            if port_service is None or service.tcp:
                 # Can't expose TCP this way
                 continue
 
             path = {
                 "path": service_execution_parameters.path or "/",
                 "pathType": "Prefix",
-                "backend": {"service": {"name": service.id, "port": {"number": service_execution_parameters.port}}},
+                "backend": {
+                    "service": {
+                        "name": service.id,
+                        "port": {"number": service_execution_parameters.port or port_service.port},
+                    }
+                },
             }
 
             host = service_execution_parameters.host
@@ -425,12 +454,15 @@ def _generate_yaml_files(k8s_resources: Collection[KubernetesResource]) -> dict[
 
 
 class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
+    def __init__(self, executable_artifact_references: list[ExecutableArtifactReference] = []):
+        self._executable_artifact_references = executable_artifact_references
+
     def deploy(
         self,
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: EnvironmentArtifactExecutionParameters,
+        execution_parameters: ExecutionParameters,
     ):
         bolt_resources, all_artifact_resources = _generate_bolt_resources(
             bolt=bolt,
@@ -497,7 +529,9 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         return []
 
     def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
-        return [(ref[0].resource, ref) for ref in fake_executable_artifacts() if ref[0].resource]
+        """List available Resources with a providing ArtifactReference in the specified Environment."""
+
+        return [(ref[0].resource, ref) for ref in self._executable_artifact_references if ref[0].resource]
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
@@ -513,7 +547,7 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
-        execution_parameters: EnvironmentArtifactExecutionParameters,
+        execution_parameters: ExecutionParameters,
     ):
         pass
 

@@ -7,6 +7,7 @@ authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 requires-python = ">=3.11"
 dependencies = [
     "kubernetes>=32.0.1",
+    "openapi-pydantic>=0.5.1",
     "pydantic>=2",
     "python-dateutil>=2.8.2",
     "pyyaml>=6.0.2",
@@ -36,7 +37,7 @@ dev = [
     "typer>=0.15.1",
     "pytest>=8.3.5",
     "coverage>=7.7.1",
-    "pyrefly>=0.28",
+    "pyrefly>=0.31",
     "prettytable",
 ]
 generation = ["openapi-generator-cli[jdk4py]>=7.11.0.post0"]
