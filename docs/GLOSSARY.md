@@ -27,7 +27,7 @@ A bundle of multiple [Artifact](#artifact)s that belong to a single [Project](#p
 A destination where [Bolts](#bolt) are launched and [Artifact](#artifact) are executed.
 
 ### Launch
-A single deployment of a [Project](#project). to an Environment.
+A single deployment of a [Project](#project). to an [Environment](#environment).
 
 ### Project
 A collection of [Artifacts](#artifact) that represent a single piece of software.
@@ -39,7 +39,7 @@ Different kinds of people have different needs, demands, and experiences met by 
 A user that creates a piece of software and a corresponding [Bolt](#bolt) to enable Launching with Ballista.
 
 #### Goals and Responsibilities
-- Writes a [Project's](#project) requirements into a [Bolt](#bolt) as a `ballista.yaml` file.
+- Writes a [Project's](#project) artifact definitions into a [Bolt](#bolt) as a `ballista.yaml` file.
 - Launches their [Bolt](#bolt) into [Environments](#environment).
 
 ### Environment Manager
