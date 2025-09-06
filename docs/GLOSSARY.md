@@ -12,6 +12,14 @@ The parameters given to an [Artifact](#artifact) at runtime to control the way i
 #### Execution Requirements
 The requirements for executing a specific [Artifact](#artifact). This includes all [Resource](#resource), [Service](#service), etc. definitions used by the [Artifact](#artifact). Maintained by a [Project Author](#project-author) inside a [Bolt](#bolt).
 
+#### Resource
+An entity maintained by an [Artifact](#artifact) that can be requested by other [Artifacts](#artifact) for their own execution.
+
+Examples: a PostgreSQL database, a Redis index, etc.
+
+#### Service
+A named network interface to communicate with an executing [Artifact](#artifact).
+
 ### Bolt
 A bundle of multiple [Artifact](#artifact)s that belong to a single [Project](#project). This contains all known [Artifact](#artifact)s  with their related [Build Requirements](#build-requirements) and [Execution Requirements](#execution-requirements).
 
@@ -23,14 +31,6 @@ A single deployment of a [Project](#project). to an Environment.
 
 ### Project
 A collection of [Artifacts](#artifact) that represent a single piece of software.
-
-### Resource
-An entity maintained by [Artifacts](#artifact) that can be requested by other [Artifacts](#artifact) for their own execution.
-
-Examples: a PostgreSQL database, a Redis index, etc.
-
-### Service
-A named network interface to communicate with an executing [Artifact](#artifact).
 
 ## Personas
 Different kinds of people have different needs, demands, and experiences met by Ballista and they are defined as "Personas".
