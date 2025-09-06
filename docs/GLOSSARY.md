@@ -21,16 +21,16 @@ Examples: a PostgreSQL database, a Redis index, etc.
 A named network interface to communicate with an executing [Artifact](#artifact).
 
 ### Bolt
-A bundle of multiple [Artifact](#artifact)s that belong to a single [Project](#project). This contains all known [Artifact](#artifact)s  with their related [Build Requirements](#build-requirements) and [Execution Requirements](#execution-requirements).
+A bundle of multiple [Artifact](#artifact)s that belong to a single [Project](#project). This contains the known [Artifact](#artifact)s  with their related [Build Requirements](#build-requirements) and [Execution Requirements](#execution-requirements).
 
 ### Environment
 A destination where [Bolts](#bolt) are launched and [Artifact](#artifact) are executed.
 
 ### Launch
-A single deployment of a [Project](#project). to an [Environment](#environment).
+A single deployment of a [Bolt](#bolt) to an [Environment](#environment).
 
 ### Project
-A collection of [Artifacts](#artifact) that represent a single piece of software.
+A collection of [Artifacts](#artifact) that represent a single piece of software. A project's [Launch](#launch) history includes the [Bolts](#bolt) that represented it at those times.
 
 ## Personas
 Different kinds of people have different needs, demands, and experiences met by Ballista and they are defined as "Personas".
