@@ -4,6 +4,7 @@ version = "0.1.0"
 description = "Ballista.build SDK for Python"
 readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
     "kubernetes>=32.0",
