@@ -4,7 +4,7 @@ from collections.abc import Sequence
 from typing import Protocol
 from unittest.mock import Mock
 
-from ballista.types import (
+from ballista_sdk.types import (
     ArtifactExecutionResourceDependency,
     ArtifactType,
     Bolt,

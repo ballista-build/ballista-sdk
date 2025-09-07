@@ -10,8 +10,8 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
-from ballista.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
-from ballista.types import (
+from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
+from ballista_sdk.types import (
     Artifact,
     ArtifactExecutionParameters,
     ArtifactExecutionProbe,

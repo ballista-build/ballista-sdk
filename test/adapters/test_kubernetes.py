@@ -1,11 +1,11 @@
 import pytest
 
-from ballista.adapters.kubernetes import (
+from ballista_sdk.adapters.kubernetes import (
     KubernetesExecutionEnvironmentAdapter,
     KubernetesResource,
     _generate_bolt_resources,
 )
-from ballista.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
+from ballista_sdk.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
 
 
 @pytest.fixture

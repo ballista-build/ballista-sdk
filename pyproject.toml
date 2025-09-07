@@ -1,43 +1,35 @@
 [project]
-name = "ballista"
+name = "ballista-sdk"
 version = "0.1.0"
-description = "Ballista"
+description = "Ballista.build SDK for Python"
 readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
+license = "MIT"
 requires-python = ">=3.11"
 dependencies = [
-    "kubernetes>=32.0.1",
+    "kubernetes>=32.0",
     "openapi-pydantic>=0.5.1",
     "pydantic>=2",
-    "python-dateutil>=2.8.2",
-    "pyyaml>=6.0.2",
-    "semver>=3.0.4",
-    "urllib3>=1.25.3,<3.0.0",
+    "pyyaml>=6.0",
+    "semver>=3.0",
+    "urllib3>=1.25,<3.0.0",
 ]
 
-[project.optional-dependencies]
-cli = ["typer>=0.15.1", "prettytable"]
-kubernetes = []
-
-[project.scripts]
-ballista = "ballista.cli:cli"
+[dependency-groups]
+dev = [
+    "ruff>=0.9",
+    "pytest>=8.3",
+    "coverage>=7.7",
+    "pyrefly>=0.31"
+]
 
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.coverage.run]
+source = ["src"]
+
 [tool.ruff]
 line-length = 120
 target-version = "py311"
-
-[dependency-groups]
-dev = [
-    { include-group = "generation" },
-    "ruff>=0.9.0",
-    "typer>=0.15.1",
-    "pytest>=8.3.5",
-    "coverage>=7.7.1",
-    "pyrefly>=0.31",
-    "prettytable",
-]
-generation = ["openapi-generator-cli[jdk4py]>=7.11.0.post0"]

@@ -6,10 +6,9 @@ from typing import Annotated, Any
 
 from pydantic import Field, create_model
 
-from ballista.api.v1 import models
-
-from ..types import BoltService as BaseBoltService
-from ..types import Resource, ResourceWithArtifactProvider
+from ballista_sdk.api.v1 import models
+from ballista_sdk.types import BoltService as BaseBoltService
+from ballista_sdk.types import Resource, ResourceWithArtifactProvider
 
 
 class BoltService(BaseBoltService):
