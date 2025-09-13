@@ -40,11 +40,8 @@ def kubernetes_adapter(fake_executable_artifacts: list[ExecutableArtifactReferen
                             "spec": {
                                 "selector": {
                                     "matchLabels": {
-                                        "app.kubernetes.io/instance": "api-1",
-                                        "app.kubernetes.io/managed-by": "Ballista",
                                         "app.kubernetes.io/name": "api",
                                         "app.kubernetes.io/part-of": "simple",
-                                        "app.kubernetes.io/version": "1",
                                         "ballista.build/environment": "test",
                                     }
                                 },

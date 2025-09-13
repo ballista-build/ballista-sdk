@@ -55,22 +55,18 @@ def _get_metadata_labels(
         METADATA_LABEL_ENVIRONMENT: environment.id,
     }
 
-    if bolt is None:
-        return labels
+    if bolt:
+        labels.update(
+            {
+                "app.kubernetes.io/part-of": bolt.project_id,
+                "app.kubernetes.io/version": bolt.version,
+            }
+        )
 
-    labels.update(
-        {
-            "app.kubernetes.io/part-of": bolt.project_id,
-            "app.kubernetes.io/version": bolt.version,
-        }
-    )
-
-    if artifact is None:
-        return labels
-
-    labels.update(
-        {"app.kubernetes.io/instance": f"{artifact.id}-{bolt.version}", "app.kubernetes.io/name": artifact.id}
-    )
+        if artifact:
+            labels.update(
+                {"app.kubernetes.io/instance": f"{artifact.id}-{bolt.version}", "app.kubernetes.io/name": artifact.id}
+            )
 
     return labels
 
@@ -310,7 +306,11 @@ def _generate_artifact_resources(
             "metadata": metadata,
             "spec": {
                 "selector": {  # LabelSelector
-                    "matchLabels": metadata["labels"]
+                    "matchLabels": {  # Match on just enough labels to target the Artifact from this Bolt in this Environment
+                        "app.kubernetes.io/name": artifact.id,
+                        "app.kubernetes.io/part-of": bolt.project_id,
+                        METADATA_LABEL_ENVIRONMENT: environment.id,
+                    }
                 },
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
