@@ -18,21 +18,24 @@ class BaseArtifactInjectedValue(BaseModel, frozen=True):
     type: Annotated[ArtifactSettingType, Field(description="Type of value.")]
 
 
-class ResourceInjectedValue(BaseArtifactInjectedValue, frozen=True):
+class ResourceInjectedValue(BaseArtifactInjectedValue, frozen=True, from_attributes=True):
     shared: Annotated[bool, Field(description="Indicates if value is shared across artifacts.")]
 
 
-class ResourceRequirements(BaseModel, frozen=True):
+class ResourceRequirements(BaseModel, frozen=True, from_attributes=True):
     properties: Annotated[dict[str, Schema], Field()] = {}
     required: list[str] = []
 
 
-class Resource(BaseModel, frozen=True):
+class Resource(BaseModel, frozen=True, from_attributes=True):
     """Resource available to use as an artifact dependency."""
 
     configs: Annotated[list[ResourceInjectedValue], Field(description="Configs")] = []
     description: Annotated[str | None, Field(description="Longer, human-readable description of Resource.")] = None
     id: Annotated[str, Field(description="Unique identifier of Resource.", title="ID")]
+    instance_id_fields: Annotated[
+        list[str], Field(description="List of fields that form the unique instance_id.", title="instance_id Fields")
+    ] = []
     name: Annotated[
         str | None, Field(description="Human-readable name of Resource. Defaults to `id` if not specified.")
     ] = None
@@ -258,7 +261,7 @@ class Artifact(BaseModel, frozen=True):
         ArtifactExecutionRequirements | None, Field(description="Requirements for artifact execution.")
     ] = None
     id: Annotated[str, Field(description="Unique identifier of artifact within project.", title="ID")]
-    resource: Annotated[Resource | None, Field(description="Resource provided by this artifact.")] = None
+    provided_resources: Annotated[list[Resource], Field(description="Resources provided by this artifact.")] = []
     type: Annotated[
         ArtifactTypeDependency,
         Field(description="Type of artifact."),

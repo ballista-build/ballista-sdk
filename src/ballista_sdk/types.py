@@ -78,6 +78,11 @@ class Resource(Protocol):
         ...
 
     @property
+    def dependency_id_fields(self) -> Collection[str]:
+        """Fields in `requirements` that creates a unique `id` for Resource dependencies."""
+        ...
+
+    @property
     def description(self) -> str | None:
         """Description."""
         ...
@@ -177,7 +182,7 @@ class ArtifactExecutionResourceDependency(Protocol):
 
     @property
     def resource_id(self) -> str:
-        """Unique identifer to Resource."""
+        """Unique identifier to Resource type."""
         ...
 
 
@@ -382,8 +387,8 @@ class Artifact(Protocol):
         ...
 
     @property
-    def resource(self) -> Resource | None:
-        """Resource provided by artifact."""
+    def provided_resources(self) -> Collection[Resource]:
+        """Resources provided by artifact."""
         ...
 
     @property
@@ -473,6 +478,17 @@ class Bolt(Protocol):
         ...
 
 
+class EnvironmentTier(StrEnum):
+    DEVELOPMENT = auto()
+    """Suitable for iteration and debugging."""
+
+    STAGING = auto()
+    """Suitable for verification and stable."""
+
+    PRODUCTION = auto()
+    """The one true environment."""
+
+
 @dataclass(frozen=True)
 class Environment:
     """An environment that can execute ExecutableArtifacts."""
@@ -482,6 +498,9 @@ class Environment:
 
     name: str
     """Human-readable name of environment."""
+
+    tier: EnvironmentTier
+    """Tier of Environment."""
 
     config: dict | None = None
     """Configuration for environment, adapter specific."""

@@ -19,6 +19,11 @@ from ballista_sdk.types import (
 class EnvironmentExecutionAdapter(Protocol):
     """Adapter for executing artifacts in an environment."""
 
+    @property
+    def name(self) -> str:
+        """Name of the adapter."""
+        ...
+
     def deploy(
         self,
         bolt: Bolt,

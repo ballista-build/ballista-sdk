@@ -44,7 +44,7 @@ def docker_compose_adapter(fake_executable_artifacts: list[ExecutableArtifactRef
                             "HTTP_SERVICE_PORT": "80",
                         },
                         env_file=[
-                            {"format": "raw", "path": "postgres-shared-configs.env", "required": True},
+                            {"format": "raw", "path": "postgres-database-shared-configs.env", "required": True},
                             {"format": "raw", "path": "simple-api-configs.env", "required": False},
                             {"format": "raw", "path": "simple-api-secrets.env", "required": True},
                         ],

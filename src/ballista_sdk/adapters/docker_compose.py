@@ -10,6 +10,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
+from ballista_sdk.adapters.exceptions import UnknownResourceDependency
 from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista_sdk.types import (
     Artifact,
@@ -140,8 +141,8 @@ def _generate_docker_compose_project_from_bolt(
             }
         )
 
-        if artifact.resource:
-            resource_service_names[artifact.resource.id] = artifact_ref_name
+        if artifact.provided_resources:
+            resource_service_names.update({resource.id: artifact_ref_name for resource in artifact.provided_resources})
 
     return project
 
@@ -384,6 +385,10 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def __init__(self, executable_artifact_references: list[ExecutableArtifactReference] = []):
         self._executable_artifact_references = executable_artifact_references
 
+    @property
+    def name(self) -> str:
+        return "docker-compose"
+
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
         """Call docker compose."""
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
@@ -425,7 +430,9 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
-        return [(ref[0].resource, ref) for ref in self._executable_artifact_references if ref[0].resource]
+        return [
+            (resource, ref) for ref in self._executable_artifact_references for resource in ref[0].provided_resources
+        ]
 
     def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
         return []
@@ -433,11 +440,11 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
     ) -> ResourceWithArtifactProvider:
-        for item in self.list_resources(environment):
-            if item[0].id == resource_dependency.resource_id:
-                return item
+        for resource, ref in self.list_resources(environment):
+            if resource_dependency.resource_id == resource.id:
+                return (resource, ref)
 
-        raise Exception("Unknown resource")
+        raise UnknownResourceDependency(resource_dependency.resource_id)
 
     def teardown(
         self,

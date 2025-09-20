@@ -1,0 +1,2 @@
+class UnknownResourceDependency(ValueError):
+    pass
