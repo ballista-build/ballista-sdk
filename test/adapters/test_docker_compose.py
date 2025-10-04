@@ -10,11 +10,11 @@ from ballista_sdk.adapters.docker_compose import (
     DockerComposeServiceVolume,
     _generate_docker_compose_project_from_bolt,
 )
-from ballista_sdk.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
+from ballista_sdk.types import Bolt, Environment, ExecutionParameters, SpecificArtifact
 
 
 @pytest.fixture
-def docker_compose_adapter(fake_executable_artifacts: list[ExecutableArtifactReference]):
+def docker_compose_adapter(fake_executable_artifacts: list[SpecificArtifact]):
     adapter = DockerComposeExecutionEnvironmentAdapter(fake_executable_artifacts)
 
     return adapter
@@ -44,7 +44,7 @@ def docker_compose_adapter(fake_executable_artifacts: list[ExecutableArtifactRef
                             "HTTP_SERVICE_PORT": "80",
                         },
                         env_file=[
-                            {"format": "raw", "path": "postgres-shared-configs.env", "required": True},
+                            {"format": "raw", "path": "postgres-database-shared-configs.env", "required": True},
                             {"format": "raw", "path": "simple-api-configs.env", "required": False},
                             {"format": "raw", "path": "simple-api-secrets.env", "required": True},
                         ],

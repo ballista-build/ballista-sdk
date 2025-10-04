@@ -88,6 +88,11 @@ class Resource(Protocol):
         ...
 
     @property
+    def instance_id_fields(self) -> Collection[str]:
+        """Fields in `requirements` that creates a unique `id` for Resource dependencies."""
+        ...
+
+    @property
     def name(self) -> str | None:
         """Human-readable name of Resource."""
         ...
@@ -177,7 +182,7 @@ class ArtifactExecutionResourceDependency(Protocol):
 
     @property
     def resource_id(self) -> str:
-        """Unique identifer to Resource."""
+        """Unique identifier to Resource type."""
         ...
 
 
@@ -382,8 +387,8 @@ class Artifact(Protocol):
         ...
 
     @property
-    def resource(self) -> Resource | None:
-        """Resource provided by artifact."""
+    def provided_resources(self) -> Collection[Resource]:
+        """Resources provided by artifact."""
         ...
 
     @property
@@ -421,23 +426,26 @@ class ExecutableArtifact(Artifact, Protocol):
 
 
 class ArtifactReference(NamedTuple):
-    """Reference to a version of an Artifact in a project."""
+    """Reference to a specific version of an Artifact, based on its ID, inside a project."""
+
+    artifact_id: str
+    version: str
+    project_id: str
+
+
+class ResourceWithProviderArtifact(NamedTuple):
+    """Resource with reference to the provider Artifact."""
+
+    resource: Resource
+    artifact: ArtifactReference
+
+
+class SpecificArtifact(NamedTuple):
+    """A specific Artifact, version, and project_id."""
 
     artifact: Artifact
     version: str
     project_id: str
-
-
-class ExecutableArtifactReference(NamedTuple):
-    """Reference to a version of an ExecutableArtifact in a project."""
-
-    artifact: ExecutableArtifact
-    version: str
-    project_id: str
-
-
-ResourceWithArtifactProvider = tuple[Resource, ArtifactReference | ExecutableArtifactReference]
-"""A Resource paired with the Artifact providing it."""
 
 
 class Bolt(Protocol):
@@ -473,6 +481,17 @@ class Bolt(Protocol):
         ...
 
 
+class EnvironmentTier(StrEnum):
+    DEVELOPMENT = auto()
+    """Suitable for iteration and debugging."""
+
+    STAGING = auto()
+    """Suitable for verification and stable."""
+
+    PRODUCTION = auto()
+    """The one true environment."""
+
+
 @dataclass(frozen=True)
 class Environment:
     """An environment that can execute ExecutableArtifacts."""
@@ -482,6 +501,9 @@ class Environment:
 
     name: str
     """Human-readable name of environment."""
+
+    tier: EnvironmentTier
+    """Tier of Environment."""
 
     config: dict | None = None
     """Configuration for environment, adapter specific."""

@@ -14,15 +14,15 @@ from ballista_sdk.types import (
     ArtifactSettingType,
     ArtifactTypeDependency,
     ExecutableArtifact,
-    ExecutableArtifactReference,
     Resource,
     ResourceDependencyInjectedValue,
     ResourceDependencyRequirements,
+    SpecificArtifact,
 )
 
 
 @pytest.fixture(scope="session")
-def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
+def fake_executable_artifacts() -> list[SpecificArtifact]:
     """Creates mock ExecutableArtifact definitions for postgres and redis."""
 
     # Fake Postgres
@@ -48,6 +48,7 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
             healthchecks=Mock(
                 ArtifactExecutionHealthChecks, alive=postgres_probe, ready=postgres_probe, started=postgres_probe
             ),
+            id="postgres-database",
             resources=[],
             secrets=[
                 Mock(
@@ -74,51 +75,53 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
             ],
             volumes=[Mock(ArtifactExecutionVolume, capacity=0.1, path="/var/lib/postgresql/data", persistent=True)],
         ),
-        resource=Mock(
-            Resource,
-            configs=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Host of Postgres server.",
-                    shared=True,
-                    template="",
-                    type=ArtifactSettingType.STRING,
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Port Postgres server listens on.",
-                    shared=True,
-                    template="",
-                    type=ArtifactSettingType.INTEGER,
-                ),
-            ],
-            description="Postgres Database",
-            prefix="POSTGRES",
-            requirements=PostgresRequirements,
-            secrets=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Name of postgres database",
-                    shared=False,
-                    template="",
-                    type=ArtifactSettingType.STRING,
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Login username to access database",
-                    shared=False,
-                    template="",
-                    type=ArtifactSettingType.STRING,
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Login password to access database",
-                    shared=False,
-                    template=None,
-                    type=ArtifactSettingType.PASSWORD,
-                ),
-            ],
-        ),
+        provided_resources=[
+            Mock(
+                Resource,
+                configs=[
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Host of Postgres server.",
+                        shared=True,
+                        template="",
+                        type=ArtifactSettingType.STRING,
+                    ),
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Port Postgres server listens on.",
+                        shared=True,
+                        template="",
+                        type=ArtifactSettingType.INTEGER,
+                    ),
+                ],
+                description="Postgres Database",
+                prefix="POSTGRES",
+                requirements=PostgresRequirements,
+                secrets=[
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Name of postgres database",
+                        shared=False,
+                        template="",
+                        type=ArtifactSettingType.STRING,
+                    ),
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Login username to access database",
+                        shared=False,
+                        template="",
+                        type=ArtifactSettingType.STRING,
+                    ),
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Login password to access database",
+                        shared=False,
+                        template=None,
+                        type=ArtifactSettingType.PASSWORD,
+                    ),
+                ],
+            )
+        ],
         type=Mock(ArtifactTypeDependency, artifact_type_id="docker_image", config={"image": "postgres:17.5"}),
     )
     postgres.id = "server"
@@ -132,8 +135,8 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
     execution.volumes[0].id = "data"
     execution.volumes[0].name = "PostgreSQL Data"
 
-    postgres_resource = postgres.resource
-    postgres_resource.id = "postgres"
+    postgres_resource = postgres.provided_resources[0]
+    postgres_resource.id = "postgres-database"
     postgres_resource.name = "Postgres Database"
 
     configs = postgres_resource.configs
@@ -178,51 +181,53 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
             ],
             volumes=[],
         ),
-        resource=Mock(
-            Resource,
-            configs=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Host of Redis server",
-                    shared=True,
-                    template="",
-                    type=ArtifactSettingType.STRING,
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Port of Redis server",
-                    shared=True,
-                    template="",
-                    type=ArtifactSettingType.INTEGER,
-                ),
-            ],
-            description="Redis Index",
-            prefix="REDIS",
-            requirements=RedisRequirements,
-            secrets=[
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Index",
-                    shared=False,
-                    template="",
-                    type=ArtifactSettingType.STRING,
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Login user for index",
-                    shared=False,
-                    template="",
-                    type=ArtifactSettingType.STRING,
-                ),
-                Mock(
-                    ResourceDependencyInjectedValue,
-                    description="Login password for index",
-                    shared=False,
-                    template=None,
-                    type=ArtifactSettingType.PASSWORD,
-                ),
-            ],
-        ),
+        provided_resources=[
+            Mock(
+                Resource,
+                configs=[
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Host of Redis server",
+                        shared=True,
+                        template="",
+                        type=ArtifactSettingType.STRING,
+                    ),
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Port of Redis server",
+                        shared=True,
+                        template="",
+                        type=ArtifactSettingType.INTEGER,
+                    ),
+                ],
+                description="Redis Index",
+                prefix="REDIS",
+                requirements=RedisRequirements,
+                secrets=[
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Index",
+                        shared=False,
+                        template="",
+                        type=ArtifactSettingType.STRING,
+                    ),
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Login user for index",
+                        shared=False,
+                        template="",
+                        type=ArtifactSettingType.STRING,
+                    ),
+                    Mock(
+                        ResourceDependencyInjectedValue,
+                        description="Login password for index",
+                        shared=False,
+                        template=None,
+                        type=ArtifactSettingType.PASSWORD,
+                    ),
+                ],
+            )
+        ],
         type=Mock(ArtifactTypeDependency, artifact_type_id="docker_image", config={"image": "redis:8"}),
     )
     redis.id = "server"
@@ -230,8 +235,8 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
     execution = redis.execution
     execution.services[0].id = "redis"
 
-    redis_resource = redis.resource
-    redis_resource.id = "redis"
+    redis_resource = redis.provided_resources[0]
+    redis_resource.id = "redis-index"
     redis_resource.name = "Redis Index"
 
     configs = redis_resource.configs
@@ -248,4 +253,4 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
     secrets[2].id = "password"
     secrets[2].name = "Password"
 
-    return [ExecutableArtifactReference(postgres, "17.5", "postgres"), ExecutableArtifactReference(redis, "8", "redis")]
+    return [SpecificArtifact(postgres, "17.5", "postgres"), SpecificArtifact(redis, "8", "redis")]
