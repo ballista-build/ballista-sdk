@@ -1,3 +1,5 @@
+from typing import cast
+
 import pytest
 
 from ballista_sdk.adapters.kubernetes import (
@@ -5,11 +7,11 @@ from ballista_sdk.adapters.kubernetes import (
     KubernetesResource,
     _generate_bolt_resources,
 )
-from ballista_sdk.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
+from ballista_sdk.types import Bolt, Environment, ExecutableArtifact, ExecutionParameters, SpecificArtifact
 
 
 @pytest.fixture
-def kubernetes_adapter(fake_executable_artifacts: list[ExecutableArtifactReference]):
+def kubernetes_adapter(fake_executable_artifacts: list[SpecificArtifact]):
     return KubernetesExecutionEnvironmentAdapter(fake_executable_artifacts)
 
 
@@ -396,7 +398,7 @@ def resource_provider_bolt_resources():
                             "kind": "Deployment",
                             "metadata": {
                                 "annotations": {
-                                    "ballista.build/resource-json": '{"configs": [], "dependency_id_fields": ["database_id"], "description": "Resource Description", "id": "resource_provider-resource1", "name": "Resource Provider Resource", "prefix": "RESOURCE", "secrets": []}'
+                                    "ballista.build/resource-json": '{"configs":[{"description":"Host of Database server.","id":"host","name":"Host","template":"","type":"string","shared":true},{"description":"Port Database server listens on.","id":"port","name":"Port","template":"","type":"integer","shared":true}],"description":"Resource Description","id":"resource_provider-resource1","instance_id_fields":["database_id"],"name":"Resource Provider Resource","prefix":"RESOURCE","requirement_schemas":{"properties":{},"required":[]},"secrets":[{"description":"Name of database","id":"database","name":"Database","template":"","type":"string","shared":false},{"description":"Login username to access database","id":"username","name":"Username","template":"","type":"string","shared":false},{"description":"Login password to access database","id":"password","name":"Password","template":null,"type":"password","shared":false}]}'
                                 },
                                 "labels": {
                                     "app.kubernetes.io/instance": "server-1",
@@ -470,7 +472,7 @@ def test_resource_generation(
     kubernetes_adapter: KubernetesExecutionEnvironmentAdapter,
     execution_parameters: ExecutionParameters,
 ):
-    executable_artifacts = [a for a in bolt.artifacts if a.execution]
+    executable_artifacts = [cast(ExecutableArtifact, a) for a in bolt.artifacts if a.execution is not None]
     assert resources == _generate_bolt_resources(
         artifacts=executable_artifacts,
         bolt=bolt,

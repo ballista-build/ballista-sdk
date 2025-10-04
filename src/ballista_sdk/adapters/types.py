@@ -6,13 +6,14 @@ from unittest.mock import Mock
 
 from ballista_sdk.types import (
     ArtifactExecutionResourceDependency,
+    ArtifactReference,
     ArtifactType,
     Bolt,
     Environment,
     ExecutableArtifact,
-    ExecutableArtifactReference,
     ExecutionParameters,
-    ResourceWithArtifactProvider,
+    ResourceWithProviderArtifact,
+    SpecificArtifact,
 )
 
 
@@ -31,14 +32,20 @@ class EnvironmentExecutionAdapter(Protocol):
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
-        """Deploy a Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
+        """Deploy a Bolt and sequence of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
+        ...
+
+    def get_artifact_from_reference(
+        self, artifact_reference: ArtifactReference, environment: Environment
+    ) -> SpecificArtifact:
+        """Get a specific Artifact version in a project in the specified Environment."""
         ...
 
     def list_artifact_types(self, environment: Environment) -> Sequence[ArtifactType]:
-        """List available ArtifactTypes in the specified environment."""
+        """List available ArtifactTypes in the specified Environment."""
         ...
 
-    def list_executable_artifacts(self, environment: Environment) -> Sequence[ExecutableArtifactReference]:
+    def list_executable_artifacts(self, environment: Environment) -> Sequence[ArtifactReference]:
         """List ExecutableArtifacts in the specified Environment."""
         ...
 
@@ -46,14 +53,14 @@ class EnvironmentExecutionAdapter(Protocol):
         """List Bolts associated with a Project."""
         ...
 
-    def list_resources(self, environment: Environment) -> Sequence[ResourceWithArtifactProvider]:
-        """List available Resources with a providing ArtifactReference in the specified Environment."""
+    def list_resources(self, environment: Environment) -> Sequence[ResourceWithProviderArtifact]:
+        """List available Resources with the providing ArtifactReference in the specified Environment."""
         ...
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
-    ) -> ResourceWithArtifactProvider:
-        """Resolves a dependency for a resource in the specified Environment. Throws exception if dependency cannot be met."""
+    ) -> ResourceWithProviderArtifact:
+        """Resolves a dependency for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises exception if dependency cannot be met."""
         ...
 
     def teardown(
@@ -63,7 +70,7 @@ class EnvironmentExecutionAdapter(Protocol):
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
-        """Teardown a running Bolt and collection of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
+        """Teardown a running Bolt and sequence of ExecutableArtifacts in the specified Environment with ArtifactExecutionParameters."""
         ...
 
 

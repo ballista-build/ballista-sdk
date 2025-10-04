@@ -10,7 +10,7 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
-from ballista_sdk.adapters.exceptions import UnknownResourceDependency
+from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceDependency
 from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista_sdk.types import (
     Artifact,
@@ -18,13 +18,14 @@ from ballista_sdk.types import (
     ArtifactExecutionProbe,
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
+    ArtifactReference,
     ArtifactType,
     Bolt,
     Environment,
     ExecutableArtifact,
-    ExecutableArtifactReference,
     ExecutionParameters,
-    ResourceWithArtifactProvider,
+    ResourceWithProviderArtifact,
+    SpecificArtifact,
 )
 
 
@@ -84,7 +85,7 @@ def _generate_docker_compose_project_from_bolt(
 
     resource_service_names: dict[str, str] = {}
 
-    artifact_deque = deque([(artifact, version, project_id) for artifact in artifacts])
+    artifact_deque: deque[SpecificArtifact] = deque([(artifact, version, project_id) for artifact in artifacts])
 
     # Translate our artifacts into docker compose services
     while artifact_deque:
@@ -96,12 +97,17 @@ def _generate_docker_compose_project_from_bolt(
             requeue = False
             for resource_dependency in artifact.execution.resources:
                 if resource_dependency.resource_id not in resource_service_names:
-                    _, artifact_ref = adapter.resolve_resource_dependency(resource_dependency, environment)
-                    if artifact_ref[0].execution:
+                    resource_with_provider_artifact = adapter.resolve_resource_dependency(
+                        resource_dependency, environment
+                    )
+                    provider_artifact = adapter.get_artifact_from_reference(
+                        resource_with_provider_artifact.artifact, environment
+                    )
+                    if provider_artifact.artifact.execution:
                         requeue = True
 
-                        if artifact_ref not in artifact_deque:
-                            artifact_deque.appendleft(artifact_ref)
+                        if provider_artifact not in artifact_deque:
+                            artifact_deque.appendleft(provider_artifact)
 
                     else:
                         # TODO: Virtual service stuff!
@@ -380,10 +386,10 @@ def _generate_env_files():
 
 
 class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
-    _executable_artifact_references: list[ExecutableArtifactReference]
+    _executable_artifacts: list[SpecificArtifact]
 
-    def __init__(self, executable_artifact_references: list[ExecutableArtifactReference] = []):
-        self._executable_artifact_references = executable_artifact_references
+    def __init__(self, executable_artifacts: list[SpecificArtifact] = []):
+        self._executable_artifacts = executable_artifacts
 
     @property
     def name(self) -> str:
@@ -424,25 +430,40 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             commands = ["up", "--remove-orphans"]
         self._call_compose(docker_compose_project, commands)
 
+    def get_artifact_from_reference(
+        self, artifact_reference: ArtifactReference, environment: Environment
+    ) -> SpecificArtifact:
+        for artifact, version, project_id in self._executable_artifacts:
+            if (
+                artifact.id == artifact_reference.artifact_id
+                and version == artifact_reference.version
+                and project_id == artifact_reference.project_id
+            ):
+                return SpecificArtifact(artifact, version, project_id)
+
+        raise UnknownArtifact(artifact_reference)
+
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return fake_artifact_types()
 
-    def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
+    def list_resources(self, environment: Environment) -> list[ResourceWithProviderArtifact]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
         return [
-            (resource, ref) for ref in self._executable_artifact_references for resource in ref[0].provided_resources
+            ResourceWithProviderArtifact(resource, ArtifactReference(artifact.id, version, project_id))
+            for artifact, version, project_id in self._executable_artifacts
+            for resource in artifact.provided_resources
         ]
 
-    def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
-        return []
+    def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
+        return [(artifact.id, version, project_id) for artifact, version, project_id in self._executable_artifacts]
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
-    ) -> ResourceWithArtifactProvider:
-        for resource, ref in self.list_resources(environment):
-            if resource_dependency.resource_id == resource.id:
-                return (resource, ref)
+    ) -> ResourceWithProviderArtifact:
+        for resource_with_provider_artifact in self.list_resources(environment=environment):
+            if resource_with_provider_artifact.resource.id == resource_dependency.resource_id:
+                return resource_with_provider_artifact
 
         raise UnknownResourceDependency(resource_dependency.resource_id)
 

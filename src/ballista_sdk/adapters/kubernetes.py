@@ -1,12 +1,12 @@
 from __future__ import annotations
 
-from collections.abc import Collection
+from collections.abc import Sequence
 from typing import Any, TypedDict
 
 import yaml
 from kubernetes import client, config, utils
 
-from ballista_sdk.adapters.exceptions import UnknownResourceDependency
+from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceDependency
 from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
 from ballista_sdk.api.v1.models import Resource as V1Resource
 from ballista_sdk.types import (
@@ -15,14 +15,15 @@ from ballista_sdk.types import (
     ArtifactExecutionProbe,
     ArtifactExecutionResourceDependency,
     ArtifactExecutionService,
+    ArtifactReference,
     ArtifactType,
     Bolt,
     Environment,
     EnvironmentTier,
     ExecutableArtifact,
-    ExecutableArtifactReference,
     ExecutionParameters,
-    ResourceWithArtifactProvider,
+    ResourceWithProviderArtifact,
+    SpecificArtifact,
 )
 
 
@@ -99,7 +100,7 @@ def _get_artifact_kubernetes_name(name: str, bolt: Bolt, environment: Environmen
 
 def _generate_bolt_resources(
     bolt: Bolt,
-    artifacts: Collection[ExecutableArtifact],
+    artifacts: Sequence[ExecutableArtifact],
     adapter: KubernetesExecutionEnvironmentAdapter,
     environment: Environment,
     execution_parameters: ExecutionParameters,
@@ -467,13 +468,15 @@ def _generate_artifact_resources(
     return k8s_resources
 
 
-def _generate_yaml_files(k8s_resources: Collection[KubernetesResource]) -> dict[str, str]:
+def _generate_yaml_files(k8s_resources: Sequence[KubernetesResource]) -> dict[str, str]:
     return {kind.lower() + ".yaml": yaml.dump(data) for kind, data in k8s_resources}
 
 
 class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
-    def __init__(self, executable_artifact_references: list[ExecutableArtifactReference] = []):
-        self._executable_artifact_references = executable_artifact_references
+    _executable_artifacts: list[SpecificArtifact]
+
+    def __init__(self, executable_artifacts: list[SpecificArtifact] = []):
+        self._executable_artifacts = executable_artifacts
 
     @property
     def name(self) -> str:
@@ -482,7 +485,7 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def deploy(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
@@ -523,6 +526,20 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
                 for resource in artifact_resources
             ]
 
+    def get_artifact_from_reference(
+        self, artifact_reference: ArtifactReference, environment: Environment
+    ) -> SpecificArtifact:
+        for artifact, version, project_id in self._executable_artifacts:
+            if (
+                artifact_reference.artifact_id == artifact.id
+                and artifact_reference.version == version
+                and artifact_reference.project_id == project_id
+            ):
+                return SpecificArtifact(artifact, version, project_id)
+
+        # TODO: We don't have a way to store and then retrieve a complete Artifact yet.
+        raise UnknownArtifact(artifact_reference)
+
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return fake_artifact_types()
 
@@ -553,7 +570,7 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
 
         return environments
 
-    def list_executable_artifacts(self, environment: Environment) -> list[ExecutableArtifactReference]:
+    def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
         api_client = self._get_kubernetes_client(environment)
 
         # 1:1 ExecutableArtifact:Deployment
@@ -562,43 +579,72 @@ class KubernetesExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             label_selector=f"app.kubernetes.io/managed-by={METADATA_MANAGED_BY},{METADATA_LABEL_ENVIRONMENT}={environment.id}"
         )
 
+        executable_artifacts = []
         for deployment in deployments.items:
-            print(deployment)
-        return []
+            labels = deployment.metadata.labels
+            executable_artifacts.append(
+                ArtifactReference(
+                    labels["app.kubernetes.io/name"],
+                    labels["app.kubernetes.io/version"],
+                    labels["app.kubernetes.io/part-of"],
+                )
+            )
 
-    def list_resources(self, environment: Environment) -> list[ResourceWithArtifactProvider]:
-        """List available Resources with a providing ArtifactReference in the specified Environment."""
-        if self._executable_artifact_references:
+        return executable_artifacts
+
+    def list_resources(self, environment: Environment) -> list[ResourceWithProviderArtifact]:
+        """List available Resources and the providing ArtifactIDReference in the specified Environment."""
+        if self._executable_artifacts:
             return [
-                (resource, ref)
-                for ref in self._executable_artifact_references
-                for resource in ref[0].provided_resources
+                ResourceWithProviderArtifact(
+                    resource,
+                    ArtifactReference(artifact.id, version, project_id),
+                )
+                for artifact, version, project_id in self._executable_artifacts
+                for resource in artifact.provided_resources
             ]
 
         api_client = self._get_kubernetes_client(environment)
 
         # 1:1 ExecutableArtifact:Deployment
+        resources = []
         api = client.AppsV1Api(api_client)
         for deployment in api.list_deployment_for_all_namespaces(
             label_selector=f"app.kubernetes.io/managed-by={METADATA_MANAGED_BY},{METADATA_LABEL_ENVIRONMENT}={environment.id},{METADATA_LABEL_RESOURCE}"
         ).items:
-            print(deployment)
+            labels = deployment.metadata.labels
+            resource_json = deployment.metadata.annotations.get(METADATA_ANNOTATION_RESOURCE)
+            if resource_json is not None:
+                try:
+                    resource = V1Resource.model_validate_json(resource_json)
+                    ref = (
+                        resource,
+                        (
+                            labels["app.kubernetes.io/name"],
+                            labels["app.kubernetes.io/version"],
+                            labels["app.kubernetes.io/part-of"],
+                        ),
+                    )
+                    resources.append(ref)
 
-        return []
+                except Exception as e:
+                    print(e)
+
+        return resources
 
     def resolve_resource_dependency(
         self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
-    ) -> ResourceWithArtifactProvider:
-        for resource, ref in self.list_resources(environment):
-            if resource_dependency.resource_id == resource.id:
-                return (resource, ref)
+    ) -> ResourceWithProviderArtifact:
+        for resource_with_provider_artifact in self.list_resources(environment):
+            if resource_with_provider_artifact.resource.id == resource_dependency.resource_id:
+                return resource_with_provider_artifact
 
         raise UnknownResourceDependency(resource_dependency.resource_id)
 
     def teardown(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):

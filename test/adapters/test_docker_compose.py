@@ -10,11 +10,11 @@ from ballista_sdk.adapters.docker_compose import (
     DockerComposeServiceVolume,
     _generate_docker_compose_project_from_bolt,
 )
-from ballista_sdk.types import Bolt, Environment, ExecutableArtifactReference, ExecutionParameters
+from ballista_sdk.types import Bolt, Environment, ExecutionParameters, SpecificArtifact
 
 
 @pytest.fixture
-def docker_compose_adapter(fake_executable_artifacts: list[ExecutableArtifactReference]):
+def docker_compose_adapter(fake_executable_artifacts: list[SpecificArtifact]):
     adapter = DockerComposeExecutionEnvironmentAdapter(fake_executable_artifacts)
 
     return adapter

@@ -78,11 +78,6 @@ class Resource(Protocol):
         ...
 
     @property
-    def dependency_id_fields(self) -> Collection[str]:
-        """Fields in `requirements` that creates a unique `id` for Resource dependencies."""
-        ...
-
-    @property
     def description(self) -> str | None:
         """Description."""
         ...
@@ -90,6 +85,11 @@ class Resource(Protocol):
     @property
     def id(self) -> str:
         """Identifier."""
+        ...
+
+    @property
+    def instance_id_fields(self) -> Collection[str]:
+        """Fields in `requirements` that creates a unique `id` for Resource dependencies."""
         ...
 
     @property
@@ -426,23 +426,26 @@ class ExecutableArtifact(Artifact, Protocol):
 
 
 class ArtifactReference(NamedTuple):
-    """Reference to a version of an Artifact in a project."""
+    """Reference to a specific version of an Artifact, based on its ID, inside a project."""
+
+    artifact_id: str
+    version: str
+    project_id: str
+
+
+class ResourceWithProviderArtifact(NamedTuple):
+    """Resource with reference to the provider Artifact."""
+
+    resource: Resource
+    artifact: ArtifactReference
+
+
+class SpecificArtifact(NamedTuple):
+    """A specific Artifact, version, and project_id."""
 
     artifact: Artifact
     version: str
     project_id: str
-
-
-class ExecutableArtifactReference(NamedTuple):
-    """Reference to a version of an ExecutableArtifact in a project."""
-
-    artifact: ExecutableArtifact
-    version: str
-    project_id: str
-
-
-ResourceWithArtifactProvider = tuple[Resource, ArtifactReference | ExecutableArtifactReference]
-"""A Resource paired with the Artifact providing it."""
 
 
 class Bolt(Protocol):

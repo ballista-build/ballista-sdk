@@ -14,15 +14,15 @@ from ballista_sdk.types import (
     ArtifactSettingType,
     ArtifactTypeDependency,
     ExecutableArtifact,
-    ExecutableArtifactReference,
     Resource,
     ResourceDependencyInjectedValue,
     ResourceDependencyRequirements,
+    SpecificArtifact,
 )
 
 
 @pytest.fixture(scope="session")
-def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
+def fake_executable_artifacts() -> list[SpecificArtifact]:
     """Creates mock ExecutableArtifact definitions for postgres and redis."""
 
     # Fake Postgres
@@ -48,6 +48,7 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
             healthchecks=Mock(
                 ArtifactExecutionHealthChecks, alive=postgres_probe, ready=postgres_probe, started=postgres_probe
             ),
+            id="postgres-database",
             resources=[],
             secrets=[
                 Mock(
@@ -252,4 +253,4 @@ def fake_executable_artifacts() -> list[ExecutableArtifactReference]:
     secrets[2].id = "password"
     secrets[2].name = "Password"
 
-    return [ExecutableArtifactReference(postgres, "17.5", "postgres"), ExecutableArtifactReference(redis, "8", "redis")]
+    return [SpecificArtifact(postgres, "17.5", "postgres"), SpecificArtifact(redis, "8", "redis")]

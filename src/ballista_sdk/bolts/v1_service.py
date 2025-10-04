@@ -8,13 +8,13 @@ from pydantic import Field, create_model
 
 from ballista_sdk.api.v1 import models
 from ballista_sdk.types import BoltService as BaseBoltService
-from ballista_sdk.types import Resource, ResourceWithArtifactProvider
+from ballista_sdk.types import Resource, ResourceWithProviderArtifact
 
 
 class BoltService(BaseBoltService):
-    resources: Collection[ResourceWithArtifactProvider]
+    resources: Collection[ResourceWithProviderArtifact]
 
-    def __init__(self, resources: Collection[ResourceWithArtifactProvider]):
+    def __init__(self, resources: Collection[ResourceWithProviderArtifact]):
         self.resources = resources
 
     def generate_bolt_class(self) -> type[models.Bolt]:

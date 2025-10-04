@@ -42,7 +42,7 @@ class Resource(BaseModel, frozen=True, from_attributes=True):
     prefix: Annotated[str, Field(description="Default prefix of injected values.")]
     requirement_schemas: Annotated[
         ResourceRequirements,
-        Field(validation_alias="requirements", description="OpenAPI Schemas representing requirements for a resource."),
+        Field(alias="requirements", description="OpenAPI Schemas representing requirements for a resource."),
     ]
     secrets: Annotated[list[ResourceInjectedValue], Field(description="Secrets")] = []
 

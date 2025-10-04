@@ -169,9 +169,9 @@ def bolt(docker_image_artifact_type_dependency: ArtifactTypeDependency, request)
                         type=ArtifactSettingType.INTEGER,
                     ),
                 ],
-                dependency_id_fields=["database_id"],
                 description="Resource Description",
                 id="resource_provider-resource1",
+                instance_id_fields=["database_id"],
                 prefix="RESOURCE",
                 requirements=ResourceRequirements,
                 secrets=[
