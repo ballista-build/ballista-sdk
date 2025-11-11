@@ -13,6 +13,8 @@ from ballista_sdk.types import (
     ExecutableArtifact,
     ExecutionParameters,
     ResourceWithProviderArtifact,
+    Setting,
+    SettingValue,
     SpecificArtifact,
 )
 
@@ -21,9 +23,15 @@ class EnvironmentExecutionAdapter(Protocol):
     """Adapter for executing artifacts in an environment."""
 
     @property
+    def configs_adapter(self) -> SettingsAdapter: ...
+
+    @property
     def name(self) -> str:
         """Name of the adapter."""
         ...
+
+    @property
+    def secrets_adapter(self) -> SettingsAdapter: ...
 
     def deploy(
         self,
@@ -75,6 +83,24 @@ class EnvironmentExecutionAdapter(Protocol):
 
 
 EnvironmentWithExecutionAdapter = tuple[EnvironmentExecutionAdapter, Environment]
+
+
+class SettingsAdapter(Protocol):
+    def delete(self, setting: Setting):
+        """Delete a setting."""
+        ...
+
+    def exists(self, setting: Setting) -> bool:
+        """Checks if a setting exists."""
+        ...
+
+    def read(self, setting: Setting) -> SettingValue:
+        """Read the value for a setting."""
+        ...
+
+    def write(self, setting: Setting, value: SettingValue):
+        """Write a value for a setting."""
+        ...
 
 
 #

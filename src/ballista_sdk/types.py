@@ -1,20 +1,20 @@
 from collections.abc import Collection, Sequence
 from dataclasses import asdict, dataclass, field
 from enum import StrEnum, auto
-from typing import Any, NamedTuple, Protocol
+from typing import Any, Literal, NamedTuple, Protocol
 
 
 class ArtifactSettingType(StrEnum):
     BOOLEAN = auto()
     """A boolean."""
+    BYTES = auto()
+    """Raw bytes."""
     INTEGER = auto()
     """32-bit integer."""
     FLOAT = auto()
     """64-bit float."""
-    PASSWORD = auto()
-    """String but specifically a password."""
     STRING = auto()
-    """String."""
+    """UTF-8 encoded string."""
 
 
 class ArtifactInjectedValue(Protocol):
@@ -195,6 +195,9 @@ class ArtifactExecutionExecProbe(Protocol):
         ...
 
     @property
+    def service_id(self) -> None: ...
+
+    @property
     def shell(self) -> bool:
         """Indicates if commands are ran in a shell."""
         ...
@@ -368,6 +371,15 @@ class ArtifactExecutionRequirements(Protocol):
         ...
 
 
+class ArtifactProvision(Protocol):
+    @property
+    def resource(self) -> Resource: ...
+
+    @property
+    def service(self) -> ArtifactExecutionService:
+        pass
+
+
 class Artifact(Protocol):
     """Artifact uniquely identified by `id` fields."""
 
@@ -516,10 +528,14 @@ class ArtifactExecutionComputeParameters:
 
     max_cpu: float | None = None
     """Maximum CPU allowed, measured in cores."""
+    max_gpu: float | None = None
+    """Maximum GPU allowed, measured in cores."""
     max_memory: float | None = None
     """Maximum memory allowed, measured in Gibibytes."""
     min_cpu: float | None = None
     """Minimum CPU required, measured in cores."""
+    min_gpu: float | None = None
+    """Minimum GPU required, measured in cores."""
     min_memory: float | None = None
     """Minimum memory required, measured in Gibibytes."""
 
@@ -592,9 +608,9 @@ class ExecutionParameters:
     volumes: dict[tuple[str, str, str, str], ArtifactExecutionVolumeParameters] = field(default_factory=dict)
 
     def params_for_artifact(
-        self, environment: Environment, project_id: str, artifact: ExecutableArtifact
+        self, environment: Environment, project: Project, artifact: ExecutableArtifact
     ) -> ArtifactExecutionParameters:
-        defaults = self.defaults_for_artifact(environment, project_id, artifact)
+        defaults = self.defaults_for_artifact(environment, project, artifact)
 
         default_service = asdict(defaults.external_service)
         external_services = {
@@ -612,17 +628,17 @@ class ExecutionParameters:
         )
 
     def defaults_for_artifact(
-        self, environment: Environment, project_id: str, artifact: ExecutableArtifact
+        self, environment: Environment, project: Project, artifact: ExecutableArtifact
     ) -> DefaultExecutionParameters:
         defaults: dict = asdict(self.initial)
 
         if environment_defaults := self.environments.get(environment.id):
             defaults.update(asdict(environment_defaults))
 
-        if project_defaults := self.projects.get((environment.id, project_id)):
+        if project_defaults := self.projects.get((environment.id, project.id)):
             defaults.update(asdict(project_defaults))
 
-        if artifact_defaults := self.projects.get((environment.id, project_id, artifact.id)):
+        if artifact_defaults := self.artifacts.get((environment.id, project.id, artifact.id)):
             defaults.update(asdict(artifact_defaults))
 
         return DefaultExecutionParameters(
@@ -632,12 +648,12 @@ class ExecutionParameters:
             volume=ArtifactExecutionVolumeParameters(**defaults["volume"]),
         )
 
-    def defaults_for_project(self, environment: Environment, project_id: str) -> DefaultExecutionParameters:
+    def defaults_for_project(self, environment: Environment, project: Project) -> DefaultExecutionParameters:
         defaults: dict = asdict(self.initial)
         if environment_defaults := self.environments.get(environment.id):
             defaults.update(asdict(environment_defaults))
 
-        if project_defaults := self.projects.get((environment.id, project_id)):
+        if project_defaults := self.projects.get((environment.id, project.id)):
             defaults.update(asdict(project_defaults))
 
         return DefaultExecutionParameters(**defaults)
@@ -651,10 +667,67 @@ class ExecutionParameters:
 
 
 class BoltService(Protocol):
-    def create_bolt(self, project_id: str) -> Bolt:
+    def create_bolt(self, project_id: str, version: str) -> Bolt:
         """Create a new project with an empty Bolt."""
         ...
 
     def get_bolt(self, bolt_data: dict[str, Any]) -> Bolt:
         """Get a validated Bolt from bolt_data."""
         ...
+
+
+# Settings stuff
+@dataclass(frozen=True)
+class BaseSetting:
+    environment: Environment
+    project: Project
+    artifact: ExecutableArtifact
+    id: str
+    """Unique identifier."""
+    name: str
+    """Human-readable display name."""
+    description: str | None = None
+    """Humand-readable description of setting."""
+    instance_ids: Collection[str] | None = None
+
+
+class SharedConfig(BaseSetting):
+    """A non-sensitive Setting that is shared across all ExecutableArtifacts in an Environment."""
+
+    sensitive: Literal[False]
+    shared: Literal[True]
+
+
+class SharedSecret(BaseSetting):
+    """A sensitive Setting that is shared across all ExecutableArtifacts in an Environment."""
+
+    sensitive: Literal[True]
+    shared: Literal[True]
+
+
+class UniqueConfig(BaseSetting):
+    """A non-sensitive Setting that is unique to an ExecutableArtifact in an Environment."""
+
+    sensitive: Literal[False]
+    shared: Literal[False]
+
+
+class UniqueSecret(BaseSetting):
+    """A sensitive Setting that is unique to an ExecutableArtifact in an Environment."""
+
+    sensitive: Literal[True]
+    shared: Literal[False]
+
+
+Config = SharedConfig | UniqueConfig
+"""Any Config, regardless if it is shared."""
+Secret = SharedSecret | UniqueSecret
+"""Any Secret, regardless if its shared."""
+SharedSetting = SharedConfig | SharedSecret
+"""A Setting that is shared across all ExecutableArtifacts in an Environment."""
+UniqueSetting = UniqueConfig | UniqueSecret
+"""A Setting that is unique to an ExecutableArtifact in an Environment."""
+Setting = SharedConfig | SharedSecret | UniqueConfig | UniqueSecret
+"""Any valid Setting."""
+SettingValue = bool | bytes | float | int | str
+"""Supported setting value types."""

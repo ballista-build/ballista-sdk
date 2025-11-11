@@ -6,6 +6,7 @@ from typing import Annotated, Any
 
 from pydantic import Field, create_model
 
+from ballista_sdk.adapters.types import Environment, EnvironmentExecutionAdapter
 from ballista_sdk.api.v1 import models
 from ballista_sdk.types import BoltService as BaseBoltService
 from ballista_sdk.types import Resource, ResourceWithProviderArtifact
@@ -58,13 +59,26 @@ class BoltService(BaseBoltService):
 
         return dynamic_bolt
 
-    def create_bolt(self, project_id: str) -> models.Bolt:
+    def create_bolt(self, project_id: str, version: str) -> models.Bolt:
         bolt_cls = self.generate_bolt_class()
-        return bolt_cls(artifacts=[], project_id=project_id, version="0.1.0")
+        return bolt_cls(artifacts=[], project_id=project_id, version=version)
 
     def get_bolt(self, bolt_data: dict[str, Any]) -> models.Bolt:
         bolt_cls = self.generate_bolt_class()
         return bolt_cls.model_validate(bolt_data)
+
+    def deploy(
+        self, environment: Environment, adapter: EnvironmentExecutionAdapter, bolt: models.Bolt, execution_parameters
+    ):
+        # Environment checks
+
+        # Make the deployment
+        adapter.deploy(
+            bolt=bolt,
+            artifacts=bolt.executable_artifacts,
+            environment=environment,
+            execution_parameters=execution_parameters,
+        )
 
 
 def _create_resource_dependency_model(resource: Resource) -> type[models.ArtifactExecutionResourceDependency]:

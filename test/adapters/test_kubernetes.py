@@ -316,7 +316,7 @@ def resource_provider_bolt_resources():
                                     "ballista.build/environment": "test",
                                     "ballista.build/environment-tier": "development",
                                 },
-                                "name": "simple-api-http",
+                                "name": "simple-api",
                                 "namespace": "test",
                             },
                             "spec": {

@@ -91,10 +91,6 @@ class ArtifactExecutionResourceDependency(BaseOneOfModel, frozen=True, title="Ar
         raise ValueError("No fields set")
 
 
-class BaseArtifactExecutionResource(BaseModel, frozen=True):
-    pass
-
-
 class ArtifactBuildRequirements(BaseModel, frozen=True, title="Artifact Build Requirements"):
     dockerfile: Annotated[
         str | None,
@@ -116,6 +112,10 @@ class ArtifactExecutionExecProbe(BaseModel, frozen=True):
 
     commands: Annotated[list[str], Field(description="List of commands executed.")]
     shell: Annotated[bool, Field(description="Indicates commands need to be ran as a shell command.")] = False
+
+    @property
+    def service_id(self) -> None:
+        return None
 
 
 class BaseArtifactExecutionPortProbe(BaseModel):

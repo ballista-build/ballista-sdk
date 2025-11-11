@@ -11,7 +11,7 @@ import yaml
 from pydantic import BaseModel
 
 from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceDependency
-from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
+from ballista_sdk.adapters.types import fake_artifact_types
 from ballista_sdk.types import (
     Artifact,
     ArtifactExecutionParameters,
@@ -385,11 +385,13 @@ def _generate_env_files():
     pass
 
 
-class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
+class DockerComposeExecutionEnvironmentAdapter:
     _executable_artifacts: list[SpecificArtifact]
 
     def __init__(self, executable_artifacts: list[SpecificArtifact] = []):
         self._executable_artifacts = executable_artifacts
+        self.configs_adapter = DockerComposeConfigsAdapter()
+        self.secrets_adapter = DockerComposeSecretsAdapater()
 
     @property
     def name(self) -> str:
@@ -484,3 +486,16 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
         )
 
         self._call_compose(docker_compose_project, ["down"])
+
+
+class DockerComposeSettingsAdapter:
+    def _write_value(self):
+        pass
+
+
+class DockerComposeConfigsAdapter(DockerComposeSettingsAdapter):
+    pass
+
+
+class DockerComposeSecretsAdapater(DockerComposeSettingsAdapter):
+    pass

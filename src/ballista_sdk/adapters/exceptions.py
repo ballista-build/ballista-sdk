@@ -4,3 +4,7 @@ class UnknownArtifact(ValueError):
 
 class UnknownResourceDependency(ValueError):
     pass
+
+
+class SettingMissing(ValueError):
+    pass
