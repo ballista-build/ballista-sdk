@@ -10,7 +10,6 @@ from ballista_sdk.api.v1 import (
     Environment,
     EnvironmentTier,
     ExecAction,
-    ExecutableArtifact,
     ExecutionParameters,
     ExecutionRequirements,
     ExternalizedServiceParameters,
@@ -28,7 +27,6 @@ from ballista_sdk.api.v1 import (
     SecretRequirement,
     ServiceRequirement,
     SettingDataType,
-    SpecificExecutableArtifact,
     VolumeExecutionParameters,
     VolumeRequirement,
 )
@@ -47,15 +45,15 @@ def docker_image_artifact_type_need() -> ArtifactTypeRequirement:
 @pytest.fixture(scope="session", params=["simple", "typical", "resource_provider"])
 def bolt(
     docker_image_artifact_type_need: ArtifactTypeRequirement,
-    postgres_executable_artifact: SpecificExecutableArtifact,
+    postgres_bolt: Bolt,
     request,
 ) -> Bolt:
     match request.param:
         case "simple":
             # A simple project with one ExecutableArtifact.
-            PostgresDatabaseResourceRequirement = postgres_executable_artifact.artifact.provides[
-                0
-            ].get_requirements_model("Postgres")
+            PostgresDatabaseResourceRequirement = (
+                postgres_bolt.artifacts[0].provides[0].get_requirements_model("Postgres")
+            )
 
             class ExecutionPostgresResourceNeed(ResourceRequirement):
                 database: PostgresDatabaseResourceRequirement
@@ -196,12 +194,11 @@ def bolt(
             raise Exception()
 
 
-# TODO: This should probably just be a Bolt
 @pytest.fixture(scope="session")
-def postgres_executable_artifact() -> SpecificExecutableArtifact:
+def postgres_bolt() -> Bolt:
     # Fake Postgres
     postgres_probe = HealthcheckProbe(exec=ExecAction(commands=["pg_isready -U $POSTGRES_USER"], shell=True))
-    postgres = ExecutableArtifact(
+    postgres = Artifact(
         execution=ExecutionRequirements(
             healthchecks=HealthcheckRequirements(alive=postgres_probe, ready=postgres_probe, started=postgres_probe),
             secrets=[
@@ -284,9 +281,7 @@ def postgres_executable_artifact() -> SpecificExecutableArtifact:
         type=ArtifactTypeRequirement.model_validate({"docker_image": {"image": "postgres:18.1"}}),
     )
 
-    return SpecificExecutableArtifact(
-        artifact=postgres, version="18.1.0", project=Project(name="postgres", title="PostgreSQL")
-    )
+    return Bolt(api_version="v1", artifacts=[postgres], project="postgres", version="18.1.0")
 
 
 @pytest.fixture(scope="session")

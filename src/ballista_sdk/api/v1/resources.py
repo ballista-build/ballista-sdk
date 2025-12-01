@@ -1,7 +1,6 @@
 from typing import Annotated
 
 from openapi_pydantic import DataType, Schema
-from openapi_pydantic.util import construct_open_api_with_schema_class
 from pydantic import BaseModel, Field, create_model
 
 from .common import BaseNamedModel
@@ -25,7 +24,7 @@ class ResourceRequirementParameters(Schema, frozen=True):
 
 
 class Resource(BaseNamedModel):
-    """Resource available to use as an artifact dependency."""
+    """Resource available to use as an artifact requirement."""
 
     configs: Annotated[list[ResourceConfig], Field(description="Configs that are received by Artifact.")] = []
     instance_id_fields: Annotated[

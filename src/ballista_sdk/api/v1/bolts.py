@@ -44,19 +44,3 @@ class ResourceProviderArtifactReference(NamedTuple):
 
     resource: Resource
     artifact: ArtifactReference
-
-
-class SpecificArtifact(NamedTuple):
-    """A specific Artifact, version number, and the Project its in."""
-
-    artifact: Artifact
-    version: str
-    project: Project
-
-
-class SpecificExecutableArtifact(NamedTuple):
-    """A specific ExecutableArtifact, version number, and the Project its in."""
-
-    artifact: ExecutableArtifact
-    version: str
-    project: Project

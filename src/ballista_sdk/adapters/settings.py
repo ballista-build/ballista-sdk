@@ -5,6 +5,7 @@ from ballista_sdk.api.v1 import Environment, ExecutableArtifact, Project, Settin
 
 class BaseSetting(Protocol):
     data_type: SettingDataType
+    """DataType of the setting value."""
     name: str
     """Unique identifier."""
     title: str | None

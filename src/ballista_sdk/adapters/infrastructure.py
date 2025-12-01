@@ -14,7 +14,6 @@ from ballista_sdk.api.v1 import (
     Project,
     ProjectResourceRequirement,
     ResourceProviderArtifactReference,
-    SpecificArtifact,
 )
 
 
@@ -34,19 +33,12 @@ class InfrastructureAdapter(Protocol):
 
     def deploy(
         self,
-        project: Project,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
         """Deploy a Bolt and sequence of ExecutableArtifacts in the specified Environment with ExecutionParameters."""
-        ...
-
-    def get_artifact_from_reference(
-        self, artifact_reference: ArtifactReference, environment: Environment
-    ) -> SpecificArtifact:
-        """Get a specific Artifact version in a project in the specified Environment."""
         ...
 
     def list_artifact_types(self, environment: Environment) -> Sequence[ArtifactType]:
@@ -77,7 +69,6 @@ class InfrastructureAdapter(Protocol):
 
     def teardown(
         self,
-        project: Project,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
         environment: Environment,

@@ -6,7 +6,7 @@ from typing import Any, NotRequired, Protocol, TypedDict
 import yaml
 from kubernetes import client, config, utils
 
-from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceRequirement
+from ballista_sdk.adapters.exceptions import UnknownResourceRequirement
 from ballista_sdk.api.v1 import (
     ArtifactExecutionParameters,
     ArtifactReference,
@@ -17,12 +17,10 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
-    Project,
     ProjectResourceRequirement,
     Resource,
     ResourceProviderArtifactReference,
     ServiceRequirement,
-    SpecificArtifact,
     VolumeExecutionParameters,
     VolumeRequirement,
 )
@@ -119,9 +117,8 @@ def _get_artifact_metadata(
 
 
 def _generate_bolt_resources(
-    adapter: KubernetesExecutionEnvironmentAdapter,
+    adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
-    project: Project,
     bolt: Bolt,
     artifacts: Sequence[ExecutableArtifact],
     execution_parameters: ExecutionParameters,
@@ -134,11 +131,10 @@ def _generate_bolt_resources(
         artifact.name: _generate_artifact_resources(
             adapter=adapter,
             environment=environment,
-            project=project,
             bolt=bolt,
             artifact=artifact,
             artifact_execution_parameters=execution_parameters.params_for_artifact(
-                environment=environment, project=project, artifact=artifact
+                environment=environment, bolt=bolt, artifact=artifact
             ),
         )
         for artifact in artifacts
@@ -178,9 +174,8 @@ def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirem
 
 
 def _generate_artifact_resources(
-    adapter: KubernetesExecutionEnvironmentAdapter,
+    adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
-    project: Project,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -200,7 +195,6 @@ def _generate_artifact_resources(
         k8s_resources += generator(
             adapter=adapter,
             environment=environment,
-            project=project,
             bolt=bolt,
             artifact=artifact,
             artifact_execution_parameters=artifact_execution_parameters,
@@ -213,13 +207,13 @@ def _generate_yaml_files(k8s_resources: Sequence[KubernetesResource]) -> dict[st
     return {kind.lower() + ".yaml": yaml.dump(data) for kind, data in k8s_resources}
 
 
-class KubernetesExecutionEnvironmentAdapter:
-    _executable_artifacts: list[SpecificArtifact]
+class KubernetesInfrastructureAdapter:
+    _bolts: list[Bolt]
     configs_adapter: KubernetesConfigsAdapter
     secrets_adapter: KubernetesSecretsAdapter
 
-    def __init__(self, executable_artifacts: list[SpecificArtifact] = []):
-        self._executable_artifacts = executable_artifacts
+    def __init__(self, bolts: list[Bolt] = []):
+        self._bolts = bolts
 
         self.configs_adapter = KubernetesConfigsAdapter()
         self.secrets_adapter = KubernetesSecretsAdapter()
@@ -230,14 +224,12 @@ class KubernetesExecutionEnvironmentAdapter:
 
     def deploy(
         self,
-        project: Project,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
         bolt_resources, all_artifact_resources = _generate_bolt_resources(
-            project=project,
             bolt=bolt,
             artifacts=artifacts,
             adapter=self,
@@ -274,20 +266,6 @@ class KubernetesExecutionEnvironmentAdapter:
                 for resource in artifact_resources
             ]
 
-    def get_artifact_from_reference(
-        self, artifact_reference: ArtifactReference, environment: Environment
-    ) -> SpecificArtifact:
-        for artifact, version, project in self._executable_artifacts:
-            if (
-                artifact_reference.artifact == artifact.name
-                and artifact_reference.version == version
-                and artifact_reference.project == project.name
-            ):
-                return SpecificArtifact(artifact, version, project)
-
-        # TODO: We don't have a way to store and then retrieve a complete Artifact yet.
-        raise UnknownArtifact(artifact_reference)
-
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
 
@@ -318,6 +296,17 @@ class KubernetesExecutionEnvironmentAdapter:
         return environments
 
     def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
+        if self._bolts:
+            executable_artifacts = []
+            for bolt in self._bolts:
+                executable_artifacts.extend(
+                    [
+                        ArtifactReference(artifact.name, bolt.version, bolt.project)
+                        for artifact in bolt.executable_artifacts
+                    ]
+                )
+            return executable_artifacts
+
         api_client = self._get_kubernetes_client(environment)
 
         # 1:1 ExecutableArtifact:Deployment
@@ -341,15 +330,20 @@ class KubernetesExecutionEnvironmentAdapter:
 
     def list_resources(self, environment: Environment) -> list[ResourceProviderArtifactReference]:
         """List available Resources and the providing ArtifactIDReference in the specified Environment."""
-        if self._executable_artifacts:
-            return [
-                ResourceProviderArtifactReference(
-                    resource,
-                    ArtifactReference(artifact.name, version, project.name),
+        if self._bolts:
+            executable_artifacts = []
+            for bolt in self._bolts:
+                executable_artifacts.extend(
+                    [
+                        ResourceProviderArtifactReference(
+                            resource, ArtifactReference(artifact.name, bolt.version, bolt.project)
+                        )
+                        for artifact in bolt.executable_artifacts
+                        for resource in artifact.provides
+                    ]
                 )
-                for artifact, version, project in self._executable_artifacts
-                for resource in artifact.provides
-            ]
+
+            return executable_artifacts
 
         api_client = self._get_kubernetes_client(environment)
 
@@ -412,9 +406,8 @@ class KubernetesResourcesGenerator(Protocol):
 
     @staticmethod
     def __call__(
-        adapter: KubernetesExecutionEnvironmentAdapter,
+        adapter: KubernetesInfrastructureAdapter,
         environment: Environment,
-        project: Project,
         bolt: Bolt,
         artifact: ExecutableArtifact,
         artifact_execution_parameters: ArtifactExecutionParameters,
@@ -422,9 +415,8 @@ class KubernetesResourcesGenerator(Protocol):
 
 
 def generate_deployment(
-    adapter: KubernetesExecutionEnvironmentAdapter,
+    adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
-    project: Project,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -439,7 +431,7 @@ def generate_deployment(
     # TODO: This will need a better abstraction so it can use explicit Docker registries.
     artifact.type.docker_image
     if (image := artifact.type.docker_image.image) is None:
-        image = f"{project.name}_{artifact.name}:{bolt.version}"
+        image = f"{bolt.project}_{artifact.name}:{bolt.version}"
 
     # Create barebones PodSpec
     container = {"name": artifact.name, "image": image}
@@ -641,9 +633,8 @@ def generate_deployment(
 
 
 def generate_services(
-    adapter: KubernetesExecutionEnvironmentAdapter,
+    adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
-    project: Project,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -688,9 +679,8 @@ def _get_volume_claim(
 
 
 def generate_persistent_volume_claims(
-    adapter: KubernetesExecutionEnvironmentAdapter,
+    adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
-    project: Project,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -715,9 +705,8 @@ def generate_persistent_volume_claims(
 
 
 def generate_ingresses(
-    adapter: KubernetesExecutionEnvironmentAdapter,
+    adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
-    project: Project,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -777,9 +766,8 @@ class BaseKubernetesSettingsAdapter:
 
     def generate_kubernetes_resources(
         self,
-        adapter: KubernetesExecutionEnvironmentAdapter,
+        adapter: KubernetesInfrastructureAdapter,
         environment: Environment,
-        project: Project,
         bolt: Bolt,
         artifact: ExecutableArtifact,
         artifact_execution_parameters: ArtifactExecutionParameters,

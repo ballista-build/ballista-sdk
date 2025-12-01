@@ -3,16 +3,16 @@ from typing import cast
 import pytest
 
 from ballista_sdk.adapters.kubernetes import (
-    KubernetesExecutionEnvironmentAdapter,
+    KubernetesInfrastructureAdapter,
     KubernetesResource,
     _generate_bolt_resources,
 )
-from ballista_sdk.api.v1 import Bolt, Environment, ExecutableArtifact, ExecutionParameters, Project, SpecificArtifact
+from ballista_sdk.api.v1 import Bolt, Environment, ExecutableArtifact, ExecutionParameters
 
 
 @pytest.fixture
-def kubernetes_adapter(fake_executable_artifacts: list[SpecificArtifact]):
-    return KubernetesExecutionEnvironmentAdapter(fake_executable_artifacts)
+def kubernetes_adapter(fake_bolts: list[Bolt]):
+    return KubernetesInfrastructureAdapter(fake_bolts)
 
 
 @pytest.fixture
@@ -469,13 +469,12 @@ def test_resource_generation(
     bolt: Bolt,
     resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]],
     environment: Environment,
-    kubernetes_adapter: KubernetesExecutionEnvironmentAdapter,
+    kubernetes_adapter: KubernetesInfrastructureAdapter,
     execution_parameters: ExecutionParameters,
 ):
     executable_artifacts = [cast(ExecutableArtifact, a) for a in bolt.artifacts if a.execution is not None]
     assert resources == _generate_bolt_resources(
         artifacts=executable_artifacts,
-        project=Project(name=bolt.project),
         bolt=bolt,
         adapter=kubernetes_adapter,
         environment=environment,

@@ -21,8 +21,6 @@ from .bolts import (
     Project,
     Resource,
     ResourceProviderArtifactReference,
-    SpecificArtifact,
-    SpecificExecutableArtifact,
 )
 from .execution import (
     ArtifactExecutionParameters,
@@ -69,8 +67,6 @@ __all__ = [
     "ResourceSecret",
     "ScalingExecutionParameters",
     "SecretRequirement",
-    "SpecificArtifact",
-    "SpecificExecutableArtifact",
     "ServiceRequirement",
     "SettingDataType",
     "TCPAction",

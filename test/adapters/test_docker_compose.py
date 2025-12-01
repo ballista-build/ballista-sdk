@@ -1,9 +1,7 @@
-import contextlib
-
 import pytest
 
 from ballista_sdk.adapters.docker_compose import (
-    DockerComposeExecutionEnvironmentAdapter,
+    DockerComposeInfrastructureAdapter,
     DockerComposeProject,
     DockerComposeProjectVolume,
     DockerComposeService,
@@ -14,15 +12,12 @@ from ballista_sdk.api.v1 import (
     Bolt,
     Environment,
     ExecutionParameters,
-    Project,
-    SpecificArtifact,
-    SpecificExecutableArtifact,
 )
 
 
 @pytest.fixture
-def docker_compose_adapter(fake_executable_artifacts: list[SpecificExecutableArtifact]):
-    adapter = DockerComposeExecutionEnvironmentAdapter(fake_executable_artifacts)
+def docker_compose_adapter(fake_bolts: list[Bolt]):
+    adapter = DockerComposeInfrastructureAdapter(fake_bolts)
 
     return adapter
 
@@ -112,19 +107,16 @@ def docker_compose_adapter(fake_executable_artifacts: list[SpecificExecutableArt
 def test_generate_docker_compose(
     bolt: Bolt,
     docker_compose_project: DockerComposeProject,
-    docker_compose_adapter: DockerComposeExecutionEnvironmentAdapter,
+    docker_compose_adapter: DockerComposeInfrastructureAdapter,
     environment: Environment,
     execution_parameters: ExecutionParameters,
 ):
-    project = Project(name=bolt.project)
-
     assert (
         docker_compose_project.model_dump()
         == _generate_docker_compose_project_from_bolt(
             adapter=docker_compose_adapter,
             environment=environment,
-            project=project,
-            version=bolt.version,
+            bolt=bolt,
             artifacts=bolt.executable_artifacts,
             execution_parameters=execution_parameters,
         ).model_dump()

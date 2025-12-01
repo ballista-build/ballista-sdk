@@ -12,19 +12,20 @@ from pydantic import BaseModel
 
 from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceRequirement
 from ballista_sdk.api.v1 import (
+    Artifact,
+    ArtifactExecutionParameters,
     ArtifactReference,
     ArtifactType,
     Bolt,
+    Environment,
     ExecutableArtifact,
+    ExecutionParameters,
     HealthcheckProbe,
     Project,
     ProjectResourceRequirement,
     ResourceProviderArtifactReference,
     ServiceRequirement,
-    SpecificArtifact,
-    SpecificExecutableArtifact,
 )
-from ballista_sdk.api.v1.execution import ArtifactExecutionParameters, Environment, ExecutionParameters
 
 
 class DockerComposeServiceVolume(BaseModel):
@@ -68,11 +69,10 @@ class DockerComposeProject(BaseModel):
 
 
 def _generate_docker_compose_project_from_bolt(
-    project: Project,
-    version: str,
-    artifacts: Collection[ExecutableArtifact],
-    adapter: DockerComposeExecutionEnvironmentAdapter,
+    adapter: DockerComposeInfrastructureAdapter,
     environment: Environment,
+    bolt: Bolt,
+    artifacts: Collection[ExecutableArtifact],
     execution_parameters: ExecutionParameters,
 ) -> DockerComposeProject:
     """Generate a docker compose project."""
@@ -80,17 +80,16 @@ def _generate_docker_compose_project_from_bolt(
     if len(artifacts) == 0:
         raise ValueError("No ExecutableArtifactes to generate for.")
 
-    compose_project = DockerComposeProject(name=project.name, networks={}, services={}, volumes={})
+    compose_project = DockerComposeProject(name=bolt.project, networks={}, services={}, volumes={})
 
     resource_service_names: dict[str, str] = {}
 
-    artifact_deque = deque([SpecificExecutableArtifact(artifact, version, project) for artifact in artifacts])
+    artifact_deque = deque([(bolt, artifact) for artifact in artifacts])
 
     # Translate our artifacts into docker compose services
     while artifact_deque:
-        specific_artifact = artifact_deque.popleft()
-        artifact, artifact_version, artifact_project = specific_artifact
-        artifact_ref_name = _get_artifact_ref_name(specific_artifact)
+        artifact_bolt, artifact = artifact_deque.popleft()
+        artifact_ref_name = _get_artifact_ref_name(artifact_bolt, artifact)
 
         if artifact.execution.resources:
             requeue = False
@@ -99,30 +98,31 @@ def _generate_docker_compose_project_from_bolt(
                     resource_with_provider_artifact = adapter.resolve_resource_requirement(
                         resource_requirement, environment
                     )
-                    provider_artifact = adapter.get_artifact_from_reference(
+                    provider_artifact_bolt, provider_artifact = adapter.get_artifact_from_reference(
                         resource_with_provider_artifact.artifact, environment
                     )
-                    if provider_artifact.artifact.execution:
+                    if provider_artifact.execution:
                         requeue = True
 
                         if provider_artifact not in artifact_deque:
-                            artifact_deque.appendleft(provider_artifact)
+                            artifact_deque.appendleft((provider_artifact_bolt, provider_artifact))
 
                     else:
                         # TODO: Virtual service stuff!
                         pass
 
             if requeue:
-                artifact_deque.append(specific_artifact)
+                artifact_deque.append((artifact_bolt, artifact))
                 continue
 
         # We can generate this artifact!
         compose_service = _generate_docker_compose_service_from_artifact(
-            specific_artifact=specific_artifact,
             adapter=adapter,
             environment=environment,
+            bolt=artifact_bolt,
+            artifact=artifact,
             artifact_execution_parameters=execution_parameters.params_for_artifact(
-                environment=environment, project=artifact_project, artifact=artifact
+                environment=environment, bolt=bolt, artifact=artifact
             ),
         )
 
@@ -151,21 +151,21 @@ def _generate_docker_compose_project_from_bolt(
     return compose_project
 
 
-def _get_artifact_ref_name(specific_artifact: SpecificArtifact | SpecificExecutableArtifact) -> str:
-    return f"{specific_artifact.project.name}-{specific_artifact.artifact.name}"
+def _get_artifact_ref_name(bolt: Bolt, artifact: ExecutableArtifact) -> str:
+    return f"{bolt.project}-{artifact.name}"
 
 
 def _generate_docker_compose_service_from_artifact(
-    adapter: DockerComposeExecutionEnvironmentAdapter,
+    adapter: DockerComposeInfrastructureAdapter,
     environment: Environment,
-    specific_artifact: SpecificExecutableArtifact,
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
 
-    artifact, version, project = specific_artifact
     execution = artifact.execution
-    artifact_ref_name = _get_artifact_ref_name(specific_artifact)
+    artifact_ref_name = _get_artifact_ref_name(bolt, artifact)
 
     compose_service = DockerComposeService(container_name=artifact_ref_name)
 
@@ -382,11 +382,11 @@ def _generate_env_files():
     pass
 
 
-class DockerComposeExecutionEnvironmentAdapter:
-    _executable_artifacts: list[SpecificExecutableArtifact]
+class DockerComposeInfrastructureAdapter:
+    _bolts: list[Bolt]
 
-    def __init__(self, executable_artifacts: list[SpecificExecutableArtifact] = []):
-        self._executable_artifacts = executable_artifacts
+    def __init__(self, bolts: list[Bolt] = []):
+        self._bolts = bolts
         self.configs_adapter = DockerComposeConfigsAdapter()
         self.secrets_adapter = DockerComposeSecretsAdapater()
 
@@ -406,7 +406,6 @@ class DockerComposeExecutionEnvironmentAdapter:
 
     def deploy(
         self,
-        project: Project,
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
@@ -416,11 +415,10 @@ class DockerComposeExecutionEnvironmentAdapter:
         _generate_env_files()
 
         docker_compose_project = _generate_docker_compose_project_from_bolt(
-            project=project,
-            version=bolt.version,
-            artifacts=artifacts,
             adapter=self,
             environment=environment,
+            bolt=bolt,
+            artifacts=artifacts,
             execution_parameters=execution_parameters,
         )
 
@@ -432,37 +430,50 @@ class DockerComposeExecutionEnvironmentAdapter:
 
     def get_artifact_from_reference(
         self, artifact_reference: ArtifactReference, environment: Environment
-    ) -> SpecificArtifact:
-        for artifact, version, project in self._executable_artifacts:
-            if (
-                artifact_reference.artifact == artifact.name
-                and artifact_reference.version == version
-                and artifact_reference.project == project.name
-            ):
-                return SpecificArtifact(artifact, version, project)
+    ) -> tuple[Bolt, Artifact]:
+        for bolt in self._bolts:
+            for artifact in bolt.artifacts:
+                if (
+                    artifact_reference.artifact == artifact.name
+                    and artifact_reference.version == bolt.version
+                    and artifact_reference.project == bolt.project
+                ):
+                    return bolt, artifact
 
         raise UnknownArtifact(artifact_reference)
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
 
-    def list_resources(self, environment: Environment) -> list[ResourceProviderArtifactReference]:
-        """List available Resources with a providing ArtifactReference in the specified Environment."""
-
-        return [
-            ResourceProviderArtifactReference(resource, ArtifactReference(artifact.name, version, project.name))
-            for artifact, version, project in self._executable_artifacts
-            for resource in artifact.provides
-        ]
-
     def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
-        return [
-            ArtifactReference(artifact.name, version, project.name)
-            for artifact, version, project in self._executable_artifacts
-        ]
+        references = []
+
+        for bolt in self._bolts:
+            references.extend(
+                [ArtifactReference(artifact.name, bolt.version, bolt.project) for artifact in bolt.executable_artifacts]
+            )
+
+        return references
 
     def list_projects(self) -> list[Project]:
         return []
+
+    def list_resources(self, environment: Environment) -> list[ResourceProviderArtifactReference]:
+        """List available Resources with a providing ArtifactReference in the specified Environment."""
+
+        references = []
+        for bolt in self._bolts:
+            references.extend(
+                [
+                    ResourceProviderArtifactReference(
+                        resource, ArtifactReference(artifact.name, bolt.version, bolt.project)
+                    )
+                    for artifact in bolt.executable_artifacts
+                    for resource in artifact.provides
+                ]
+            )
+
+        return references
 
     def resolve_resource_requirement(
         self, resource_requirement: ProjectResourceRequirement, environment: Environment
@@ -478,18 +489,16 @@ class DockerComposeExecutionEnvironmentAdapter:
 
     def teardown(
         self,
-        project: Project,
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
         docker_compose_project = _generate_docker_compose_project_from_bolt(
-            project=project,
-            version=bolt.version,
-            artifacts=artifacts,
             adapter=self,
             environment=environment,
+            bolt=bolt,
+            artifacts=artifacts,
             execution_parameters=execution_parameters,
         )
 

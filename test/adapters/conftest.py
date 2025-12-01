@@ -1,15 +1,15 @@
 import pytest
 
-from ballista_sdk.api.v1 import SpecificExecutableArtifact
+from ballista_sdk.api.v1 import Bolt
 
 
 @pytest.fixture(scope="session")
-def fake_executable_artifacts(
-    postgres_executable_artifact: SpecificExecutableArtifact,
-) -> list[SpecificExecutableArtifact]:
+def fake_bolts(
+    postgres_bolt: Bolt,
+) -> list[Bolt]:
     """Creates mock ExecutableArtifact definitions for postgres and redis."""
 
-    return [postgres_executable_artifact]
+    return [postgres_bolt]
 
     # Fake Redis
     # class RedisRequirements(ResourceDependencyRequirements):
@@ -111,4 +111,4 @@ def fake_executable_artifacts(
     # secrets[2].id = "password"
     # secrets[2].name = "Password"
 
-    # return [SpecificArtifact(postgres, "17.5", "postgres"), SpecificArtifact(redis, "8", "redis")]
+    # return [(postgres, "17.5", "postgres"), SpecificArtifact(redis, "8", "redis")]

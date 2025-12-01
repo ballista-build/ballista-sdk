@@ -4,7 +4,7 @@ from typing import Annotated
 from pydantic import BaseModel, Field
 
 from .artifacts import ExecutableArtifact
-from .bolts import Project
+from .bolts import Bolt
 from .common import BaseNamedModel
 
 
@@ -111,9 +111,9 @@ class ExecutionParameters(BaseModel, frozen=True):
     volumes: dict[tuple[str, str, str, str], VolumeExecutionParameters] = {}
 
     def params_for_artifact(
-        self, environment: Environment, project: Project, artifact: ExecutableArtifact
+        self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
     ) -> ArtifactExecutionParameters:
-        defaults = self.defaults_for_artifact(environment, project, artifact)
+        defaults = self.defaults_for_artifact(environment, bolt, artifact)
 
         default_service = defaults.external_service.model_dump()
         external_services = {
@@ -131,17 +131,17 @@ class ExecutionParameters(BaseModel, frozen=True):
         )
 
     def defaults_for_artifact(
-        self, environment: Environment, project: Project, artifact: ExecutableArtifact
+        self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
     ) -> DefaultExecutionParameters:
         defaults = self.initial.model_dump()
 
         if environment_defaults := self.environments.get(environment.name):
             defaults.update(environment_defaults.model_dump())
 
-        if project_defaults := self.projects.get((environment.name, project.name)):
+        if project_defaults := self.projects.get((environment.name, bolt.project)):
             defaults.update(project_defaults.model_dump())
 
-        if artifact_defaults := self.artifacts.get((environment.name, project.name, artifact.name)):
+        if artifact_defaults := self.artifacts.get((environment.name, bolt.project, artifact.name)):
             defaults.update(artifact_defaults.model_dump())
 
         return DefaultExecutionParameters(
@@ -159,13 +159,13 @@ class ExecutionParameters(BaseModel, frozen=True):
 
         return DefaultExecutionParameters(**params)
 
-    def defaults_for_project(self, environment: Environment, project: Project) -> DefaultExecutionParameters:
+    def defaults_for_project(self, environment: Environment, bolt: Bolt) -> DefaultExecutionParameters:
         defaults = self.initial.model_dump()
 
         if environment_defaults := self.environments.get(environment.name):
             defaults.update(environment_defaults.model_dump())
 
-        if project_defaults := self.projects.get((environment.name, project.name)):
+        if project_defaults := self.projects.get((environment.name, bolt.project)):
             defaults.update(project_defaults.model_dump())
 
         return DefaultExecutionParameters(**defaults)
