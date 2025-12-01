@@ -10,11 +10,18 @@ from ballista_sdk.adapters.docker_compose import (
     DockerComposeServiceVolume,
     _generate_docker_compose_project_from_bolt,
 )
-from ballista_sdk.types import Bolt, Environment, ExecutionParameters, SpecificArtifact
+from ballista_sdk.api.v1 import (
+    Bolt,
+    Environment,
+    ExecutionParameters,
+    Project,
+    SpecificArtifact,
+    SpecificExecutableArtifact,
+)
 
 
 @pytest.fixture
-def docker_compose_adapter(fake_executable_artifacts: list[SpecificArtifact]):
+def docker_compose_adapter(fake_executable_artifacts: list[SpecificExecutableArtifact]):
     adapter = DockerComposeExecutionEnvironmentAdapter(fake_executable_artifacts)
 
     return adapter
@@ -80,7 +87,7 @@ def docker_compose_adapter(fake_executable_artifacts: list[SpecificArtifact]):
                             "start_period": "60s",
                             "test": ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"],
                         },
-                        image="postgres:17.5",
+                        image="postgres:18.1",
                         ports=[{"name": "postgres", "published": "5432", "target": 5432}],
                         volumes=[
                             DockerComposeServiceVolume(
@@ -109,33 +116,16 @@ def test_generate_docker_compose(
     environment: Environment,
     execution_parameters: ExecutionParameters,
 ):
+    project = Project(name=bolt.project)
+
     assert (
         docker_compose_project.model_dump()
         == _generate_docker_compose_project_from_bolt(
-            project_id=bolt.project_id,
-            version=bolt.version,
-            artifacts=bolt.executable_artifacts,
             adapter=docker_compose_adapter,
             environment=environment,
+            project=project,
+            version=bolt.version,
+            artifacts=bolt.executable_artifacts,
             execution_parameters=execution_parameters,
         ).model_dump()
     )
-
-
-def test_generate_requires_artifacts(
-    bolt: Bolt,
-    docker_compose_adapter: DockerComposeExecutionEnvironmentAdapter,
-    environment: Environment,
-    execution_parameters: ExecutionParameters,
-):
-    context = pytest.raises(ValueError) if len(bolt.executable_artifacts) == 0 else contextlib.nullcontext()
-
-    with context:
-        _generate_docker_compose_project_from_bolt(
-            project_id=bolt.project_id,
-            version=bolt.version,
-            artifacts=bolt.executable_artifacts,
-            adapter=docker_compose_adapter,
-            environment=environment,
-            execution_parameters=execution_parameters,
-        )

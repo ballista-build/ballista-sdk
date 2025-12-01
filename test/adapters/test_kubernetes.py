@@ -7,7 +7,7 @@ from ballista_sdk.adapters.kubernetes import (
     KubernetesResource,
     _generate_bolt_resources,
 )
-from ballista_sdk.types import Bolt, Environment, ExecutableArtifact, ExecutionParameters, SpecificArtifact
+from ballista_sdk.api.v1 import Bolt, Environment, ExecutableArtifact, ExecutionParameters, Project, SpecificArtifact
 
 
 @pytest.fixture
@@ -398,7 +398,7 @@ def resource_provider_bolt_resources():
                             "kind": "Deployment",
                             "metadata": {
                                 "annotations": {
-                                    "ballista.build/resource-json": '{"configs":[{"description":"Host of Database server.","id":"host","name":"Host","template":"","type":"string","shared":true},{"description":"Port Database server listens on.","id":"port","name":"Port","template":"","type":"integer","shared":true}],"description":"Resource Description","id":"resource_provider-resource1","instance_id_fields":["database_id"],"name":"Resource Provider Resource","prefix":"RESOURCE","requirement_schemas":{"properties":{},"required":[]},"secrets":[{"description":"Name of database","id":"database","name":"Database","template":"","type":"string","shared":false},{"description":"Login username to access database","id":"username","name":"Username","template":"","type":"string","shared":false},{"description":"Login password to access database","id":"password","name":"Password","template":null,"type":"password","shared":false}]}'
+                                    "ballista.build/resource-json": '{"name":"resource_provider-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","data_type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","data_type":"integer","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{},"required":["name"]},"secrets":[{"name":"database","description":"Name of database","title":"Database","data_type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","data_type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","data_type":"string","shared":false}]}'
                                 },
                                 "labels": {
                                     "app.kubernetes.io/instance": "server-1",
@@ -475,6 +475,7 @@ def test_resource_generation(
     executable_artifacts = [cast(ExecutableArtifact, a) for a in bolt.artifacts if a.execution is not None]
     assert resources == _generate_bolt_resources(
         artifacts=executable_artifacts,
+        project=Project(name=bolt.project),
         bolt=bolt,
         adapter=kubernetes_adapter,
         environment=environment,

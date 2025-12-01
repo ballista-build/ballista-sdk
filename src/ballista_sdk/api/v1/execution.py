@@ -1,0 +1,171 @@
+from enum import StrEnum, auto
+from typing import Annotated
+
+from pydantic import BaseModel, Field
+
+from .artifacts import ExecutableArtifact
+from .bolts import Project
+from .common import BaseNamedModel
+
+
+class EnvironmentTier(StrEnum):
+    DEVELOPMENT = auto()
+    """Suitable for iteration and debugging."""
+
+    STAGING = auto()
+    """Suitable for verification and stability."""
+
+    PRODUCTION = auto()
+    """The one true environment."""
+
+
+class Environment(BaseNamedModel):
+    """An environment that can execute ExecutableArtifacts."""
+
+    tier: EnvironmentTier
+    """Tier of Environment."""
+
+    config: dict | None = None
+    """Configuration for environment, adapter specific."""
+
+
+class ComputeExecutionParameters(BaseModel, frozen=True):
+    """High-level execution compute bounds."""
+
+    max_cpu: Annotated[float | None, Field(description="Maximum CPU allowed, measured in cores.", gt=0)] = None
+    """Maximum CPU allowed, measured in cores."""
+    max_gpu: float | None = None
+    """Maximum GPU allowed, measured in cores."""
+    max_memory: float | None = None
+    """Maximum memory allowed, measured in Gibibytes."""
+    min_cpu: Annotated[float | None, Field(description="Minimum CPU required, measured in cores.", gt=0)] = None
+    """Minimum CPU required, measured in cores."""
+    min_gpu: float | None = None
+    """Minimum GPU required, measured in cores."""
+    min_memory: float | None = None
+    """Minimum memory required, measured in Gibibytes."""
+
+
+class ExternalizedServiceParameters(BaseModel, frozen=True):
+    """Parameters to externalize a ServiceRequirement, granting outside access."""
+
+    host: str | None = None
+    """External host."""
+
+    port: int | None = None
+    """External port."""
+
+    path: str | None = None
+    """External path."""
+
+
+class ScalingExecutionParameters(BaseModel, frozen=True):
+    """Parameters to scale execution of an artifact."""
+
+    max_replicas: int | None = None
+    """Maximum number of replicas."""
+
+    min_replicas: int | None = None
+    """Minimum number of replicas."""
+
+
+class VolumeExecutionParameters(BaseModel, frozen=True):
+    """Parameters to execute a VolumeRequirement."""
+
+    max_capacity: float | None = None
+    """Maximum storage capacity, measured in Gigabytes."""
+
+    path: str | None = None
+    """Path inside volume to use as mount root."""
+
+    type: str | None = None
+    """Specific type of volume to use."""
+
+
+class ArtifactExecutionParameters(BaseModel, frozen=True):
+    """Parameters for executing a specific ExecutableArtifact."""
+
+    compute: Annotated[ComputeExecutionParameters, Field(default_factory=ComputeExecutionParameters)]
+    external_services: dict[str, ExternalizedServiceParameters] = {}
+    scaling: Annotated[ScalingExecutionParameters, Field(default_factory=ScalingExecutionParameters)]
+    volumes: dict[str, VolumeExecutionParameters] = {}
+
+
+class DefaultExecutionParameters(BaseModel, frozen=True):
+    """Default parameters for executing any ExecutableArtifact in an environment."""
+
+    compute: Annotated[ComputeExecutionParameters, Field(default_factory=ComputeExecutionParameters)]
+    external_service: Annotated[ExternalizedServiceParameters, Field(default_factory=ExternalizedServiceParameters)]
+    scaling: Annotated[ScalingExecutionParameters, Field(default_factory=ScalingExecutionParameters)]
+    volume: Annotated[VolumeExecutionParameters, Field(default_factory=VolumeExecutionParameters)]
+
+
+class ExecutionParameters(BaseModel, frozen=True):
+    """Parameters for executing ExecutableArtifacts across all environments and projects."""
+
+    initial: DefaultExecutionParameters
+    environments: dict[str, DefaultExecutionParameters] = {}
+    projects: dict[tuple[str, str], DefaultExecutionParameters] = {}
+    artifacts: dict[tuple[str, str, str], DefaultExecutionParameters] = {}
+    external_services: dict[tuple[str, str, str, str], ExternalizedServiceParameters] = {}
+    volumes: dict[tuple[str, str, str, str], VolumeExecutionParameters] = {}
+
+    def params_for_artifact(
+        self, environment: Environment, project: Project, artifact: ExecutableArtifact
+    ) -> ArtifactExecutionParameters:
+        defaults = self.defaults_for_artifact(environment, project, artifact)
+
+        default_service = defaults.external_service.model_dump()
+        external_services = {
+            s.name: ExternalizedServiceParameters(**default_service) for s in artifact.execution.services
+        }
+
+        default_volume = defaults.volume.model_dump()
+        volumes = {v.name: VolumeExecutionParameters(**default_volume) for v in artifact.execution.volumes}
+
+        return ArtifactExecutionParameters(
+            compute=defaults.compute,
+            external_services=external_services,
+            scaling=defaults.scaling,
+            volumes=volumes,
+        )
+
+    def defaults_for_artifact(
+        self, environment: Environment, project: Project, artifact: ExecutableArtifact
+    ) -> DefaultExecutionParameters:
+        defaults = self.initial.model_dump()
+
+        if environment_defaults := self.environments.get(environment.name):
+            defaults.update(environment_defaults.model_dump())
+
+        if project_defaults := self.projects.get((environment.name, project.name)):
+            defaults.update(project_defaults.model_dump())
+
+        if artifact_defaults := self.artifacts.get((environment.name, project.name, artifact.name)):
+            defaults.update(artifact_defaults.model_dump())
+
+        return DefaultExecutionParameters(
+            compute=ComputeExecutionParameters(**defaults["compute"]),
+            external_service=ExternalizedServiceParameters(**defaults["external_service"]),
+            scaling=ScalingExecutionParameters(**defaults["scaling"]),
+            volume=VolumeExecutionParameters(**defaults["volume"]),
+        )
+
+    def defaults_for_environment(self, environment: Environment) -> DefaultExecutionParameters:
+        params = self.initial.model_dump()
+
+        if environment_defaults := self.environments.get(environment.name):
+            params.update(environment_defaults.model_dump())
+
+        return DefaultExecutionParameters(**params)
+
+    def defaults_for_project(self, environment: Environment, project: Project) -> DefaultExecutionParameters:
+        defaults = self.initial.model_dump()
+
+        if environment_defaults := self.environments.get(environment.name):
+            defaults.update(environment_defaults.model_dump())
+
+        if project_defaults := self.projects.get((environment.name, project.name)):
+            defaults.update(project_defaults.model_dump())
+
+        return DefaultExecutionParameters(**defaults)

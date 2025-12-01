@@ -10,23 +10,21 @@ from typing import Any, Literal
 import yaml
 from pydantic import BaseModel
 
-from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceDependency
-from ballista_sdk.adapters.types import fake_artifact_types
-from ballista_sdk.types import (
-    Artifact,
-    ArtifactExecutionParameters,
-    ArtifactExecutionProbe,
-    ArtifactExecutionResourceDependency,
-    ArtifactExecutionService,
+from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceRequirement
+from ballista_sdk.api.v1 import (
     ArtifactReference,
     ArtifactType,
     Bolt,
-    Environment,
     ExecutableArtifact,
-    ExecutionParameters,
-    ResourceWithProviderArtifact,
+    HealthcheckProbe,
+    Project,
+    ProjectResourceRequirement,
+    ResourceProviderArtifactReference,
+    ServiceRequirement,
     SpecificArtifact,
+    SpecificExecutableArtifact,
 )
+from ballista_sdk.api.v1.execution import ArtifactExecutionParameters, Environment, ExecutionParameters
 
 
 class DockerComposeServiceVolume(BaseModel):
@@ -57,6 +55,7 @@ class DockerComposeService(BaseModel):
 class DockerComposeProjectVolume(BaseModel):
     driver: str
     name: str
+    """Human-readable volume name. Not the volume identifier."""
 
 
 class DockerComposeProject(BaseModel):
@@ -69,7 +68,7 @@ class DockerComposeProject(BaseModel):
 
 
 def _generate_docker_compose_project_from_bolt(
-    project_id: str,
+    project: Project,
     version: str,
     artifacts: Collection[ExecutableArtifact],
     adapter: DockerComposeExecutionEnvironmentAdapter,
@@ -81,24 +80,24 @@ def _generate_docker_compose_project_from_bolt(
     if len(artifacts) == 0:
         raise ValueError("No ExecutableArtifactes to generate for.")
 
-    project = DockerComposeProject(name=project_id, networks={}, services={}, volumes={})
+    compose_project = DockerComposeProject(name=project.name, networks={}, services={}, volumes={})
 
     resource_service_names: dict[str, str] = {}
 
-    artifact_deque: deque[SpecificArtifact] = deque([(artifact, version, project_id) for artifact in artifacts])
+    artifact_deque = deque([SpecificExecutableArtifact(artifact, version, project) for artifact in artifacts])
 
     # Translate our artifacts into docker compose services
     while artifact_deque:
-        item = artifact_deque.popleft()
-        artifact, artifact_version, artifact_project_id = item
-        artifact_ref_name = _get_artifact_ref_name(artifact_project_id, artifact)
+        specific_artifact = artifact_deque.popleft()
+        artifact, artifact_version, artifact_project = specific_artifact
+        artifact_ref_name = _get_artifact_ref_name(specific_artifact)
 
         if artifact.execution.resources:
             requeue = False
-            for resource_dependency in artifact.execution.resources:
-                if resource_dependency.resource_id not in resource_service_names:
-                    resource_with_provider_artifact = adapter.resolve_resource_dependency(
-                        resource_dependency, environment
+            for resource_requirement in artifact.execution.resources:
+                if resource_requirement.resource not in resource_service_names:
+                    resource_with_provider_artifact = adapter.resolve_resource_requirement(
+                        resource_requirement, environment
                     )
                     provider_artifact = adapter.get_artifact_from_reference(
                         resource_with_provider_artifact.artifact, environment
@@ -114,61 +113,59 @@ def _generate_docker_compose_project_from_bolt(
                         pass
 
             if requeue:
-                artifact_deque.append(item)
+                artifact_deque.append(specific_artifact)
                 continue
 
         # We can generate this artifact!
         compose_service = _generate_docker_compose_service_from_artifact(
-            project_id=artifact_project_id,
-            artifact=artifact,
-            version=artifact_version,
+            specific_artifact=specific_artifact,
             adapter=adapter,
             environment=environment,
             artifact_execution_parameters=execution_parameters.params_for_artifact(
-                environment=environment, project_id=artifact_project_id, artifact=artifact
+                environment=environment, project=artifact_project, artifact=artifact
             ),
         )
 
         if artifact.execution.resources:
             compose_service.depends_on = {
-                resource_service_names[rd.resource_id]: {"condition": "service_healthy"}
-                for rd in artifact.execution.resources
+                resource_service_names[resource_requirement.resource]: {"condition": "service_healthy"}
+                for resource_requirement in artifact.execution.resources
             }
 
-        project.services[artifact_ref_name] = compose_service
+        compose_project.services[artifact_ref_name] = compose_service
 
-        project.volumes.update(
+        compose_project.volumes.update(
             {
-                f"{artifact_ref_name}-{volume.id}": DockerComposeProjectVolume(
-                    driver="local", name=volume.name.replace(" ", "-")
+                f"{artifact_ref_name}-{volume.name}": DockerComposeProjectVolume(
+                    driver="local",
+                    name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
                 )
                 for volume in artifact.execution.volumes
                 if volume.persistent
             }
         )
 
-        if artifact.provided_resources:
-            resource_service_names.update({resource.id: artifact_ref_name for resource in artifact.provided_resources})
+        if artifact.provides:
+            resource_service_names.update({resource.name: artifact_ref_name for resource in artifact.provides})
 
-    return project
+    return compose_project
 
 
-def _get_artifact_ref_name(project_id: str, artifact: Artifact) -> str:
-    return f"{project_id}-{artifact.id}"
+def _get_artifact_ref_name(specific_artifact: SpecificArtifact | SpecificExecutableArtifact) -> str:
+    return f"{specific_artifact.project.name}-{specific_artifact.artifact.name}"
 
 
 def _generate_docker_compose_service_from_artifact(
-    project_id: str,
-    artifact: ExecutableArtifact,
-    version: str,
     adapter: DockerComposeExecutionEnvironmentAdapter,
     environment: Environment,
+    specific_artifact: SpecificExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
 
+    artifact, version, project = specific_artifact
     execution = artifact.execution
-    artifact_ref_name = _get_artifact_ref_name(project_id, artifact)
+    artifact_ref_name = _get_artifact_ref_name(specific_artifact)
 
     compose_service = DockerComposeService(container_name=artifact_ref_name)
 
@@ -190,22 +187,22 @@ def _generate_docker_compose_service_from_artifact(
     env = {}
     env_files = []
 
-    has_service_configs = bool(execution.configs)
-    has_service_secrets = bool(execution.secrets)
+    has_artifact_configs = len(execution.configs) > 0
+    has_artifact_secrets = len(execution.secrets) > 0
 
     # Resource dependencies
-    if resource_dependencies := execution.resources:
-        for dependency in resource_dependencies:
-            resource, _ = adapter.resolve_resource_dependency(dependency, environment)
+    if resource_requirements := execution.resources:
+        for resource_requirement in resource_requirements:
+            resource, artifact_reference = adapter.resolve_resource_requirement(resource_requirement, environment)
 
-            ref_name = f"{resource.id}-shared"
+            ref_name = f"{artifact_reference.project}-{resource.name}-shared"
 
             has_shared_configs = False
             for config in resource.configs:
                 if config.shared:
                     has_shared_configs = True
                 else:
-                    has_service_configs = True
+                    has_artifact_configs = True
 
             if has_shared_configs:
                 env_files.append({"format": "raw", "path": f"{ref_name}-configs.env", "required": True})
@@ -215,16 +212,16 @@ def _generate_docker_compose_service_from_artifact(
                 if secret.shared:
                     has_shared_secrets = True
                 else:
-                    has_service_secrets = True
+                    has_artifact_secrets = True
 
             if has_shared_secrets:
                 env_files.append({"format": "raw", "path": f"{ref_name}-secrets.env", "required": True})
 
-    if has_service_configs:
+    if has_artifact_configs:
         # Service configs are NOT required
         env_files.append({"format": "raw", "path": f"{artifact_ref_name}-configs.env", "required": False})
 
-    if has_service_secrets:
+    if has_artifact_secrets:
         env_files.append({"format": "raw", "path": f"{artifact_ref_name}-secrets.env", "required": True})
 
     # Services
@@ -235,14 +232,14 @@ def _generate_docker_compose_service_from_artifact(
             # WTF is it, then? Needs a better abstraction.
             continue
 
-        services_added[service.id] = service
+        services_added[service.name] = service
 
-        key = f"{service.id.upper()}_SERVICE"
+        key = f"{service.name.upper()}_SERVICE"
         host = "localhost"
         path = "/"
-        env[f"{key}_PORT"] = str(port_service.port)
+        env[f"{key}_PORT"] = str(port_service)
 
-        external_service_parameters = artifact_execution_parameters.external_services.get(service.id)
+        external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
         if external_service_parameters and external_service_parameters.host is not None:
             host = external_service_parameters.host
             if external_service_parameters.path:
@@ -250,9 +247,9 @@ def _generate_docker_compose_service_from_artifact(
 
             compose_service.ports.append(
                 {
-                    "name": service.id,
-                    "published": str(external_service_parameters.port or port_service.port),
-                    "target": port_service.port,
+                    "name": service.name,
+                    "published": str(external_service_parameters.port or port_service),
+                    "target": port_service,
                 }
             )
 
@@ -278,12 +275,12 @@ def _generate_docker_compose_service_from_artifact(
         # TODO: Implement better development specs
         compose_service.develop = {"watch": [{"action": "rebuild", "path": context}]}
     else:
-        compose_service.image = artifact.type.config.get("image", artifact.id)
+        compose_service.image = artifact.type.docker_image.image or artifact.name
 
     # Volumes
     if volumes := execution.volumes:
         for volume in volumes:
-            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.id)
+            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.name)
 
             if volume.persistent:
                 volume_options = None
@@ -292,7 +289,7 @@ def _generate_docker_compose_service_from_artifact(
 
                 compose_service.volumes.append(
                     DockerComposeServiceVolume(
-                        source=f"{artifact_ref_name}-{volume.id}",
+                        source=f"{artifact_ref_name}-{volume.name}",
                         target=volume.path,
                         type="volume",
                         volume=volume_options,
@@ -317,7 +314,7 @@ def _generate_compose_volume():
     pass
 
 
-def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, ArtifactExecutionService]) -> dict:
+def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict:
     options = {
         "start_interval": "1s",
         "start_period": "60s",
@@ -334,10 +331,10 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
 
     # Retrieve services referenced by port-based probes.
     service = None
-    if port_probe.service_id:
-        service = services.get(port_probe.service_id)
+    if port_probe.service:
+        service = services.get(port_probe.service)
         if service is None:
-            raise ValueError(f'Unknown referenced service "{port_probe.service_id}".')
+            raise ValueError(f'Unknown referenced service "{port_probe.service}".')
 
     if probe.grpc:
         port = probe.grpc.port or 50051
@@ -346,7 +343,7 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
             if service.grpc is None:
                 raise ValueError("Must reference a grpc service for a grpc probe.")
 
-            port = service.grpc.port
+            port = service.grpc
 
         # TODO: GRPC probe
         return options | {}
@@ -359,7 +356,7 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
             if service.http is None:
                 raise ValueError("Must reference an http service for an http probe.")
 
-            port = service.http.port
+            port = service.http
 
         return options | {"test": ["CMD-SHELL", f"curl -f http://localhost:{port}{path}"]}
 
@@ -370,7 +367,7 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
             if service.tcp is None:
                 raise ValueError("Must reference a tcp service for a tcp probe.")
 
-            port = service.tcp.port
+            port = service.tcp
 
         if not port:
             raise ValueError("TCP probe needs a port.")
@@ -386,9 +383,9 @@ def _generate_env_files():
 
 
 class DockerComposeExecutionEnvironmentAdapter:
-    _executable_artifacts: list[SpecificArtifact]
+    _executable_artifacts: list[SpecificExecutableArtifact]
 
-    def __init__(self, executable_artifacts: list[SpecificArtifact] = []):
+    def __init__(self, executable_artifacts: list[SpecificExecutableArtifact] = []):
         self._executable_artifacts = executable_artifacts
         self.configs_adapter = DockerComposeConfigsAdapter()
         self.secrets_adapter = DockerComposeSecretsAdapater()
@@ -409,6 +406,7 @@ class DockerComposeExecutionEnvironmentAdapter:
 
     def deploy(
         self,
+        project: Project,
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
@@ -418,7 +416,7 @@ class DockerComposeExecutionEnvironmentAdapter:
         _generate_env_files()
 
         docker_compose_project = _generate_docker_compose_project_from_bolt(
-            project_id=bolt.project_id,
+            project=project,
             version=bolt.version,
             artifacts=artifacts,
             adapter=self,
@@ -435,49 +433,59 @@ class DockerComposeExecutionEnvironmentAdapter:
     def get_artifact_from_reference(
         self, artifact_reference: ArtifactReference, environment: Environment
     ) -> SpecificArtifact:
-        for artifact, version, project_id in self._executable_artifacts:
+        for artifact, version, project in self._executable_artifacts:
             if (
-                artifact.id == artifact_reference.artifact_id
-                and version == artifact_reference.version
-                and project_id == artifact_reference.project_id
+                artifact_reference.artifact == artifact.name
+                and artifact_reference.version == version
+                and artifact_reference.project == project.name
             ):
-                return SpecificArtifact(artifact, version, project_id)
+                return SpecificArtifact(artifact, version, project)
 
         raise UnknownArtifact(artifact_reference)
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
-        return fake_artifact_types()
+        return [ArtifactType(name="docker_image", title="Docker Image")]
 
-    def list_resources(self, environment: Environment) -> list[ResourceWithProviderArtifact]:
+    def list_resources(self, environment: Environment) -> list[ResourceProviderArtifactReference]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
         return [
-            ResourceWithProviderArtifact(resource, ArtifactReference(artifact.id, version, project_id))
-            for artifact, version, project_id in self._executable_artifacts
-            for resource in artifact.provided_resources
+            ResourceProviderArtifactReference(resource, ArtifactReference(artifact.name, version, project.name))
+            for artifact, version, project in self._executable_artifacts
+            for resource in artifact.provides
         ]
 
     def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
-        return [(artifact.id, version, project_id) for artifact, version, project_id in self._executable_artifacts]
+        return [
+            ArtifactReference(artifact.name, version, project.name)
+            for artifact, version, project in self._executable_artifacts
+        ]
 
-    def resolve_resource_dependency(
-        self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
-    ) -> ResourceWithProviderArtifact:
-        for resource_with_provider_artifact in self.list_resources(environment=environment):
-            if resource_with_provider_artifact.resource.id == resource_dependency.resource_id:
-                return resource_with_provider_artifact
+    def list_projects(self) -> list[Project]:
+        return []
 
-        raise UnknownResourceDependency(resource_dependency.resource_id)
+    def resolve_resource_requirement(
+        self, resource_requirement: ProjectResourceRequirement, environment: Environment
+    ) -> ResourceProviderArtifactReference:
+        for resource_provider_artifact_reference in self.list_resources(environment=environment):
+            if (
+                resource_provider_artifact_reference.artifact.project == resource_requirement.project
+                and resource_provider_artifact_reference.resource.name == resource_requirement.resource
+            ):
+                return resource_provider_artifact_reference
+
+        raise UnknownResourceRequirement(resource_requirement.project, resource_requirement.resource)
 
     def teardown(
         self,
+        project: Project,
         bolt: Bolt,
         artifacts: Collection[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
         docker_compose_project = _generate_docker_compose_project_from_bolt(
-            project_id=bolt.project_id,
+            project=project,
             version=bolt.version,
             artifacts=artifacts,
             adapter=self,

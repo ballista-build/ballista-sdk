@@ -1,75 +1,93 @@
 from __future__ import annotations
 
-import inspect
 from collections.abc import Collection
-from typing import Annotated, Any
+from dataclasses import dataclass
+from typing import Any
 
 from pydantic import Field, create_model
 
-from ballista_sdk.adapters.types import Environment, EnvironmentExecutionAdapter
-from ballista_sdk.api.v1 import models
-from ballista_sdk.types import BoltService as BaseBoltService
-from ballista_sdk.types import Resource, ResourceWithProviderArtifact
+from ballista_sdk.adapters import InfrastructureAdapter
+from ballista_sdk.api.v1 import (
+    Artifact,
+    Bolt,
+    Environment,
+    ExecutionProjectResourceNeed,
+    ExecutionRequirements,
+    ExecutionResourceNeed,
+    ResourceProviderArtifactReference,
+)
 
 
-class BoltService(BaseBoltService):
-    resources: Collection[ResourceWithProviderArtifact]
+@dataclass
+class BoltService:
+    resources: Collection[ResourceProviderArtifactReference]
 
-    def __init__(self, resources: Collection[ResourceWithProviderArtifact]):
-        self.resources = resources
+    def generate_bolt_class(self) -> type[Bolt]:
+        # Gather all resources and arrange them under their projects
+        project_resources = {}
+        for resource, artifact_reference in self.resources:
+            project = artifact_reference.project
+            if project not in project_resources:
+                project_resources[project] = {}
 
-    def generate_bolt_class(self) -> type[models.Bolt]:
-        resource_fields = {
-            resource.id: Annotated[
-                _create_resource_dependency_model(resource),
-                Field(default=None, description=f'Dependency on a "{resource.name}" resource.'),
-            ]
-            for resource, _ in self.resources
-        }
+            requirements_model = resource.get_requirements_model(project)
+            project_resources[project][resource.name] = (
+                requirements_model,
+                Field(default=None, description=resource.description),
+            )
 
-        # Resources
-        dynamic_resource_dependency = create_model(
-            models.ArtifactExecutionResourceDependency.__name__,
-            __base__=models.ArtifactExecutionResourceDependency,
-            **resource_fields,
+        # TODO: Add service connector resources
+
+        project_resource_needs_fields = {}
+        for project, resource_needs in project_resources:
+            project_resource_need = create_model(
+                f"Execution{project}ResourceNeed",
+                **{resource_name: resource_field for resource_name, resource_field in resource_needs},
+                __base__=ExecutionProjectResourceNeed,
+            )
+            project_resource_needs_fields[project] = (
+                project_resource_need,
+                Field(description="Resource need for a resource in PROJECT."),
+            )
+
+        dynamic_resource_need = create_model(
+            ExecutionResourceNeed.__name__,
+            **{
+                project: project_resource_need_field
+                for project, project_resource_need_field in project_resource_needs_fields
+            },
+            __base__=ExecutionResourceNeed,
         )
 
-        dynamic_artifact_execution_requirements = create_model(
-            models.ArtifactExecutionRequirements.__name__,
-            resources=Annotated[
-                list[dynamic_resource_dependency] | None,
-                Field(default=None, description="List of Resources required for execution."),
-            ],
-            __base__=models.ArtifactExecutionRequirements,
+        dynamic_execution_requirements = create_model(
+            "ExecutionRequirements",
+            needs=(list[dynamic_resource_need], Field(default=[])),
+            __base__=ExecutionRequirements,
         )
 
         dynamic_artifact = create_model(
-            models.Artifact.__name__,
-            execution=Annotated[
-                dynamic_artifact_execution_requirements | None, Field(default=None, description="DYNAMIC EXECUTION")
-            ],
-            __base__=models.Artifact,
+            Artifact.__name__,
+            execution=(dynamic_execution_requirements | None, Field(default=None, description="DYNAMIC EXECUTION")),
+            __base__=Artifact,
         )
 
         dynamic_bolt = create_model(
-            models.Bolt.__name__,
-            artifacts=Annotated[list[dynamic_artifact], Field(description="DYNAMIC List of artifacts.", min_length=1)],
-            __base__=models.Bolt,
+            Bolt.__name__,
+            artifacts=(list[dynamic_artifact], Field(description="DYNAMIC List of artifacts.", min_length=1)),
+            __base__=Bolt,
         )
 
         return dynamic_bolt
 
-    def create_bolt(self, project_id: str, version: str) -> models.Bolt:
+    def create_bolt(self, project: str, version: str) -> Bolt:
         bolt_cls = self.generate_bolt_class()
-        return bolt_cls(artifacts=[], project_id=project_id, version=version)
+        return bolt_cls(api_version="v1", artifacts=[], project=project, version=version)
 
-    def get_bolt(self, bolt_data: dict[str, Any]) -> models.Bolt:
+    def get_bolt(self, bolt_data: dict[str, Any]) -> Bolt:
         bolt_cls = self.generate_bolt_class()
         return bolt_cls.model_validate(bolt_data)
 
-    def deploy(
-        self, environment: Environment, adapter: EnvironmentExecutionAdapter, bolt: models.Bolt, execution_parameters
-    ):
+    def deploy(self, environment: Environment, adapter: InfrastructureAdapter, bolt: Bolt, execution_parameters):
         # Environment checks
 
         # Make the deployment
@@ -80,19 +98,5 @@ class BoltService(BaseBoltService):
             execution_parameters=execution_parameters,
         )
 
-
-def _create_resource_dependency_model(resource: Resource) -> type[models.ArtifactExecutionResourceDependency]:
-    # TODO: THIS IS REAL JANK
-    annotations = inspect.get_annotations(resource.requirements)
-    requirement_fields = {}
-
-    for prop, annotation in annotations.items():
-        field = Field(description="DESCRIPTION")
-        if hasattr(resource.requirements, prop):
-            field.default = getattr(resource.requirements, prop)
-
-        requirement_fields[prop] = Annotated[annotation, field]
-
-    return create_model(
-        f"ArtifactExecution{resource.name}Resource", **requirement_fields, __base__=models.BaseArtifactExecutionResource
-    )
+    def create_resources(self):
+        pass
