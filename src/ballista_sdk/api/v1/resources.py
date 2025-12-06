@@ -46,7 +46,7 @@ class Resource(BaseNamedModel):
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
 
     def get_requirements_model(self, project_title: str) -> type[BaseModel]:
-        return _schema_to_model(self.requirements, f"Execution{project_title}{self.name}ResourceNeed")
+        return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
 
 
 DATATYPE_MAP = {DataType.BOOLEAN: bool, DataType.INTEGER: int, DataType.NUMBER: float, DataType.STRING: str}

@@ -1,4 +1,4 @@
 from .infrastructure import EnvironmentWithAdapter, InfrastructureAdapter
-from .settings import SettingsAdapter
+from .settings import ExecutableArtifactSetting, SettingsAdapter
 
-__all__ = ["EnvironmentWithAdapter", "InfrastructureAdapter", "SettingsAdapter"]
+__all__ = ["EnvironmentWithAdapter", "ExecutableArtifactSetting", "InfrastructureAdapter", "SettingsAdapter"]

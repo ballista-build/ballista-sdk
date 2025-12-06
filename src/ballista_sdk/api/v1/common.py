@@ -16,6 +16,6 @@ class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minPrope
 class BaseNamedModel(ABC, BaseModel):
     name: Annotated[str, Field(description="Unique name of object.")]
     description: Annotated[str, Field(description="Human-readable description of object.")] = ""
-    title: Annotated[str | None, Field(alias="title", description="Human-readable title of object.")] = None
+    title: str | None = Field(default_factory=lambda data: data["name"], description="Human-readable title of object.")
 
     model_config = ConfigDict(frozen=True)

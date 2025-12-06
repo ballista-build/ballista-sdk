@@ -85,19 +85,19 @@ class VolumeExecutionParameters(BaseModel, frozen=True):
 class ArtifactExecutionParameters(BaseModel, frozen=True):
     """Parameters for executing a specific ExecutableArtifact."""
 
-    compute: Annotated[ComputeExecutionParameters, Field(default_factory=ComputeExecutionParameters)]
+    compute: ComputeExecutionParameters = Field(default_factory=ComputeExecutionParameters)
     external_services: dict[str, ExternalizedServiceParameters] = {}
-    scaling: Annotated[ScalingExecutionParameters, Field(default_factory=ScalingExecutionParameters)]
+    scaling: ScalingExecutionParameters = Field(default_factory=ScalingExecutionParameters)
     volumes: dict[str, VolumeExecutionParameters] = {}
 
 
 class DefaultExecutionParameters(BaseModel, frozen=True):
     """Default parameters for executing any ExecutableArtifact in an environment."""
 
-    compute: Annotated[ComputeExecutionParameters, Field(default_factory=ComputeExecutionParameters)]
-    external_service: Annotated[ExternalizedServiceParameters, Field(default_factory=ExternalizedServiceParameters)]
-    scaling: Annotated[ScalingExecutionParameters, Field(default_factory=ScalingExecutionParameters)]
-    volume: Annotated[VolumeExecutionParameters, Field(default_factory=VolumeExecutionParameters)]
+    compute: ComputeExecutionParameters = Field(default_factory=ComputeExecutionParameters)
+    external_service: ExternalizedServiceParameters = Field(default_factory=ExternalizedServiceParameters)
+    scaling: ScalingExecutionParameters = Field(default_factory=ScalingExecutionParameters)
+    volume: VolumeExecutionParameters = Field(default_factory=VolumeExecutionParameters)
 
 
 class ExecutionParameters(BaseModel, frozen=True):

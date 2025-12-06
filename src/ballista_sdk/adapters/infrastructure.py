@@ -21,7 +21,9 @@ class InfrastructureAdapter(Protocol):
     """Infastructure adapter for executing Artifacts in Environments."""
 
     @property
-    def configs_adapter(self) -> SettingsAdapter: ...
+    def configs_adapter(self) -> SettingsAdapter:
+        """Settings adapter specifically to manage Configs."""
+        ...
 
     @property
     def name(self) -> str:
@@ -29,7 +31,9 @@ class InfrastructureAdapter(Protocol):
         ...
 
     @property
-    def secrets_adapter(self) -> SettingsAdapter: ...
+    def secrets_adapter(self) -> SettingsAdapter:
+        """Settings adapter specifically to manage Secrets."""
+        ...
 
     def deploy(
         self,

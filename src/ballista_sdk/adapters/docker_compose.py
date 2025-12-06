@@ -5,12 +5,13 @@ import subprocess
 import tempfile
 from collections import deque
 from collections.abc import Collection
-from typing import Any, Literal
+from typing import Any, ClassVar, Literal
 
 import yaml
 from pydantic import BaseModel
 
 from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceRequirement
+from ballista_sdk.adapters.settings import ExecutableArtifactSetting, SettingsAdapter, SettingValue
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactExecutionParameters,
@@ -121,7 +122,7 @@ def _generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=artifact_bolt,
             artifact=artifact,
-            artifact_execution_parameters=execution_parameters.params_for_artifact(
+            execution_parameters=execution_parameters.params_for_artifact(
                 environment=environment, bolt=bolt, artifact=artifact
             ),
         )
@@ -160,7 +161,7 @@ def _generate_docker_compose_service_from_artifact(
     environment: Environment,
     bolt: Bolt,
     artifact: ExecutableArtifact,
-    artifact_execution_parameters: ArtifactExecutionParameters,
+    execution_parameters: ArtifactExecutionParameters,
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
 
@@ -169,7 +170,7 @@ def _generate_docker_compose_service_from_artifact(
 
     compose_service = DockerComposeService(container_name=artifact_ref_name)
 
-    if compute_parameters := artifact_execution_parameters.compute:
+    if compute_parameters := execution_parameters.compute:
         resource_max = {}
         resource_min = {}
         if max_cpu := compute_parameters.max_cpu:
@@ -190,7 +191,7 @@ def _generate_docker_compose_service_from_artifact(
     has_artifact_configs = len(execution.configs) > 0
     has_artifact_secrets = len(execution.secrets) > 0
 
-    # Resource dependencies
+    # Resources
     if resource_requirements := execution.resources:
         for resource_requirement in resource_requirements:
             resource, artifact_reference = adapter.resolve_resource_requirement(resource_requirement, environment)
@@ -239,7 +240,7 @@ def _generate_docker_compose_service_from_artifact(
         path = "/"
         env[f"{key}_PORT"] = str(port_service)
 
-        external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
+        external_service_parameters = execution_parameters.external_services.get(service.name)
         if external_service_parameters and external_service_parameters.host is not None:
             host = external_service_parameters.host
             if external_service_parameters.path:
@@ -280,7 +281,7 @@ def _generate_docker_compose_service_from_artifact(
     # Volumes
     if volumes := execution.volumes:
         for volume in volumes:
-            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.name)
+            execution_volume_parameters = execution_parameters.volumes.get(volume.name)
 
             if volume.persistent:
                 volume_options = None
@@ -378,21 +379,14 @@ def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRe
     return {}
 
 
-def _generate_env_files():
-    pass
-
-
 class DockerComposeInfrastructureAdapter:
+    name: ClassVar[str] = "docker-compose"
     _bolts: list[Bolt]
 
     def __init__(self, bolts: list[Bolt] = []):
         self._bolts = bolts
         self.configs_adapter = DockerComposeConfigsAdapter()
         self.secrets_adapter = DockerComposeSecretsAdapater()
-
-    @property
-    def name(self) -> str:
-        return "docker-compose"
 
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
         """Call docker compose."""
@@ -411,9 +405,6 @@ class DockerComposeInfrastructureAdapter:
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
-        # Generate .env files
-        _generate_env_files()
-
         docker_compose_project = _generate_docker_compose_project_from_bolt(
             adapter=self,
             environment=environment,
@@ -505,7 +496,19 @@ class DockerComposeInfrastructureAdapter:
         self._call_compose(docker_compose_project, ["down"])
 
 
-class DockerComposeSettingsAdapter:
+class DockerComposeSettingsAdapter(SettingsAdapter):
+    def delete(self, setting: ExecutableArtifactSetting):
+        raise Exception()
+
+    def exists(self, setting: ExecutableArtifactSetting) -> bool:
+        return False
+
+    def read(self, setting: ExecutableArtifactSetting) -> SettingValue:
+        raise Exception()
+
+    def write(self, setting: ExecutableArtifactSetting, value: SettingValue):
+        raise Exception()
+
     def _write_value(self):
         pass
 

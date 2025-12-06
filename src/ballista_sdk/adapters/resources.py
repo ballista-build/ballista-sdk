@@ -1,0 +1,2 @@
+class ResourceAdapter:
+    pass

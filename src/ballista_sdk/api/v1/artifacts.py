@@ -74,27 +74,29 @@ class ResourceRequirement(BaseModel):
     ] = None
     # service: Annotated[str | None, Field(description="Connect to referenced service by name.")] = None
 
+    @property
+    def requirement(self) -> BaseModel:
+        for f in self.model_fields_set:
+            if f != "prefix":
+                return getattr(self, f)
 
-class ProjectResourceRequirement(RootModel, json_schema_extra={"maxProperties": 1, "minProperties": 1}):
+        raise Exception("WTF")
+
+    @property
+    def resource(self) -> str:
+        for f in self.model_fields_set:
+            if f != "prefix":
+                return f
+
+        raise Exception("WTF")
+
+
+class ProjectResourceRequirement(BaseOneOfModel):
     """Execution requirement for a specific Project Resource."""
-
-    root: dict[str, ResourceRequirement]
 
     @property
     def _resource_requirement(self) -> ResourceRequirement:
-        for prn in self.root.values():
-            return prn
-
-        raise ValueError()
-
-    @property
-    def config(self) -> dict | float | str:
-        """Requirement data for dependency."""
-        for key in self._resource_requirement.model_fields_set:
-            if key != "prefix":
-                return getattr(self._resource_requirement, key)
-
-        raise ValueError()
+        return getattr(self, self.project)
 
     @property
     def prefix(self) -> str | None:
@@ -103,19 +105,19 @@ class ProjectResourceRequirement(RootModel, json_schema_extra={"maxProperties": 
     @property
     def project(self) -> str:
         """Project unique identifier for Resource."""
-        for k in self.root.keys():
-            return k
+        for f in self.model_fields_set:
+            return f
 
         raise ValueError()
 
     @property
+    def requirement(self) -> BaseModel:
+        return self._resource_requirement.requirement
+
+    @property
     def resource(self) -> str:
         """Unique identifier for Resource."""
-        for key in self._resource_requirement.model_fields_set:
-            if key != "prefix":
-                return key
-
-        raise ValueError("No fields set")
+        return self._resource_requirement.resource
 
 
 ##
@@ -186,6 +188,7 @@ class ArtifactTypeRequirement(BaseOneOfModel):
 
 
 class Artifact(BaseNamedModel):
+    annotations: Annotated[dict[str, str], Field(description="Annotations describing artifact.")] = {}
     build: Annotated[BuildParameters | None, Field(description="Parameters for building artifact.")] = None
     execution: Annotated[ExecutionRequirements | None, Field(description="Requirements for artifact execution.")] = None
     provides: Annotated[list[Resource], Field(description="Resources provided by the artifact.")] = []
