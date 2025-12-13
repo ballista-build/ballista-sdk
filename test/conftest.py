@@ -1,11 +1,11 @@
 import pytest
+import yaml
 
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactTypeRequirement,
     Bolt,
     ComputeExecutionParameters,
-    ConfigRequirement,
     DefaultExecutionParameters,
     Environment,
     EnvironmentTier,
@@ -15,12 +15,9 @@ from ballista_sdk.api.v1 import (
     ExternalizedServiceParameters,
     HealthcheckProbe,
     HealthcheckRequirements,
-    HTTPGETAction,
     Project,
-    ProjectResourceRequirement,
     Resource,
     ResourceConfig,
-    ResourceRequirement,
     ResourceRequirementParameters,
     ResourceSecret,
     ScalingExecutionParameters,
@@ -42,91 +39,66 @@ def docker_image_artifact_type_need() -> ArtifactTypeRequirement:
     return ArtifactTypeRequirement.model_validate({"docker_image": {"image": "hello-world:latest"}})
 
 
+TEST_BOLTS: dict[str, str] = {
+    "simple": """
+api_version: "v1"
+artifacts:
+      - name: api
+        execution:
+            configs:
+              - name: "option_a"
+                data_type: "string"
+            healthchecks:
+                ready:
+                    http:
+                        path: "/healthz"
+                        service: "http"
+            resources:
+              - postgres:
+                    database:
+                        name: "testdatabase"
+            secrets:
+              - name: "secret_a"
+                data_type: "string"
+            services:
+              - name: http
+                http: 80
+            volumes:
+              - name: "volume_a"
+                capacity: 0.01
+                path: "/var/volume_a"
+                persistent: True
+                title: "Volume A"
+        type:
+            docker_image:
+                image: "hello-world:latest"
+project: "simple"
+version: "1"
+""",
+    #     "typical": """
+    # YAML
+    # """,
+    #     "resource_provider": """
+    # api_version: "v1"
+    # artifacts: []
+    # project: "resource_provider"
+    # version: "1
+    # """
+}
+
+
+@pytest.fixture(scope="session", params=["simple"])
+def bolt_yaml(request) -> dict[str, str | dict]:
+    return yaml.safe_load(TEST_BOLTS[request.param])
+
+
 @pytest.fixture(scope="session", params=["simple", "typical", "resource_provider"])
-def bolt(
+def boltffff(
     docker_image_artifact_type_need: ArtifactTypeRequirement,
     postgres_bolt: Bolt,
     request,
 ) -> Bolt:
     match request.param:
-        case "simple":
-            # A simple project with one ExecutableArtifact.
-            PostgresDatabaseResourceRequirement = (
-                postgres_bolt.artifacts[0].provides[0].get_requirements_model("Postgres")
-            )
-
-            class ExecutionPostgresResourceNeed(ResourceRequirement):
-                database: PostgresDatabaseResourceRequirement
-
-            artifacts = [
-                Artifact(
-                    build=None,
-                    execution=ExecutionRequirements(
-                        configs=[ConfigRequirement(name="option_a", data_type=SettingDataType.STRING)],
-                        healthchecks=HealthcheckRequirements(
-                            ready=HealthcheckProbe(
-                                http=HTTPGETAction(path="/healthz", service="http"),
-                            ),
-                        ),
-                        resources=[
-                            ProjectResourceRequirement(
-                                {
-                                    "postgres": ExecutionPostgresResourceNeed.model_validate(
-                                        {"database": {"name": "testdatabase"}}
-                                    )
-                                }
-                            )
-                        ],
-                        secrets=[SecretRequirement(name="secret_a", data_type=SettingDataType.STRING)],
-                        services=[ServiceRequirement(http=80, name="http")],
-                        volumes=[
-                            VolumeRequirement(
-                                capacity=0.01, name="volume_a", path="/var/volume_a", persistent=True, title="Volume A"
-                            )
-                        ],
-                    ),
-                    name="api",
-                    type=docker_image_artifact_type_need,
-                )
-            ]
-            return Bolt(
-                api_version="v1",
-                artifacts=artifacts,
-                project="simple",
-                version="1",
-            )
-
-        case "typical":
-            # A typical project with two artifacts using various dependencies
-            artifacts = [
-                Artifact(
-                    execution=ExecutionRequirements(
-                        configs=[ConfigRequirement(name="option_a", data_type=SettingDataType.STRING)],
-                        secrets=[SecretRequirement(name="secret_a", data_type=SettingDataType.STRING)],
-                        volumes=[
-                            VolumeRequirement(
-                                capacity=0.01, name="volume_a", path="/var/volume_a", persistent=True, title="Volume A"
-                            ),
-                            VolumeRequirement(
-                                capacity=0.25,
-                                name="volume_b",
-                                path="/var/volume_b",
-                                persistent=False,
-                                title="Volume B",
-                            ),
-                        ],
-                    ),
-                    name="api",
-                    type=docker_image_artifact_type_need,
-                ),
-                Artifact(name="frontend", type=docker_image_artifact_type_need),
-            ]
-            return Bolt(
-                api_version="v1",
-                artifacts=artifacts,
-                project="typical",
-                version="1",
-            )
         case "resource_provider":
             resource = Resource(
                 configs=[
@@ -149,11 +121,13 @@ def bolt(
                 name="resource_provider-resource1",
                 instance_id_fields=["name"],
                 prefix="RESOURCE1",
-                requirements=ResourceRequirementParameters(properties={}, required=["name"]),
+                requirements=ResourceRequirementParameters.model_validate(
+                    {"properties": {"name": {"type": "string"}}, "required": ["name"]}
+                ),
                 secrets=[
                     ResourceSecret(
                         description="Name of database",
-                        name="database",
+                        name="name",
                         shared=False,
                         title="Database",
                         data_type=SettingDataType.STRING,
@@ -249,16 +223,18 @@ def postgres_bolt() -> Bolt:
                     ),
                 ],
                 description="Postgres Database",
-                instance_id_fields=["database"],
+                instance_id_fields=["name"],
                 prefix="POSTGRES",
-                requirements=ResourceRequirementParameters(properties={}, required=["database"]),
+                requirements=ResourceRequirementParameters.model_validate(
+                    {"properties": {"name": {"type": "string"}}, "required": ["name"]}
+                ),
                 secrets=[
                     ResourceSecret(
                         data_type=SettingDataType.STRING,
                         description="Name of postgres database",
-                        name="database",
+                        name="name",
                         shared=False,
-                        title="Database",
+                        title="Database Name",
                     ),
                     ResourceSecret(
                         data_type=SettingDataType.STRING,

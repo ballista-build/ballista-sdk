@@ -20,7 +20,8 @@ from .bolts import (
     Bolt,
     Project,
     Resource,
-    ResourceProviderArtifactReference,
+    ResourceProviderReference,
+    ResourceReference,
 )
 from .execution import (
     ArtifactExecutionParameters,
@@ -33,7 +34,7 @@ from .execution import (
     ScalingExecutionParameters,
     VolumeExecutionParameters,
 )
-from .resources import ResourceConfig, ResourceRequirementParameters, ResourceSecret
+from .resources import ResourceConfig, ResourceRequirementParameters, ResourceSecret, ResourceSetting
 from .settings import SettingDataType
 
 __all__ = [
@@ -61,10 +62,12 @@ __all__ = [
     "ProjectResourceRequirement",
     "Resource",
     "ResourceConfig",
-    "ResourceProviderArtifactReference",
+    "ResourceProviderReference",
+    "ResourceReference",
     "ResourceRequirement",
     "ResourceRequirementParameters",
     "ResourceSecret",
+    "ResourceSetting",
     "ScalingExecutionParameters",
     "SecretRequirement",
     "ServiceRequirement",

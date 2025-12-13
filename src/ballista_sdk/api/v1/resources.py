@@ -7,16 +7,19 @@ from .common import BaseNamedModel
 from .settings import Config, Secret
 
 
-class ResourceSetting(BaseModel):
+class BaseResourceSetting(BaseModel):
     shared: Annotated[bool, Field(description="Indicates if value is shared across artifacts.")]
 
 
-class ResourceConfig(ResourceSetting, Config):
+class ResourceConfig(BaseResourceSetting, Config):
     pass
 
 
-class ResourceSecret(ResourceSetting, Secret):
+class ResourceSecret(BaseResourceSetting, Secret):
     pass
+
+
+ResourceSetting = ResourceConfig | ResourceSecret
 
 
 class ResourceRequirementParameters(Schema, frozen=True):

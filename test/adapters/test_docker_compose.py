@@ -13,13 +13,29 @@ from ballista_sdk.api.v1 import (
     Environment,
     ExecutionParameters,
 )
+from ballista_sdk.bolts.v1 import BoltV1Factory
 
 
-@pytest.fixture
+@pytest.fixture(scope="session")
 def docker_compose_adapter(fake_bolts: list[Bolt]):
     adapter = DockerComposeInfrastructureAdapter(fake_bolts)
 
     return adapter
+
+
+@pytest.fixture(scope="session")
+def bolt(
+    bolt_yaml: dict[str, dict | str],
+    environment: Environment,
+    docker_compose_adapter: DockerComposeInfrastructureAdapter,
+) -> Bolt:
+    factory = BoltV1Factory(environment, docker_compose_adapter)
+
+    bolt = factory.get_bolt(bolt_yaml)
+    if bolt:
+        return bolt
+
+    raise Exception("WTF")
 
 
 @pytest.mark.parametrize(
@@ -46,9 +62,9 @@ def docker_compose_adapter(fake_bolts: list[Bolt]):
                             "HTTP_SERVICE_PORT": "80",
                         },
                         env_file=[
-                            {"format": "raw", "path": "postgres-database-shared-configs.env", "required": True},
                             {"format": "raw", "path": "simple-api-configs.env", "required": False},
                             {"format": "raw", "path": "simple-api-secrets.env", "required": True},
+                            {"format": "raw", "path": "postgres-resources-database-configs.env", "required": True},
                         ],
                         healthcheck={
                             "start_interval": "1s",
@@ -112,12 +128,12 @@ def test_generate_docker_compose(
     execution_parameters: ExecutionParameters,
 ):
     assert (
-        docker_compose_project.model_dump()
-        == _generate_docker_compose_project_from_bolt(
+        _generate_docker_compose_project_from_bolt(
             adapter=docker_compose_adapter,
             environment=environment,
             bolt=bolt,
             artifacts=bolt.executable_artifacts,
             execution_parameters=execution_parameters,
         ).model_dump()
+        == docker_compose_project.model_dump()
     )

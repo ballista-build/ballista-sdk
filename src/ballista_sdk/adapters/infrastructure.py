@@ -13,7 +13,7 @@ from ballista_sdk.api.v1 import (
     ExecutionParameters,
     Project,
     ProjectResourceRequirement,
-    ResourceProviderArtifactReference,
+    ResourceProviderReference,
 )
 
 
@@ -61,13 +61,13 @@ class InfrastructureAdapter(Protocol):
         """List Bolts associated with a Project."""
         ...
 
-    def list_resources(self, environment: Environment) -> Sequence[ResourceProviderArtifactReference]:
+    def list_resources(self, environment: Environment) -> Sequence[ResourceProviderReference]:
         """List available Resources with the providing ArtifactReference in the specified Environment."""
         ...
 
     def resolve_resource_requirement(
         self, resource_requirement: ProjectResourceRequirement, environment: Environment
-    ) -> ResourceProviderArtifactReference:
+    ) -> ResourceProviderReference:
         """Resolves a requirement for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises exception if dependency cannot be met."""
         ...
 

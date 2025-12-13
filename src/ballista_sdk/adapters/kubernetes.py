@@ -1,12 +1,14 @@
 from __future__ import annotations
 
 from collections.abc import Sequence
-from typing import Any, NotRequired, Protocol, TypedDict
+from dataclasses import dataclass, field
+from typing import Any, ClassVar, NotRequired, Protocol, TypedDict
 
 import yaml
 from kubernetes import client, config, utils
 
 from ballista_sdk.adapters.exceptions import UnknownResourceRequirement
+from ballista_sdk.adapters.settings import BoundSetting, Setting, SettingsAdapter, SettingValue
 from ballista_sdk.api.v1 import (
     ArtifactExecutionParameters,
     ArtifactReference,
@@ -17,9 +19,12 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
+    Project,
     ProjectResourceRequirement,
     Resource,
-    ResourceProviderArtifactReference,
+    ResourceProviderReference,
+    ResourceReference,
+    ResourceSetting,
     ServiceRequirement,
     VolumeExecutionParameters,
     VolumeRequirement,
@@ -180,18 +185,9 @@ def _generate_artifact_resources(
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
-    generators = [
-        generate_deployment,
-        generate_services,
-        generate_persistent_volume_claims,
-        generate_ingresses,
-        adapter.configs_adapter.generate_kubernetes_resources,
-        adapter.secrets_adapter.generate_kubernetes_resources,
-    ]
-
     k8s_resources: list[KubernetesResource] = []
 
-    for generator in generators:
+    for generator in adapter._generators:
         k8s_resources += generator(
             adapter=adapter,
             environment=environment,
@@ -207,20 +203,127 @@ def _generate_yaml_files(k8s_resources: Sequence[KubernetesResource]) -> dict[st
     return {kind.lower() + ".yaml": yaml.dump(data) for kind, data in k8s_resources}
 
 
+# Settings
+class BaseKubernetesSettingsAdapter(SettingsAdapter):
+    verify_before_deploy: ClassVar[bool] = True
+
+    def _get_artifact_settings_refname(self, artifact_reference: ArtifactReference) -> str:
+        return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
+
+    def _get_resource_settings_refname(self, resource_reference: ResourceReference) -> str:
+        return f"{resource_reference.project_name}.resources.{resource_reference.resource_name}"
+
+    def _add_setting_reference(
+        self, container_spec: dict, ref_name: str, sensitive: bool, required: bool, prefix: str | None
+    ):
+        reference = {
+            "name": ref_name,
+            "optional": not required,
+        }
+
+        if sensitive:
+            env = {"secretRef": reference}
+        else:
+            env = {"configMapRef": reference}
+        if prefix:
+            env["prefix"] = prefix + "_"
+
+        if "envFrom" not in container_spec:
+            container_spec["envFrom"] = [env]
+        elif env not in container_spec["envFrom"]:
+            container_spec["envFrom"].append(env)
+
+    def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting):
+        self._add_setting_reference(
+            container_spec,
+            self._get_artifact_settings_refname(artifact_reference),
+            setting.sensitive,
+            setting.sensitive,
+            None,
+        )
+
+    def add_resource_setting(
+        self,
+        container_spec: dict,
+        artifact_reference: ArtifactReference,
+        resource_reference: ResourceReference,
+        resource_setting: ResourceSetting,
+        prefix: str,
+        instance: list[str],
+    ):
+        if resource_setting.shared:
+            # Shared setting means we reference it into the artifact
+            self._add_setting_reference(
+                container_spec,
+                self._get_resource_settings_refname(resource_reference),
+                resource_setting.sensitive,
+                True,
+                prefix,
+            )
+
+        else:
+            # Unique setting is already inside the normal artifact settings
+            self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
+
+    def delete(self, environment: Environment, bound_setting: BoundSetting):
+        pass
+
+    def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
+        return False
+
+    def generate_kubernetes_resources(
+        self,
+        adapter: KubernetesInfrastructureAdapter,
+        environment: Environment,
+        bolt: Bolt,
+        artifact: ExecutableArtifact,
+        artifact_execution_parameters: ArtifactExecutionParameters,
+    ) -> list[KubernetesResource]:
+        return []
+
+    def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
+        return 0
+
+    def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
+        pass
+
+
+class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter):
+    def get_configmaps(self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> list[str]:
+        """Get list of ConfigMaps needed for ExecutableArtifact."""
+        return []
+
+
+class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter):
+    def get_namespace_name(self, secret) -> str:
+        return ""
+
+
+class ExternalSecretsAdapter(BaseKubernetesSettingsAdapter):
+    verify_before_deploy: ClassVar[bool] = False
+
+
+# Resources
+class CrossPlaneV2ResourceAdapter:
+    pass
+
+
+@dataclass
 class KubernetesInfrastructureAdapter:
-    _bolts: list[Bolt]
-    configs_adapter: KubernetesConfigsAdapter
-    secrets_adapter: KubernetesSecretsAdapter
+    name: ClassVar[str] = "kubernetes"
 
-    def __init__(self, bolts: list[Bolt] = []):
-        self._bolts = bolts
+    _generators: ClassVar[list[KubernetesResourcesGenerator]] = []
 
-        self.configs_adapter = KubernetesConfigsAdapter()
-        self.secrets_adapter = KubernetesSecretsAdapter()
+    _bolts: list[Bolt] = field(default_factory=list)
+    # TODO: These shouldn't be here; they are going to be Environment dependent!
+    configs_adapter: KubernetesConfigsAdapter = field(default_factory=KubernetesConfigsAdapter)
+    secrets_adapter: KubernetesSecretsAdapter = field(default_factory=KubernetesSecretsAdapter)
 
-    @property
-    def name(self) -> str:
-        return "kubernetes"
+    @classmethod
+    def add_generator(cls: type[KubernetesInfrastructureAdapter], method: KubernetesResourcesGenerator):
+        """Add KubernetesResourceGenerator to be included when generating."""
+        cls._generators.append(method)
+        return method
 
     def deploy(
         self,
@@ -328,16 +431,20 @@ class KubernetesInfrastructureAdapter:
 
         return executable_artifacts
 
-    def list_resources(self, environment: Environment) -> list[ResourceProviderArtifactReference]:
+    def list_projects(self, environment: Environment) -> list[Project]:
+        return []
+
+    def list_project_bolts(self, project: Project) -> list[Bolt]:
+        return []
+
+    def list_resources(self, environment: Environment) -> list[ResourceProviderReference]:
         """List available Resources and the providing ArtifactIDReference in the specified Environment."""
         if self._bolts:
             executable_artifacts = []
             for bolt in self._bolts:
                 executable_artifacts.extend(
                     [
-                        ResourceProviderArtifactReference(
-                            resource, ArtifactReference(artifact.name, bolt.version, bolt.project)
-                        )
+                        ResourceProviderReference(resource, bolt.project, artifact.name, bolt.version)
                         for artifact in bolt.executable_artifacts
                         for resource in artifact.provides
                     ]
@@ -375,15 +482,17 @@ class KubernetesInfrastructureAdapter:
 
     def resolve_resource_requirement(
         self, resource_requirement: ProjectResourceRequirement, environment: Environment
-    ) -> ResourceProviderArtifactReference:
+    ) -> ResourceProviderReference:
+        requirement_project_name = resource_requirement.which()
+        requirement_resource_name = resource_requirement.resource_name
         for resource_with_provider_artifact in self.list_resources(environment):
             if (
-                resource_with_provider_artifact.artifact.project == resource_requirement.project
-                and resource_with_provider_artifact.resource.name == resource_requirement.resource
+                resource_with_provider_artifact.project_name == requirement_project_name
+                and resource_with_provider_artifact.resource.name == requirement_resource_name
             ):
                 return resource_with_provider_artifact
 
-        raise UnknownResourceRequirement(resource_requirement.project, resource_requirement.resource)
+        raise UnknownResourceRequirement(requirement_project_name, requirement_resource_name)
 
     def teardown(
         self,
@@ -414,7 +523,30 @@ class KubernetesResourcesGenerator(Protocol):
     ) -> Sequence[KubernetesResource]: ...
 
 
-def generate_deployment(
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_config_kubernetes_resources(
+    adapter: KubernetesInfrastructureAdapter,
+    environment: Environment,
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
+    artifact_execution_parameters: ArtifactExecutionParameters,
+) -> list[KubernetesResource]:
+    return []
+
+
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_secrets_kubernetes_resources(
+    adapter: KubernetesInfrastructureAdapter,
+    environment: Environment,
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
+    artifact_execution_parameters: ArtifactExecutionParameters,
+) -> list[KubernetesResource]:
+    return []
+
+
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_deployment(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
     bolt: Bolt,
@@ -422,6 +554,7 @@ def generate_deployment(
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     execution = artifact.execution
+    artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
     metadata = _get_artifact_metadata(environment, bolt, artifact)
 
@@ -452,65 +585,33 @@ def generate_deployment(
     if pod_resources["requests"] or pod_resources["limits"]:
         container["resources"] = pod_resources
 
-    has_artifact_configs = len(execution.configs) > 0
-    has_artifact_secrets = len(execution.secrets) > 0
+    # Artifact configs
+    configs_adapter = adapter.configs_adapter
+    [configs_adapter.add_artifact_setting(container, artifact_reference, c) for c in execution.configs]
 
-    # Platform Resources
-    if resource_requirements := execution.resources:
-        for resource_requirement in resource_requirements:
-            resource, artifact_reference = adapter.resolve_resource_requirement(resource_requirement, environment)
+    # Artifact secrets
+    secrets_adapter = adapter.secrets_adapter
+    [secrets_adapter.add_artifact_setting(container, artifact_reference, s) for s in execution.secrets]
 
-            prefix = (resource_requirement.prefix or resource.prefix) + "_"
+    # Resources
+    for resource_requirement in execution.resources:
+        resource, resource_project, _, _ = adapter.resolve_resource_requirement(resource_requirement, environment)
+        resource_reference = ResourceReference(resource_project, resource.name)
+        requirement_prefix = resource_requirement.prefix or resource.prefix
+        requirement_instance = [getattr(resource_requirement.requirement, f) for f in resource.instance_id_fields]
 
-            has_shared_configs = False
-            for config in resource.configs:
-                if config.shared:
-                    has_shared_configs = True
-                else:
-                    has_artifact_configs = True
-
-            if has_shared_configs:
-                env_from.append(
-                    {
-                        "prefix": prefix,
-                        "configMapRef": {
-                            "name": adapter.configs_adapter.get_shared_resource_name(
-                                environment, artifact_reference, resource
-                            ),
-                            "optional": False,
-                        },
-                    }
-                )
-
-            has_shared_secrets = False
-            for secret in resource.secrets:
-                if secret.shared:
-                    has_shared_secrets = True
-                else:
-                    has_artifact_secrets = True
-
-            if has_shared_secrets:
-                env_from.append(
-                    {
-                        "prefix": prefix,
-                        "secretRef": {
-                            "name": adapter.secrets_adapter.get_shared_resource_name(
-                                environment, artifact_reference, resource
-                            ),
-                            "optional": False,
-                        },
-                    }
-                )
-
-    # Secrets
-    if has_artifact_secrets:
-        # Service secrets are either first or second item
-        env_from.insert(0, {"secretRef": {"name": metadata["name"], "optional": False}})
-
-    # Configs
-    if has_artifact_configs:
-        # Service configs are always first item and marked as optional
-        env_from.insert(0, {"configMapRef": {"name": metadata["name"], "optional": True}})
+        [
+            configs_adapter.add_resource_setting(
+                container, artifact_reference, resource_reference, c, requirement_prefix, requirement_instance
+            )
+            for c in resource.configs
+        ]
+        [
+            secrets_adapter.add_resource_setting(
+                container, artifact_reference, resource_reference, s, requirement_prefix, requirement_instance
+            )
+            for s in resource.secrets
+        ]
 
     # Services
     services_added = {}
@@ -556,48 +657,47 @@ def generate_deployment(
     # securityContext
     #
     # Volumes
-    if execution.volumes:
-        volumes = []
-        volume_mounts = []
-        for volume in execution.volumes:
-            # Mount Path
-            volume_mount = {"mountPath": volume.path, "name": volume.name}
-            volume_mounts.append(volume_mount)
+    volumes = []
+    volume_mounts = []
+    for volume in execution.volumes:
+        # Mount Path
+        volume_mount = {"mountPath": volume.path, "name": volume.name}
+        volume_mounts.append(volume_mount)
 
-            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.name)
-            if execution_volume_parameters and execution_volume_parameters.path:
-                # Set a subPath in the volume for this specific mount
-                volume_mount["subPath"] = f"{execution_volume_parameters.path}/{volume.name}"
+        execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.name)
+        if execution_volume_parameters and execution_volume_parameters.path:
+            # Set a subPath in the volume for this specific mount
+            volume_mount["subPath"] = f"{execution_volume_parameters.path}/{volume.name}"
 
-            if volume.persistent:
-                volumes.append(
-                    {
-                        "name": volume.name,
-                        "persistentVolumeClaim": {
-                            "claimName": _get_artifact_kubernetes_name(environment, bolt, artifact, volume.name)
-                        },
-                    }
-                )
+        if volume.persistent:
+            volumes.append(
+                {
+                    "name": volume.name,
+                    "persistentVolumeClaim": {
+                        "claimName": _get_artifact_kubernetes_name(environment, bolt, artifact, volume.name)
+                    },
+                }
+            )
 
-            else:
-                # Add an ephemeral volume claim to the PodTemplate
-                volumes.append(
-                    {
-                        "name": volume.name,
-                        "ephemeral": {
-                            "volumeClaimTemplate": {
-                                "metadata": {"labels": metadata["labels"]},
-                                "spec": _get_volume_claim(volume, ["ReadWriteOnce"], execution_volume_parameters),
-                            }
-                        },
-                    }
-                )
+        else:
+            # Add an ephemeral volume claim to the PodTemplate
+            volumes.append(
+                {
+                    "name": volume.name,
+                    "ephemeral": {
+                        "volumeClaimTemplate": {
+                            "metadata": {"labels": metadata["labels"]},
+                            "spec": _get_volume_claim(volume, ["ReadWriteOnce"], execution_volume_parameters),
+                        }
+                    },
+                }
+            )
 
-        if volume_mounts:
-            container["volumeMounts"] = volume_mounts
+    if volume_mounts:
+        container["volumeMounts"] = volume_mounts
 
-        if volumes:
-            pod_spec["volumes"] = volumes
+    if volumes:
+        pod_spec["volumes"] = volumes
 
     pod_template = {
         "metadata": metadata,
@@ -632,7 +732,8 @@ def generate_deployment(
     ]
 
 
-def generate_services(
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_services(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
     bolt: Bolt,
@@ -678,7 +779,8 @@ def _get_volume_claim(
     return volume_claim
 
 
-def generate_persistent_volume_claims(
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_persistent_volume_claims(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
     bolt: Bolt,
@@ -704,14 +806,14 @@ def generate_persistent_volume_claims(
     return resources
 
 
-def generate_ingresses(
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_ingresses(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
-    # external_service_parameters = {artifact_execution_parameters.external_services
     hosts = {}
     for service in artifact.execution.services:
         http_service_port = service.http or service.grpc
@@ -751,40 +853,3 @@ def generate_ingresses(
             "spec": {"rules": list(hosts.values())},
         }
     ]
-
-
-class BaseKubernetesSettingsAdapter:
-    def get_shared_resource_name(
-        self, environment: Environment, artifact_reference: ArtifactReference, resource: Resource
-    ) -> str:
-        return f"{artifact_reference.project}-{resource.name}-shared"
-
-    def get_artifact_resource_names(
-        self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
-    ) -> list[str]:
-        return []
-
-    def generate_kubernetes_resources(
-        self,
-        adapter: KubernetesInfrastructureAdapter,
-        environment: Environment,
-        bolt: Bolt,
-        artifact: ExecutableArtifact,
-        artifact_execution_parameters: ArtifactExecutionParameters,
-    ) -> list[KubernetesResource]:
-        return []
-
-
-class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter):
-    def get_configmaps(self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> list[str]:
-        """Get list of ConfigMaps needed for ExecutableArtifact."""
-        return []
-
-
-class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter):
-    def get_namespace_name(self, secret) -> str:
-        return ""
-
-
-class ExternalSecretsAdapter(BaseKubernetesSettingsAdapter):
-    pass

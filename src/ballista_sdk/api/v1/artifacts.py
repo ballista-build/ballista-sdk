@@ -1,6 +1,6 @@
-from typing import Annotated
+from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, Field, RootModel
+from pydantic import BaseModel, Field
 
 from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
@@ -38,7 +38,7 @@ class BuildParameters(BaseModel):
 ## Configs
 ##
 class ConfigRequirement(Config):
-    pass
+    shared: ClassVar[bool] = False
 
 
 ##
@@ -83,7 +83,7 @@ class ResourceRequirement(BaseModel):
         raise Exception("WTF")
 
     @property
-    def resource(self) -> str:
+    def resource_name(self) -> str:
         for f in self.model_fields_set:
             if f != "prefix":
                 return f
@@ -96,35 +96,27 @@ class ProjectResourceRequirement(BaseOneOfModel):
 
     @property
     def _resource_requirement(self) -> ResourceRequirement:
-        return getattr(self, self.project)
+        return getattr(self, self.which())
 
     @property
     def prefix(self) -> str | None:
         return self._resource_requirement.prefix
 
     @property
-    def project(self) -> str:
-        """Project unique identifier for Resource."""
-        for f in self.model_fields_set:
-            return f
-
-        raise ValueError()
-
-    @property
     def requirement(self) -> BaseModel:
         return self._resource_requirement.requirement
 
     @property
-    def resource(self) -> str:
+    def resource_name(self) -> str:
         """Unique identifier for Resource."""
-        return self._resource_requirement.resource
+        return self._resource_requirement.resource_name
 
 
 ##
 ## Secrets
 ##
 class SecretRequirement(Secret):
-    pass
+    shared: ClassVar[bool] = False
 
 
 ##

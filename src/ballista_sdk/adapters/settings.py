@@ -1,82 +1,84 @@
-from typing import Literal, NamedTuple, Protocol
+from collections.abc import Sequence
+from dataclasses import dataclass
+from typing import Literal, Protocol
 
-from ballista_sdk.api.v1 import Environment, ExecutableArtifact, Project, SettingDataType
+from ballista_sdk.api.v1 import ArtifactReference, Environment, ResourceReference, SettingDataType
 
 
 class BaseSetting(Protocol):
-    data_type: SettingDataType
-    """DataType of the setting value."""
-    name: str
-    """Unique identifier."""
-    title: str | None
-    """Human-readable display name."""
-    description: str | None
-    """Human-readable description of setting."""
+    @property
+    def data_type(self) -> SettingDataType:
+        """DataType of the setting value."""
+        ...
+
+    @property
+    def description(self) -> str | None:
+        """Description"""
+        ...
+
+    @property
+    def name(self) -> str:
+        """Separated pieces that form a unique identifer."""
+        ...
+
+    @property
+    def title(self) -> str | None:
+        """Title"""
+        ...
 
 
-class SharedConfig(BaseSetting):
-    """A non-sensitive Setting that is shared across all ExecutableArtifacts in an Environment."""
+class Config(BaseSetting, Protocol):
+    """A non-sensitive Setting."""
 
-    sensitive: Literal[False]
-    shared: Literal[True]
-
-
-class SharedSecret(BaseSetting):
-    """A sensitive Setting that is shared across all ExecutableArtifacts in an Environment."""
-
-    sensitive: Literal[True]
-    shared: Literal[True]
+    @property
+    def sensitive(self) -> Literal[False]:
+        return False
 
 
-class UniqueConfig(BaseSetting):
-    """A non-sensitive Setting that is unique to an ExecutableArtifact in an Environment."""
+class Secret(BaseSetting, Protocol):
+    """A sensitive Setting."""
 
-    sensitive: Literal[False]
-    shared: Literal[False]
-
-
-class UniqueSecret(BaseSetting):
-    """A sensitive Setting that is unique to an ExecutableArtifact in an Environment."""
-
-    sensitive: Literal[True]
-    shared: Literal[False]
+    @property
+    def sensitive(self) -> Literal[True]:
+        return True
 
 
-Config = SharedConfig | UniqueConfig
-"""Any Config, regardless if it is shared."""
-Secret = SharedSecret | UniqueSecret
-"""Any Secret, regardless if its shared."""
-SharedSetting = SharedConfig | SharedSecret
-"""A Setting that is shared across all ExecutableArtifacts in an Environment."""
-UniqueSetting = UniqueConfig | UniqueSecret
-"""A Setting that is unique to an ExecutableArtifact in an Environment."""
-Setting = SharedConfig | SharedSecret | UniqueConfig | UniqueSecret
+Setting = Config | Secret
 """Any valid Setting."""
 SettingValue = bool | bytes | float | str
 """Supported setting value types."""
 
 
-class ExecutableArtifactSetting(NamedTuple):
-    environment: Environment
-    project: Project
-    artifact: ExecutableArtifact | None
+@dataclass
+class BoundSetting:
+    """A Setting bound to an owner."""
+
     setting: Setting
-    instance_ids: list[str] | None
+    artifact: ArtifactReference | None = None
+    """Artifact setting exists in."""
+    resource: ResourceReference | None = None
+    """Resource setting exists in."""
+    resource_instance: Sequence[str] | None = None
 
 
 class SettingsAdapter(Protocol):
-    def delete(self, setting: ExecutableArtifactSetting):
+    @property
+    def verify_before_deploy(self) -> bool:
+        """Check for required Settings before a deployment."""
+        ...
+
+    def delete(self, environment: Environment, bound_setting: BoundSetting):
         """Delete a setting."""
         ...
 
-    def exists(self, setting: ExecutableArtifactSetting) -> bool:
+    def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
         """Checks if a setting exists."""
         ...
 
-    def read(self, setting: ExecutableArtifactSetting) -> SettingValue:
+    def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
         """Read the value for a setting."""
         ...
 
-    def write(self, setting: ExecutableArtifactSetting, value: SettingValue):
+    def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
         """Write a value for a setting."""
         ...

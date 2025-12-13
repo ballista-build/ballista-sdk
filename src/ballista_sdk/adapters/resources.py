@@ -1,2 +1,3 @@
 class ResourceAdapter:
-    pass
+    def http(self):
+        pass

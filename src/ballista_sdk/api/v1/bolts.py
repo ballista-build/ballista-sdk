@@ -12,8 +12,8 @@ class Bolt(BaseModel, frozen=True):
     # TODO: Fix the versioning thing
     api_version: Annotated[
         Literal["v1"], Field(description="API version the Bolt is adhering to.", title="API Version")
-    ]
-    artifacts: Annotated[list[Artifact], Field(description="List of artifacts.", min_length=1)]
+    ] = "v1"
+    artifacts: Annotated[list[Artifact], Field(description="List of artifacts.")]
     project: Annotated[str, Field(description="Project name.")]
     # provides: Annotated[list | None, Field(description="Resources provided by Bolt that are not tied to Artifacts.")] = []
     version: Annotated[str, Field(description="Version of Bolt.")]
@@ -32,15 +32,31 @@ class Project(BaseNamedModel, frozen=True):
 
 
 class ArtifactReference(NamedTuple):
-    """Reference to an Artifact, version number, and the Project its in."""
+    """Reference to an Artifact by its name, a version number, and the Project's name its in."""
 
-    artifact: str
+    project_name: str
+    artifact_name: str
     version: str
-    project: str
 
 
-class ResourceProviderArtifactReference(NamedTuple):
-    """Resource with reference to the provider Artifact."""
+class ResourceReference(NamedTuple):
+    """Reference to a Resource by its anme and the Project's name its in."""
+
+    project_name: str
+    resource_name: str
+
+
+class ResourceProviderReference(NamedTuple):
+    """Resource with reference to the providing Project and Artifact, if present."""
 
     resource: Resource
-    artifact: ArtifactReference
+    project_name: str
+    artifact_name: str | None
+    version: str | None
+
+    @property
+    def artifact_reference(self) -> ArtifactReference | None:
+        if self.artifact_name and self.version:
+            return ArtifactReference(
+                project_name=self.project_name, artifact_name=self.artifact_name, version=self.version
+            )

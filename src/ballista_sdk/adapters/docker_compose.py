@@ -5,13 +5,19 @@ import subprocess
 import tempfile
 from collections import deque
 from collections.abc import Collection
+from dataclasses import dataclass, field
 from typing import Any, ClassVar, Literal
 
 import yaml
 from pydantic import BaseModel
 
 from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceRequirement
-from ballista_sdk.adapters.settings import ExecutableArtifactSetting, SettingsAdapter, SettingValue
+from ballista_sdk.adapters.settings import (
+    BoundSetting,
+    Setting,
+    SettingsAdapter,
+    SettingValue,
+)
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactExecutionParameters,
@@ -24,7 +30,9 @@ from ballista_sdk.api.v1 import (
     HealthcheckProbe,
     Project,
     ProjectResourceRequirement,
-    ResourceProviderArtifactReference,
+    ResourceProviderReference,
+    ResourceReference,
+    ResourceSetting,
     ServiceRequirement,
 )
 
@@ -95,14 +103,17 @@ def _generate_docker_compose_project_from_bolt(
         if artifact.execution.resources:
             requeue = False
             for resource_requirement in artifact.execution.resources:
-                if resource_requirement.resource not in resource_service_names:
+                if resource_requirement.resource_name not in resource_service_names:
                     resource_with_provider_artifact = adapter.resolve_resource_requirement(
                         resource_requirement, environment
                     )
-                    provider_artifact_bolt, provider_artifact = adapter.get_artifact_from_reference(
-                        resource_with_provider_artifact.artifact, environment
-                    )
-                    if provider_artifact.execution:
+
+                    if artifact_reference := resource_with_provider_artifact.artifact_reference:
+                        # Resource is provided by an artifact that is executable
+                        provider_artifact_bolt, provider_artifact = adapter.get_artifact_from_reference(
+                            artifact_reference, environment
+                        )
+
                         requeue = True
 
                         if provider_artifact not in artifact_deque:
@@ -129,7 +140,7 @@ def _generate_docker_compose_project_from_bolt(
 
         if artifact.execution.resources:
             compose_service.depends_on = {
-                resource_service_names[resource_requirement.resource]: {"condition": "service_healthy"}
+                resource_service_names[resource_requirement.resource_name]: {"condition": "service_healthy"}
                 for resource_requirement in artifact.execution.resources
             }
 
@@ -167,6 +178,7 @@ def _generate_docker_compose_service_from_artifact(
 
     execution = artifact.execution
     artifact_ref_name = _get_artifact_ref_name(bolt, artifact)
+    artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
     compose_service = DockerComposeService(container_name=artifact_ref_name)
 
@@ -186,44 +198,34 @@ def _generate_docker_compose_service_from_artifact(
             compose_service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
 
     env = {}
-    env_files = []
 
-    has_artifact_configs = len(execution.configs) > 0
-    has_artifact_secrets = len(execution.secrets) > 0
+    configs_adapter = adapter.configs_adapter
+    secrets_adapter = adapter.secrets_adapter
+
+    # Artifact configs
+    [configs_adapter.add_artifact_setting(compose_service, artifact_reference, c) for c in execution.configs]
+    # Artifact secrets
+    [secrets_adapter.add_artifact_setting(compose_service, artifact_reference, s) for s in execution.secrets]
 
     # Resources
-    if resource_requirements := execution.resources:
-        for resource_requirement in resource_requirements:
-            resource, artifact_reference = adapter.resolve_resource_requirement(resource_requirement, environment)
+    for resource_requirement in execution.resources:
+        resource, resource_project, _, _ = adapter.resolve_resource_requirement(resource_requirement, environment)
+        resource_reference = ResourceReference(resource_project, resource.name)
+        requirement_prefix = resource_requirement.prefix or resource.prefix
+        requirement_instance = [getattr(resource_requirement.requirement, f) for f in resource.instance_id_fields]
 
-            ref_name = f"{artifact_reference.project}-{resource.name}-shared"
-
-            has_shared_configs = False
-            for config in resource.configs:
-                if config.shared:
-                    has_shared_configs = True
-                else:
-                    has_artifact_configs = True
-
-            if has_shared_configs:
-                env_files.append({"format": "raw", "path": f"{ref_name}-configs.env", "required": True})
-
-            has_shared_secrets = False
-            for secret in resource.secrets:
-                if secret.shared:
-                    has_shared_secrets = True
-                else:
-                    has_artifact_secrets = True
-
-            if has_shared_secrets:
-                env_files.append({"format": "raw", "path": f"{ref_name}-secrets.env", "required": True})
-
-    if has_artifact_configs:
-        # Service configs are NOT required
-        env_files.append({"format": "raw", "path": f"{artifact_ref_name}-configs.env", "required": False})
-
-    if has_artifact_secrets:
-        env_files.append({"format": "raw", "path": f"{artifact_ref_name}-secrets.env", "required": True})
+        [
+            configs_adapter.add_resource_setting(
+                compose_service, artifact_reference, resource_reference, c, requirement_prefix, requirement_instance
+            )
+            for c in resource.configs
+        ]
+        [
+            secrets_adapter.add_resource_setting(
+                compose_service, artifact_reference, resource_reference, s, requirement_prefix, requirement_instance
+            )
+            for s in resource.secrets
+        ]
 
     # Services
     services_added = {}
@@ -279,40 +281,33 @@ def _generate_docker_compose_service_from_artifact(
         compose_service.image = artifact.type.docker_image.image or artifact.name
 
     # Volumes
-    if volumes := execution.volumes:
-        for volume in volumes:
-            execution_volume_parameters = execution_parameters.volumes.get(volume.name)
+    for volume in execution.volumes:
+        execution_volume_parameters = execution_parameters.volumes.get(volume.name)
 
-            if volume.persistent:
-                volume_options = None
-                if execution_volume_parameters and execution_volume_parameters.path:
-                    volume_options = {"subpath": execution_volume_parameters.path}
+        if volume.persistent:
+            volume_options = None
+            if execution_volume_parameters and execution_volume_parameters.path:
+                volume_options = {"subpath": execution_volume_parameters.path}
 
-                compose_service.volumes.append(
-                    DockerComposeServiceVolume(
-                        source=f"{artifact_ref_name}-{volume.name}",
-                        target=volume.path,
-                        type="volume",
-                        volume=volume_options,
-                    )
+            compose_service.volumes.append(
+                DockerComposeServiceVolume(
+                    source=f"{artifact_ref_name}-{volume.name}",
+                    target=volume.path,
+                    type="volume",
+                    volume=volume_options,
                 )
-            else:
-                tmpfs_options = {"size": f"{volume.capacity}G"}
+            )
+        else:
+            tmpfs_options = {"size": f"{volume.capacity}G"}
 
-                compose_service.volumes.append(
-                    DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")
-                )
+            compose_service.volumes.append(
+                DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")
+            )
 
     if env:
         compose_service.environment = env
-    if env_files:
-        compose_service.env_file = env_files
 
     return compose_service
-
-
-def _generate_compose_volume():
-    pass
 
 
 def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict:
@@ -379,14 +374,102 @@ def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRe
     return {}
 
 
+class DockerComposeSettingsAdapter(SettingsAdapter):
+    verify_before_deploy: ClassVar[bool] = True
+
+    # TODO: This would be a great place for t-strings
+    def _get_envfile_filename(self, ref_name: str, sensitive: bool) -> str:
+        return ref_name + ("-secrets" if sensitive else "-configs") + ".env"
+
+    def _get_artifact_setting_envfile(self, artifact_reference: ArtifactReference, sensitive: bool) -> str:
+        return self._get_envfile_filename(
+            f"{artifact_reference.project_name}-{artifact_reference.artifact_name}", sensitive
+        )
+
+    def _get_resource_setting_envfile(self, resource_reference: ResourceReference, sensitive: bool) -> str:
+        return self._get_envfile_filename(
+            f"{resource_reference.project_name}-resources-{resource_reference.resource_name}", sensitive
+        )
+
+    def _add_envfile(self, service: DockerComposeService, filename: str, required: bool):
+        """Add a list of BoundSettings to the Docker Compose Service being generated."""
+
+        env = {"format": "raw", "path": filename, "required": required}
+
+        if service.env_file is None:
+            service.env_file = [env]
+        elif env not in service.env_file:
+            service.env_file.append(env)
+
+    def add_artifact_setting(
+        self, service: DockerComposeService, artifact_reference: ArtifactReference, setting: Setting
+    ):
+        self._add_envfile(
+            service,
+            self._get_artifact_setting_envfile(artifact_reference, setting.sensitive),
+            setting.sensitive,
+        )
+
+    def add_resource_setting(
+        self,
+        service: DockerComposeService,
+        artifact_reference: ArtifactReference,
+        resource_reference: ResourceReference,
+        resource_setting: ResourceSetting,
+        prefix: str,
+        instance: list[str],
+    ):
+        if resource_setting.shared:
+            self._add_envfile(
+                service, self._get_resource_setting_envfile(resource_reference, resource_setting.sensitive), True
+            )
+
+        else:
+            self.add_artifact_setting(service, artifact_reference, resource_setting)
+
+    def _get_bound_setting_env_filename(self, environment: Environment, bound_setting: BoundSetting) -> str:
+        if bound_setting.artifact:
+            return self._get_artifact_setting_envfile(bound_setting.artifact, bound_setting.setting.sensitive)
+        elif bound_setting.resource:
+            return self._get_resource_setting_envfile(bound_setting.resource, bound_setting.setting.sensitive)
+        else:
+            raise ValueError("BoundSetting needs an artifact or resource reference.")
+
+    def delete(self, environment: Environment, bound_setting: BoundSetting):
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+        raise Exception()
+
+    def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+
+        key = f""
+
+        return os.path.exists(filename)
+
+    def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+
+        raise Exception()
+
+    def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+        raise Exception()
+
+    def _exists(self, filename: str) -> bool:
+        return False
+
+    def _write_value(self):
+        pass
+
+
+@dataclass
 class DockerComposeInfrastructureAdapter:
     name: ClassVar[str] = "docker-compose"
-    _bolts: list[Bolt]
 
-    def __init__(self, bolts: list[Bolt] = []):
-        self._bolts = bolts
-        self.configs_adapter = DockerComposeConfigsAdapter()
-        self.secrets_adapter = DockerComposeSecretsAdapater()
+    _bolts: list[Bolt] = field(default_factory=list)
+    configs_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
+    # TODO: Make these the same instance
+    secrets_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
 
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
         """Call docker compose."""
@@ -425,9 +508,9 @@ class DockerComposeInfrastructureAdapter:
         for bolt in self._bolts:
             for artifact in bolt.artifacts:
                 if (
-                    artifact_reference.artifact == artifact.name
+                    artifact_reference.artifact_name == artifact.name
                     and artifact_reference.version == bolt.version
-                    and artifact_reference.project == bolt.project
+                    and artifact_reference.project_name == bolt.project
                 ):
                     return bolt, artifact
 
@@ -441,7 +524,7 @@ class DockerComposeInfrastructureAdapter:
 
         for bolt in self._bolts:
             references.extend(
-                [ArtifactReference(artifact.name, bolt.version, bolt.project) for artifact in bolt.executable_artifacts]
+                [ArtifactReference(bolt.project, artifact.name, bolt.version) for artifact in bolt.executable_artifacts]
             )
 
         return references
@@ -449,16 +532,17 @@ class DockerComposeInfrastructureAdapter:
     def list_projects(self) -> list[Project]:
         return []
 
-    def list_resources(self, environment: Environment) -> list[ResourceProviderArtifactReference]:
+    def list_project_bolts(self, project: Project) -> list[Bolt]:
+        return []
+
+    def list_resources(self, environment: Environment) -> list[ResourceProviderReference]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
         references = []
         for bolt in self._bolts:
             references.extend(
                 [
-                    ResourceProviderArtifactReference(
-                        resource, ArtifactReference(artifact.name, bolt.version, bolt.project)
-                    )
+                    ResourceProviderReference(resource, bolt.project, artifact.name, bolt.version)
                     for artifact in bolt.executable_artifacts
                     for resource in artifact.provides
                 ]
@@ -468,15 +552,18 @@ class DockerComposeInfrastructureAdapter:
 
     def resolve_resource_requirement(
         self, resource_requirement: ProjectResourceRequirement, environment: Environment
-    ) -> ResourceProviderArtifactReference:
+    ) -> ResourceProviderReference:
+        # Get the project_name of the requirement points to and compare our resources
+        requirement_project_name = resource_requirement.which()
+        requirement_resource_name = resource_requirement.resource_name
         for resource_provider_artifact_reference in self.list_resources(environment=environment):
             if (
-                resource_provider_artifact_reference.artifact.project == resource_requirement.project
-                and resource_provider_artifact_reference.resource.name == resource_requirement.resource
+                resource_provider_artifact_reference.project_name == requirement_project_name
+                and resource_provider_artifact_reference.resource.name == requirement_resource_name
             ):
                 return resource_provider_artifact_reference
 
-        raise UnknownResourceRequirement(resource_requirement.project, resource_requirement.resource)
+        raise UnknownResourceRequirement(requirement_project_name, requirement_resource_name)
 
     def teardown(
         self,
@@ -494,28 +581,3 @@ class DockerComposeInfrastructureAdapter:
         )
 
         self._call_compose(docker_compose_project, ["down"])
-
-
-class DockerComposeSettingsAdapter(SettingsAdapter):
-    def delete(self, setting: ExecutableArtifactSetting):
-        raise Exception()
-
-    def exists(self, setting: ExecutableArtifactSetting) -> bool:
-        return False
-
-    def read(self, setting: ExecutableArtifactSetting) -> SettingValue:
-        raise Exception()
-
-    def write(self, setting: ExecutableArtifactSetting, value: SettingValue):
-        raise Exception()
-
-    def _write_value(self):
-        pass
-
-
-class DockerComposeConfigsAdapter(DockerComposeSettingsAdapter):
-    pass
-
-
-class DockerComposeSecretsAdapater(DockerComposeSettingsAdapter):
-    pass
