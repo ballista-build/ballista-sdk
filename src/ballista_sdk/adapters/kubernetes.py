@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, NotRequired, Protocol, TypedDict
+from typing import Any, ClassVar, Final, NotRequired, Protocol, TypedDict, cast
 
 import yaml
 from kubernetes import client, config, utils
@@ -200,13 +200,11 @@ def _generate_artifact_resources(
 
 
 def _generate_yaml_files(k8s_resources: Sequence[KubernetesResource]) -> dict[str, str]:
-    return {kind.lower() + ".yaml": yaml.dump(data) for kind, data in k8s_resources}
+    return {kind.lower() + ".yaml": str(yaml.dump(data)) for kind, data in k8s_resources}
 
 
 # Settings
-class BaseKubernetesSettingsAdapter(SettingsAdapter):
-    verify_before_deploy: ClassVar[bool] = True
-
+class BaseKubernetesSettingsAdapter:
     def _get_artifact_settings_refname(self, artifact_reference: ArtifactReference) -> str:
         return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
 
@@ -216,15 +214,10 @@ class BaseKubernetesSettingsAdapter(SettingsAdapter):
     def _add_setting_reference(
         self, container_spec: dict, ref_name: str, sensitive: bool, required: bool, prefix: str | None
     ):
-        reference = {
-            "name": ref_name,
-            "optional": not required,
-        }
+        ref_type = "secretRef" if sensitive else "configMapRef"
+        reference = {"name": ref_name, "optional": not required}
 
-        if sensitive:
-            env = {"secretRef": reference}
-        else:
-            env = {"configMapRef": reference}
+        env: dict[str, dict | str] = {ref_type: reference}
         if prefix:
             env["prefix"] = prefix + "_"
 
@@ -266,7 +259,7 @@ class BaseKubernetesSettingsAdapter(SettingsAdapter):
             self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
 
     def delete(self, environment: Environment, bound_setting: BoundSetting):
-        pass
+        raise Exception()
 
     def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
         return False
@@ -282,25 +275,32 @@ class BaseKubernetesSettingsAdapter(SettingsAdapter):
         return []
 
     def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
-        return 0
+        raise Exception()
 
     def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
-        pass
+        raise Exception()
 
 
+@dataclass
 class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter):
+    verify_before_deploy: ClassVar[Final[bool]] = True
+
     def get_configmaps(self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> list[str]:
         """Get list of ConfigMaps needed for ExecutableArtifact."""
         return []
 
 
+@dataclass
 class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter):
+    verify_before_deploy: ClassVar[Final[bool]] = True
+
     def get_namespace_name(self, secret) -> str:
         return ""
 
 
+@dataclass
 class ExternalSecretsAdapter(BaseKubernetesSettingsAdapter):
-    verify_before_deploy: ClassVar[bool] = False
+    verify_before_deploy: ClassVar[Final[bool]] = False
 
 
 # Resources
@@ -310,7 +310,7 @@ class CrossPlaneV2ResourceAdapter:
 
 @dataclass
 class KubernetesInfrastructureAdapter:
-    name: ClassVar[str] = "kubernetes"
+    name: ClassVar[Final[str]] = "kubernetes"
 
     _generators: ClassVar[list[KubernetesResourcesGenerator]] = []
 
@@ -431,7 +431,7 @@ class KubernetesInfrastructureAdapter:
 
         return executable_artifacts
 
-    def list_projects(self, environment: Environment) -> list[Project]:
+    def list_projects(self, environments: Sequence[Environment] | None = None) -> list[Project]:
         return []
 
     def list_project_bolts(self, project: Project) -> list[Bolt]:
@@ -460,18 +460,17 @@ class KubernetesInfrastructureAdapter:
         for deployment in api.list_deployment_for_all_namespaces(
             label_selector=f"app.kubernetes.io/managed-by={METADATA_MANAGED_BY},{METADATA_LABEL_ENVIRONMENT}={environment.name},{METADATA_LABEL_RESOURCE}"
         ).items:
-            labels = deployment.metadata.labels
-            resource_json = deployment.metadata.annotations.get(METADATA_ANNOTATION_RESOURCE)
+            metadata = cast(client.models.V1ObjectMeta, deployment.metadata)
+            labels = cast(dict[str, str], metadata.labels)
+            resource_json = metadata.annotations.get(METADATA_ANNOTATION_RESOURCE)
             if resource_json is not None:
                 try:
                     resource = Resource.model_validate_json(resource_json)
-                    ref = (
+                    ref = ResourceProviderReference(
                         resource,
-                        (
-                            labels["app.kubernetes.io/name"],
-                            labels["app.kubernetes.io/version"],
-                            labels["app.kubernetes.io/part-of"],
-                        ),
+                        labels["app.kubernetes.io/part-of"],
+                        labels["app.kubernetes.io/name"],
+                        labels["app.kubernetes.io/version"],
                     )
                     resources.append(ref)
 
@@ -558,8 +557,8 @@ def _generate_deployment(
 
     metadata = _get_artifact_metadata(environment, bolt, artifact)
 
-    env = []
-    env_from = []
+    env: list[dict] = []
+    env_from: list[dict] = []
 
     # TODO: This will need a better abstraction so it can use explicit Docker registries.
     artifact.type.docker_image
@@ -567,7 +566,7 @@ def _generate_deployment(
         image = f"{bolt.project}_{artifact.name}:{bolt.version}"
 
     # Create barebones PodSpec
-    container = {"name": artifact.name, "image": image}
+    container: dict[str, Any] = {"name": artifact.name, "image": image}
     pod_spec = {"containers": [container]}
 
     # Execution Parameters Resources
@@ -657,8 +656,8 @@ def _generate_deployment(
     # securityContext
     #
     # Volumes
-    volumes = []
-    volume_mounts = []
+    volumes: list[dict] = []
+    volume_mounts: list[dict] = []
     for volume in execution.volumes:
         # Mount Path
         volume_mount = {"mountPath": volume.path, "name": volume.name}
@@ -766,7 +765,10 @@ def _get_volume_claim(
     access_modes: list[str],
     execution_volume_parameters: VolumeExecutionParameters | None,
 ) -> dict:
-    volume_claim = {"accessModes": access_modes, "resources": {"requests": {"storage": f"{volume.capacity}G"}}}
+    volume_claim: dict[str, Any] = {
+        "accessModes": access_modes,
+        "resources": {"requests": {"storage": f"{volume.capacity}G"}},
+    }
 
     # Claim resources
     if execution_volume_parameters:
@@ -787,7 +789,7 @@ def _generate_persistent_volume_claims(
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
-    resources = []
+    resources: list[KubernetesResource] = []
     for volume in artifact.execution.volumes:
         if volume.persistent is False:
             continue
@@ -814,7 +816,7 @@ def _generate_ingresses(
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
-    hosts = {}
+    hosts: dict[str, dict] = {}
     for service in artifact.execution.services:
         http_service_port = service.http or service.grpc
         if not http_service_port:
@@ -837,10 +839,11 @@ def _generate_ingresses(
         }
 
         host = service_execution_parameters.host
-        if host in hosts:
-            hosts[host]["http"]["paths"].append(path)
-        else:
-            hosts[host] = {"host": host, "http": {"paths": [path]}}
+        if host:
+            if host in hosts:
+                hosts[host]["http"]["paths"].append(path)
+            else:
+                hosts[host] = {"host": host, "http": {"paths": [path]}}
 
     if not hosts:
         return []

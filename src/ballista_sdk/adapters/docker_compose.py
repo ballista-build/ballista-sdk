@@ -4,9 +4,9 @@ import os
 import subprocess
 import tempfile
 from collections import deque
-from collections.abc import Collection
+from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal
+from typing import Any, ClassVar, Final, Literal
 
 import yaml
 from pydantic import BaseModel
@@ -81,7 +81,7 @@ def _generate_docker_compose_project_from_bolt(
     adapter: DockerComposeInfrastructureAdapter,
     environment: Environment,
     bolt: Bolt,
-    artifacts: Collection[ExecutableArtifact],
+    artifacts: Sequence[ExecutableArtifact],
     execution_parameters: ExecutionParameters,
 ) -> DockerComposeProject:
     """Generate a docker compose project."""
@@ -396,8 +396,9 @@ def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRe
     return {}
 
 
-class DockerComposeSettingsAdapter(SettingsAdapter):
-    verify_before_deploy: ClassVar[bool] = True
+@dataclass
+class DockerComposeSettingsAdapter:
+    verify_before_deploy: ClassVar[Final[bool]] = True
 
     # TODO: This would be a great place for t-strings
     def _get_envfile_filename(self, ref_name: str, sensitive: bool) -> str:
@@ -486,14 +487,14 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
 
 @dataclass
 class DockerComposeInfrastructureAdapter:
-    name: ClassVar[str] = "docker-compose"
+    name: ClassVar[Final[str]] = "docker-compose"
 
     _bolts: list[Bolt] = field(default_factory=list)
     configs_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
     # TODO: Make these the same instance
     secrets_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
 
-    def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
+    def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Sequence[str]):
         """Call docker compose."""
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
@@ -506,7 +507,7 @@ class DockerComposeInfrastructureAdapter:
     def deploy(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
@@ -552,7 +553,7 @@ class DockerComposeInfrastructureAdapter:
 
         return references
 
-    def list_projects(self) -> list[Project]:
+    def list_projects(self, environments: Sequence[Environment] | None = None) -> list[Project]:
         return []
 
     def list_project_bolts(self, project: Project) -> list[Bolt]:
@@ -591,7 +592,7 @@ class DockerComposeInfrastructureAdapter:
     def teardown(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):

@@ -1,6 +1,6 @@
 from abc import ABC
 from enum import StrEnum, auto
-from typing import Annotated, ClassVar
+from typing import Annotated, Literal
 
 from pydantic import Field
 
@@ -25,8 +25,12 @@ class BaseSetting(BaseNamedModel, ABC, frozen=True):
 
 
 class Config(BaseSetting):
-    sensitive: ClassVar[bool] = False
+    @property
+    def sensitive(self) -> Literal[False]:
+        return False
 
 
 class Secret(BaseSetting):
-    sensitive: ClassVar[bool] = True
+    @property
+    def sensitive(self) -> Literal[True]:
+        return True

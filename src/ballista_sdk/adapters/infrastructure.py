@@ -53,7 +53,7 @@ class InfrastructureAdapter(Protocol):
         """List ExecutableArtifacts in the specified Environment."""
         ...
 
-    def list_projects(self) -> Sequence[Project]:
+    def list_projects(self, environments: Sequence[Environment] | None = None) -> Sequence[Project]:
         """List Projects."""
         ...
 
