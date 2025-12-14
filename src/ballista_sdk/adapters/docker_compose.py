@@ -46,19 +46,19 @@ class DockerComposeServiceVolume(BaseModel):
 
 
 class DockerComposeService(BaseModel):
-    build: dict[str, Any] | None = None
-    configs: list[str] | None = None
+    build: dict[str, Any] = {}
+    configs: list[str] = []
     container_name: str | None = None
-    depends_on: dict[str, dict[str, str]] | None = None
-    deploy: dict[str, Any] | None = None
-    develop: dict[str, Any] | None = None
-    environment: dict[str, Any] | None = None
-    env_file: list[dict] | None = None
-    healthcheck: dict[str, Any] | None = None
+    depends_on: dict[str, dict[str, str]] = {}
+    deploy: dict[str, Any] = {}
+    develop: dict[str, Any] = {}
+    environment: dict[str, Any] = {}
+    env_file: list[dict] = []
+    healthcheck: dict[str, Any] = {}
     image: str | None = None
     networks: dict[str, dict] = {}
     ports: list[dict[str, Any]] = []
-    secrets: list[str] | None = None
+    secrets: list[str] = []
     volumes: list[DockerComposeServiceVolume] = []
 
 
@@ -69,10 +69,10 @@ class DockerComposeProjectVolume(BaseModel):
 
 
 class DockerComposeProject(BaseModel):
-    configs: dict[str, Any] | None = None
+    configs: dict[str, Any] = {}
     name: str
     networks: dict[str, dict[str, Any]]
-    secrets: dict[str, Any] | None = None
+    secrets: dict[str, Any] = {}
     services: dict[str, DockerComposeService]
     volumes: dict[str, DockerComposeProjectVolume] = {}
 
@@ -285,7 +285,7 @@ def _generate_docker_compose_service_from_artifact(
     # Healthchecks; processed after services as they can depend on them.
     if healthchecks := execution.healthchecks:
         # Docker Compose only supports a single healthcheck
-        if probe := healthchecks.ready or healthchecks.alive or healthchecks.started:
+        if probe := (healthchecks.ready or healthchecks.alive or healthchecks.started):
             compose_service.healthcheck = _generate_healthcheck(probe, services_added)
 
     # Building
@@ -522,7 +522,7 @@ class DockerComposeInfrastructureAdapter:
             commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:
             commands = ["up", "--remove-orphans"]
-        print(docker_compose_project.model_dump_json())
+        print(docker_compose_project.model_dump_json(exclude_unset=True))
         self._call_compose(docker_compose_project, commands)
 
     def get_artifact_from_reference(

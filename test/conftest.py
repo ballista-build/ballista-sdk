@@ -78,94 +78,61 @@ version: "1"
     #     "typical": """
     # YAML
     # """,
-    #     "resource_provider": """
-    # api_version: "v1"
-    # artifacts: []
-    # project: "resource_provider"
-    # version: "1
-    # """
+    "resource_provider": """
+api_version: "v1"
+artifacts:
+      - name: "server"
+        execution: {}
+        provides:
+          - configs:
+              - data_type: "string"
+                description: "Host of Database server."
+                name: "host"
+                shared: True
+                title: "Host"
+              - data_type: "integer"
+                description: "Port Database server listens on."
+                name: "port"
+                shared: True
+                title: "Port"
+            description: "Resource Description"
+            name: "resource_provider-resource1"
+            instance_id_fields: ["name"]
+            prefix: "RESOURCE1"
+            requirements:
+                properties:
+                    name:
+                        type: string
+                required: ["name"]
+            secrets:
+              - data_type: "string"
+                description: "Name of database"
+                name: "name"
+                shared: False
+                title: "Database"
+              - data_type: "string"
+                description: "Login username to access database"
+                name: "username"
+                shared: False
+                title: "Username"
+              - data_type: "string"
+                description: "Login password to access database"
+                name: "password"
+                shared: False
+                title: "Password"
+            title: "Resource Provider Resource"
+        type:
+            docker_image:
+                image: "hello-world:latest"
+project: "resource_provider"
+version: "1"
+    """,
 }
 
 
-@pytest.fixture(scope="session", params=["simple"])
+@pytest.fixture(scope="session", params=["simple", "resource_provider"])
 def bolt_yaml(request) -> dict[str, str | dict]:
     return yaml.safe_load(TEST_BOLTS[request.param])
-
-
-@pytest.fixture(scope="session", params=["simple", "typical", "resource_provider"])
-def boltffff(
-    docker_image_artifact_type_need: ArtifactTypeRequirement,
-    postgres_bolt: Bolt,
-    request,
-) -> Bolt:
-    match request.param:
-        case "resource_provider":
-            resource = Resource(
-                configs=[
-                    ResourceConfig(
-                        data_type=SettingDataType.STRING,
-                        description="Host of Database server.",
-                        name="host",
-                        shared=True,
-                        title="Host",
-                    ),
-                    ResourceConfig(
-                        description="Port Database server listens on.",
-                        name="port",
-                        shared=True,
-                        data_type=SettingDataType.INTEGER,
-                        title="Port",
-                    ),
-                ],
-                description="Resource Description",
-                name="resource_provider-resource1",
-                instance_id_fields=["name"],
-                prefix="RESOURCE1",
-                requirements=ResourceRequirementParameters.model_validate(
-                    {"properties": {"name": {"type": "string"}}, "required": ["name"]}
-                ),
-                secrets=[
-                    ResourceSecret(
-                        description="Name of database",
-                        name="name",
-                        shared=False,
-                        title="Database",
-                        data_type=SettingDataType.STRING,
-                    ),
-                    ResourceSecret(
-                        description="Login username to access database",
-                        name="username",
-                        shared=False,
-                        title="Username",
-                        data_type=SettingDataType.STRING,
-                    ),
-                    ResourceSecret(
-                        description="Login password to access database",
-                        name="password",
-                        shared=False,
-                        title="Password",
-                        data_type=SettingDataType.STRING,
-                    ),
-                ],
-                title="Resource Provider Resource",
-            )
-
-            artifact = Artifact(
-                execution=ExecutionRequirements(),
-                name="server",
-                provides=[resource],
-                type=docker_image_artifact_type_need,
-            )
-
-            return Bolt(
-                api_version="v1",
-                artifacts=[artifact],
-                project="resource_provider",
-                version="1",
-            )
-
-        case _:
-            raise Exception()
 
 
 @pytest.fixture(scope="session")
