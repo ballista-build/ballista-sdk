@@ -45,7 +45,12 @@ def bolt(
             "simple",
             DockerComposeProject(
                 name="simple",
-                networks={},
+                networks={
+                    "project-postgres": {"internal": True, "name": "project-postgres"},
+                    "project-simple": {"internal": True, "name": "project-simple"},
+                    "env-test": {"internal": True, "name": "env-test"},
+                    "external-test.ballista.build": {"name": "external-test.ballista.build"},
+                },
                 services={
                     "simple-api": DockerComposeService(
                         container_name="simple-api",
@@ -72,7 +77,11 @@ def bolt(
                             "test": ["CMD-SHELL", "curl -f http://localhost:80/healthz"],
                         },
                         image="hello-world:latest",
-                        networks=[],
+                        networks={
+                            "project-simple": {},
+                            "env-test": {},
+                            "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
+                        },
                         ports=[{"name": "http", "published": "80", "target": 80}],
                         volumes=[
                             DockerComposeServiceVolume(
@@ -99,6 +108,11 @@ def bolt(
                             "test": ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"],
                         },
                         image="postgres:18.1",
+                        networks={
+                            "project-postgres": {},
+                            "env-test": {},
+                            "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
+                        },
                         ports=[{"name": "postgres", "published": "5432", "target": 5432}],
                         volumes=[
                             DockerComposeServiceVolume(

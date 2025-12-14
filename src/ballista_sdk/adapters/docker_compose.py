@@ -56,7 +56,7 @@ class DockerComposeService(BaseModel):
     env_file: list[dict] | None = None
     healthcheck: dict[str, Any] | None = None
     image: str | None = None
-    networks: list[str] = []
+    networks: dict[str, dict] = {}
     ports: list[dict[str, Any]] = []
     secrets: list[str] | None = None
     volumes: list[DockerComposeServiceVolume] = []
@@ -89,7 +89,8 @@ def _generate_docker_compose_project_from_bolt(
     if len(artifacts) == 0:
         raise ValueError("No ExecutableArtifactes to generate for.")
 
-    compose_project = DockerComposeProject(name=bolt.project, networks={}, services={}, volumes={})
+    networks = {f"env-{environment.name}": {"internal": True, "name": f"env-{environment.name}"}}
+    compose_project = DockerComposeProject(name=bolt.project, networks=networks, services={}, volumes={})
 
     resource_service_names: dict[str, str] = {}
 
@@ -127,15 +128,20 @@ def _generate_docker_compose_project_from_bolt(
                 artifact_deque.append((artifact_bolt, artifact))
                 continue
 
+        project_network_name = f"project-{artifact_bolt.project}"
+        if project_network_name not in networks:
+            compose_project.networks[project_network_name] = {"internal": True, "name": project_network_name}
+
         # We can generate this artifact!
+        artifact_execution_parameters = execution_parameters.params_for_artifact(
+            environment=environment, bolt=artifact_bolt, artifact=artifact
+        )
         compose_service = _generate_docker_compose_service_from_artifact(
             adapter=adapter,
             environment=environment,
             bolt=artifact_bolt,
             artifact=artifact,
-            execution_parameters=execution_parameters.params_for_artifact(
-                environment=environment, bolt=bolt, artifact=artifact
-            ),
+            execution_parameters=artifact_execution_parameters,
         )
 
         if artifact.execution.resources:
@@ -143,6 +149,15 @@ def _generate_docker_compose_project_from_bolt(
                 resource_service_names[resource_requirement.resource_name]: {"condition": "service_healthy"}
                 for resource_requirement in artifact.execution.resources
             }
+
+        if artifact.execution.services:
+            for service in artifact.execution.services:
+                external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
+                if external_service_parameters and external_service_parameters.host is not None:
+                    network_name = f"external-{external_service_parameters.host}"
+
+                    if network_name not in compose_project.networks:
+                        compose_project.networks[network_name] = {"name": network_name}
 
         compose_project.services[artifact_ref_name] = compose_service
 
@@ -180,7 +195,9 @@ def _generate_docker_compose_service_from_artifact(
     artifact_ref_name = _get_artifact_ref_name(bolt, artifact)
     artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
-    compose_service = DockerComposeService(container_name=artifact_ref_name)
+    compose_service = DockerComposeService(
+        container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
+    )
 
     if compute_parameters := execution_parameters.compute:
         resource_max = {}
@@ -245,8 +262,13 @@ def _generate_docker_compose_service_from_artifact(
         external_service_parameters = execution_parameters.external_services.get(service.name)
         if external_service_parameters and external_service_parameters.host is not None:
             host = external_service_parameters.host
+
             if external_service_parameters.path:
                 path = external_service_parameters.path
+
+            network_name = f"external-{host}"
+            if network_name not in compose_service.networks:
+                compose_service.networks[network_name] = {"aliases": [host]}
 
             compose_service.ports.append(
                 {
@@ -500,6 +522,7 @@ class DockerComposeInfrastructureAdapter:
             commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:
             commands = ["up", "--remove-orphans"]
+        print(docker_compose_project.model_dump_json())
         self._call_compose(docker_compose_project, commands)
 
     def get_artifact_from_reference(
