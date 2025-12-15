@@ -3,17 +3,36 @@ from typing import cast
 import pytest
 
 from ballista_sdk.adapters.kubernetes import (
+    BoundSetting,
+    KubernetesConfigsAdapter,
     KubernetesInfrastructureAdapter,
     KubernetesResource,
+    KubernetesSecretsAdapter,
     _generate_bolt_resources,
 )
-from ballista_sdk.api.v1 import Bolt, Environment, ExecutableArtifact, ExecutionParameters
+from ballista_sdk.api.v1 import (
+    ArtifactReference,
+    Bolt,
+    Environment,
+    ExecutableArtifact,
+    ExecutionParameters,
+    SettingDataType,
+)
 from ballista_sdk.bolts.v1 import BoltV1Factory
 
 
 @pytest.fixture(scope="session")
 def kubernetes_adapter(fake_bolts: list[Bolt]):
     return KubernetesInfrastructureAdapter(fake_bolts)
+
+
+@pytest.fixture(scope="session", params=[pytest.param("configmap", marks=[pytest.mark.integration])])
+def configs_adapters(request) -> KubernetesConfigsAdapter:
+    match request.param:
+        case "configmap":
+            return KubernetesConfigsAdapter()
+
+    raise ValueError()
 
 
 @pytest.fixture(scope="session")
@@ -284,7 +303,8 @@ def resource_provider_bolt_resources():
     }
 
 
-def test_resource_generation(
+@pytest.mark.unit
+def test_generate_resources(
     request,
     bolt: Bolt,
     environment: Environment,
@@ -306,3 +326,69 @@ def test_resource_generation(
         )
         == resources
     )
+
+
+@pytest.mark.integration
+def test_artifact_configs(
+    bolt: Bolt,
+    sample_artifact_configs: tuple,
+    configs_adapters: KubernetesConfigsAdapter,
+    environment: Environment,
+):
+    config, setting_value = sample_artifact_configs
+    bound_config = BoundSetting(
+        setting=config, artifact=ArtifactReference(bolt.project, bolt.executable_artifacts[0].name, bolt.version)
+    )
+
+    assert configs_adapters.exists(environment, bound_config) is False
+
+    configs_adapters.write(environment, bound_config, setting_value)
+
+    assert configs_adapters.read(environment, bound_config) == setting_value
+
+
+@pytest.mark.unit
+def test_kubernetes_configs_adapter_encoding():
+    configs = [
+        ("events_enabled", SettingDataType.BOOLEAN, True),
+        ("events_disabled", SettingDataType.BOOLEAN, False),
+        ("name", SettingDataType.STRING, "francis bombast"),
+        ("key_material", SettingDataType.BYTES, b"some binary data"),
+        ("max_limit_request", SettingDataType.INTEGER, 445),
+    ]
+
+    configs_adapter = KubernetesConfigsAdapter()
+
+    assert configs_adapter._generate_configmap_data(configs) == {
+        "binaryData": {"key_material": b"c29tZSBiaW5hcnkgZGF0YQ=="},
+        "data": {
+            "events_enabled": "True",
+            "events_disabled": "False",
+            "name": "francis bombast",
+            "max_limit_request": "445",
+        },
+    }
+
+
+@pytest.mark.unit
+def test_kubernetes_secrets_adapter_encoding():
+    secrets = [
+        ("events_enabled", SettingDataType.BOOLEAN, True),
+        ("events_disabled", SettingDataType.BOOLEAN, False),
+        ("name", SettingDataType.STRING, "francis bombast"),
+        ("key_material", SettingDataType.BYTES, b"some binary data"),
+        ("max_limit_request", SettingDataType.INTEGER, 445),
+    ]
+
+    secrets_adapter = KubernetesSecretsAdapter()
+
+    assert secrets_adapter._generate_secret_data(secrets) == {
+        "data": {
+            "events_enabled": b"VHJ1ZQ==",
+            "events_disabled": b"RmFsc2U=",
+            "key_material": b"c29tZSBiaW5hcnkgZGF0YQ==",
+            "name": b"ZnJhbmNpcyBib21iYXN0",
+            "max_limit_request": b"NDQ1",
+        },
+        "type": "Opaque",
+    }

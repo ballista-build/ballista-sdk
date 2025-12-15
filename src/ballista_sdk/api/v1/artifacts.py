@@ -1,6 +1,6 @@
 from typing import Annotated, ClassVar
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
 
 from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
@@ -69,6 +69,8 @@ class HealthcheckRequirements(BaseModel):
 class ResourceRequirement(BaseModel):
     """A Resource requirement with optional prefix."""
 
+    model_config = ConfigDict(extra="allow")
+
     prefix: Annotated[
         str | None, Field(description="Prefix for injected Resource values. Defaults to Resource's prefix if not set.")
     ] = None
@@ -94,9 +96,23 @@ class ResourceRequirement(BaseModel):
 class ProjectResourceRequirement(BaseOneOfModel):
     """Execution requirement for a specific Project Resource."""
 
+    model_config = ConfigDict(extra="allow")
+
+    def which(self) -> str | None:
+        which = super().which()
+        if which:
+            return which
+
+        # Check extra data
+        raise Exception(self.__pydantic_extra__)
+
     @property
     def _resource_requirement(self) -> ResourceRequirement:
-        return getattr(self, self.which())
+        if which := self.which():
+            return getattr(self, which)
+
+        # Check extra data for an unregistered requirement
+        raise Exception(self.__pydantic_extra__)
 
     @property
     def prefix(self) -> str | None:

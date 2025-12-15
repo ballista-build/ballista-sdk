@@ -12,15 +12,15 @@ class SettingDataType(StrEnum):
     """A boolean."""
     BYTES = auto()
     """Raw bytes."""
-    INTEGER = auto()
-    """32-bit integer."""
     FLOAT = auto()
     """64-bit float."""
+    INTEGER = auto()
+    """32-bit integer."""
     STRING = auto()
     """UTF-8 encoded string."""
 
 
-class BaseSetting(BaseNamedModel, ABC, frozen=True):
+class BaseSetting(BaseNamedModel, ABC):
     data_type: Annotated[SettingDataType, Field(description="Data type of value.")]
 
 

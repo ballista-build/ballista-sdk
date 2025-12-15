@@ -156,6 +156,7 @@ def bolt(
     raise Exception("WTF")
 
 
+@pytest.mark.unit
 def test_generate_docker_compose(
     request,
     bolt: Bolt,

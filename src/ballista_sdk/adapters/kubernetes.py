@@ -1,14 +1,15 @@
 from __future__ import annotations
 
+import base64
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Final, NotRequired, Protocol, TypedDict, cast
+from typing import Any, ClassVar, Literal, NotRequired, Protocol, TypedDict, cast
 
 import yaml
 from kubernetes import client, config, utils
 
 from ballista_sdk.adapters.exceptions import UnknownResourceRequirement
-from ballista_sdk.adapters.settings import BoundSetting, Setting, SettingsAdapter, SettingValue
+from ballista_sdk.adapters.settings import BoundSetting, Config, Secret, Setting, SettingValue
 from ballista_sdk.api.v1 import (
     ArtifactExecutionParameters,
     ArtifactReference,
@@ -26,6 +27,7 @@ from ballista_sdk.api.v1 import (
     ResourceReference,
     ResourceSetting,
     ServiceRequirement,
+    SettingDataType,
     VolumeExecutionParameters,
     VolumeRequirement,
 )
@@ -42,7 +44,7 @@ class KubernetesResource(TypedDict):
     apiVersion: str
     kind: str
     metadata: KubernetesMetadata
-    spec: dict[str, Any]
+    spec: NotRequired[dict[str, Any]]
 
 
 """
@@ -152,7 +154,9 @@ def _generate_bolt_resources(
 
 def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict[str, dict] | None:
     if probe.exec:
-        return {"exec": {"command": probe.exec.commands}}
+        commands = ["sh", "-c"] if probe.exec.shell else []
+
+        return {"exec": {"command": commands}}
 
     # Get port common in grpc, http, and port probes
     port_probe = probe.grpc or probe.http or probe.tcp
@@ -204,7 +208,7 @@ def _generate_yaml_files(k8s_resources: Sequence[KubernetesResource]) -> dict[st
 
 
 # Settings
-class BaseKubernetesSettingsAdapter:
+class BaseKubernetesSettingsAdapter[SettingType: Setting]:
     def _get_artifact_settings_refname(self, artifact_reference: ArtifactReference) -> str:
         return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
 
@@ -262,7 +266,7 @@ class BaseKubernetesSettingsAdapter:
         raise Exception()
 
     def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
-        return False
+        raise Exception()
 
     def generate_kubernetes_resources(
         self,
@@ -282,36 +286,60 @@ class BaseKubernetesSettingsAdapter:
 
 
 @dataclass
-class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter):
-    verify_before_deploy: ClassVar[Final[bool]] = True
+class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[Config]):
+    @property
+    def verify_before_deploy(self) -> Literal[True]:
+        return True
 
-    def get_configmaps(self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> list[str]:
-        """Get list of ConfigMaps needed for ExecutableArtifact."""
+    def _generate_configmap_data(self, configs: list[tuple[str, SettingDataType, SettingValue]]):
+        binary_data: dict[str, bytes] = {}
+        data: dict[str, str] = {}
+        for name, data_type, value in configs:
+            if data_type == SettingDataType.BYTES:
+                binary_data[name] = base64.b64encode(cast(bytes, value))
+            else:
+                data[name] = str(value)
+
+        return ({"binaryData": binary_data} if binary_data else {}) | ({"data": data} if data else {})
+
+    def generate_kubernetes_resources(
+        self,
+        adapter: KubernetesInfrastructureAdapter,
+        environment: Environment,
+        bolt: Bolt,
+        artifact: ExecutableArtifact,
+        artifact_execution_parameters: ArtifactExecutionParameters,
+    ) -> list[KubernetesResource]:
         return []
 
 
 @dataclass
-class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter):
-    verify_before_deploy: ClassVar[Final[bool]] = True
+class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[Secret]):
+    @property
+    def verify_before_deploy(self) -> Literal[True]:
+        return True
 
-    def get_namespace_name(self, secret) -> str:
-        return ""
+    def _generate_secret_data(self, secrets: list[tuple[str, SettingDataType, SettingValue]]):
+        return {
+            "data": {
+                name: base64.b64encode(
+                    cast(bytes, value) if data_type == SettingDataType.BYTES else str(value).encode()
+                )
+                for name, data_type, value in secrets
+            },
+            "type": "Opaque",
+        }
 
 
 @dataclass
 class ExternalSecretsAdapter(BaseKubernetesSettingsAdapter):
-    verify_before_deploy: ClassVar[Final[bool]] = False
-
-
-# Resources
-class CrossPlaneV2ResourceAdapter:
-    pass
+    @property
+    def verify_before_deploy(self) -> Literal[False]:
+        return False
 
 
 @dataclass
 class KubernetesInfrastructureAdapter:
-    name: ClassVar[Final[str]] = "kubernetes"
-
     _generators: ClassVar[list[KubernetesResourcesGenerator]] = []
 
     _bolts: list[Bolt] = field(default_factory=list)
@@ -324,6 +352,10 @@ class KubernetesInfrastructureAdapter:
         """Add KubernetesResourceGenerator to be included when generating."""
         cls._generators.append(method)
         return method
+
+    @property
+    def name(self) -> Literal["kubernetes"]:
+        return "kubernetes"
 
     def deploy(
         self,
@@ -484,6 +516,11 @@ class KubernetesInfrastructureAdapter:
     ) -> ResourceProviderReference:
         requirement_project_name = resource_requirement.which()
         requirement_resource_name = resource_requirement.resource_name
+
+        if requirement_project_name is None or requirement_resource_name is None:
+            raise UnknownResourceRequirement("PROJECT", "RESOURCE")
+
+        # TODO: Do a smarter lookup via K8s API
         for resource_with_provider_artifact in self.list_resources(environment):
             if (
                 resource_with_provider_artifact.project_name == requirement_project_name

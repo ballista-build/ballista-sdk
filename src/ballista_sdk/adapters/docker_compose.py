@@ -398,7 +398,9 @@ def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRe
 
 @dataclass
 class DockerComposeSettingsAdapter:
-    verify_before_deploy: ClassVar[Final[bool]] = True
+    @property
+    def verify_before_deploy(self) -> Literal[True]:
+        return True
 
     # TODO: This would be a great place for t-strings
     def _get_envfile_filename(self, ref_name: str, sensitive: bool) -> str:
@@ -487,12 +489,14 @@ class DockerComposeSettingsAdapter:
 
 @dataclass
 class DockerComposeInfrastructureAdapter:
-    name: ClassVar[Final[str]] = "docker-compose"
-
     _bolts: list[Bolt] = field(default_factory=list)
     configs_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
     # TODO: Make these the same instance
     secrets_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
+
+    @property
+    def name(self) -> Literal["docker-compose"]:
+        return "docker-compose"
 
     def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Sequence[str]):
         """Call docker compose."""
