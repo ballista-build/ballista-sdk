@@ -1,46 +1,20 @@
 import pytest
 
-from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
-from ballista_sdk.adapters.settings import SettingsAdapter, SettingValue
-from ballista_sdk.api.v1 import (
-    Bolt,
-    ConfigRequirement,
-    ResourceConfig,
-    ResourceSecret,
-    SecretRequirement,
-    SettingDataType,
-)
+from ballista_sdk.adapters.docker_compose import DockerComposeInfrastructureAdapter
+from ballista_sdk.adapters.kubernetes import KubernetesInfrastructureAdapter
+from ballista_sdk.api.v1 import Bolt
 
 
-@pytest.fixture(
-    scope="session", params=["bool_false", "bool_true", "bytes", "float", "integer_neg", "integer_pos", "string"]
-)
-def sample_artifact_configs(request) -> tuple[ConfigRequirement, SettingValue]:
-    match request.param:
-        case "bool_true":
-            return ConfigRequirement(name="Bool True", data_type=SettingDataType.BOOLEAN), True
-        case "bool_false":
-            return ConfigRequirement(name="Bool False", data_type=SettingDataType.BOOLEAN), False
-        case "bytes":
-            return ConfigRequirement(name="Bytes", data_type=SettingDataType.BYTES), bytes.fromhex("2EF0F1F2")
-        case "float":
-            return ConfigRequirement(name="Float", data_type=SettingDataType.FLOAT), 1.24
-        case "integer_pos":
-            return ConfigRequirement(name="Integer Positive", data_type=SettingDataType.INTEGER), 36
-        case "integer_neg":
-            return ConfigRequirement(name="Integer Negative", data_type=SettingDataType.INTEGER), -24593
-        case "string":
-            return ConfigRequirement(name="String", data_type=SettingDataType.STRING), "burgundy blue hair"
-        case _:
-            raise ValueError()
+@pytest.fixture(scope="session")
+def docker_compose_adapter(fake_bolts: list[Bolt]):
+    adapter = DockerComposeInfrastructureAdapter(fake_bolts)
+
+    return adapter
 
 
-class InfrastructureAdapterTester[Adapter: InfrastructureAdapter]:
-    pass
-
-
-class SettingsAdapterTester[Adapter: SettingsAdapter]:
-    pass
+@pytest.fixture(scope="session")
+def kubernetes_adapter(fake_bolts: list[Bolt]):
+    return KubernetesInfrastructureAdapter(fake_bolts)
 
 
 @pytest.fixture(scope="session")

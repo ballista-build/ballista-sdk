@@ -16,13 +16,6 @@ from ballista_sdk.api.v1 import (
 from ballista_sdk.bolts.v1 import BoltV1Factory
 
 
-@pytest.fixture(scope="session")
-def docker_compose_adapter(fake_bolts: list[Bolt]):
-    adapter = DockerComposeInfrastructureAdapter(fake_bolts)
-
-    return adapter
-
-
 @pytest.fixture
 def simple_docker_compose_project():
     return DockerComposeProject(

@@ -1,9 +1,10 @@
-from typing import Annotated, Literal, NamedTuple, cast
+from typing import Annotated, Literal, NamedTuple, Sequence, cast
 
 from pydantic import BaseModel, Field
 
 from .artifacts import Artifact, BuildableArtifact, ExecutableArtifact, Resource
 from .common import BaseNamedModel
+from .settings import Setting
 
 
 class Bolt(BaseModel, frozen=True):
@@ -60,3 +61,14 @@ class ResourceProviderReference(NamedTuple):
             return ArtifactReference(
                 project_name=self.project_name, artifact_name=self.artifact_name, version=self.version
             )
+
+
+class BoundSetting(NamedTuple):
+    """A Setting bound to an owner."""
+
+    setting: Setting
+    artifact: ArtifactReference | None = None
+    """Artifact setting exists in."""
+    resource: ResourceReference | None = None
+    """Resource setting exists in."""
+    resource_instance: Sequence[str] | None = None

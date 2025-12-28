@@ -18,6 +18,7 @@ from .artifacts import (
 from .bolts import (
     ArtifactReference,
     Bolt,
+    BoundSetting,
     Project,
     Resource,
     ResourceProviderReference,
@@ -35,7 +36,7 @@ from .execution import (
     VolumeExecutionParameters,
 )
 from .resources import ResourceConfig, ResourceRequirementParameters, ResourceSecret, ResourceSetting
-from .settings import SettingDataType
+from .settings import Config, Secret, Setting, SettingDataType, SettingValue
 
 __all__ = [
     "Artifact",
@@ -44,7 +45,9 @@ __all__ = [
     "ArtifactType",
     "ArtifactTypeRequirement",
     "Bolt",
+    "BoundSetting",
     "ComputeExecutionParameters",
+    "Config",
     "ConfigRequirement",
     "DefaultExecutionParameters",
     "Environment",
@@ -69,9 +72,12 @@ __all__ = [
     "ResourceSecret",
     "ResourceSetting",
     "ScalingExecutionParameters",
+    "Secret",
     "SecretRequirement",
     "ServiceRequirement",
+    "Setting",
     "SettingDataType",
+    "SettingValue",
     "TCPAction",
     "VolumeExecutionParameters",
     "VolumeRequirement",

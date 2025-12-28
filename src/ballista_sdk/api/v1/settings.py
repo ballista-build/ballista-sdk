@@ -20,6 +20,10 @@ class SettingDataType(StrEnum):
     """UTF-8 encoded string."""
 
 
+SettingValue = bool | bytes | float | str
+"""Supported setting value types."""
+
+
 class BaseSetting(BaseNamedModel, ABC):
     data_type: Annotated[SettingDataType, Field(description="Data type of value.")]
 
@@ -34,3 +38,6 @@ class Secret(BaseSetting):
     @property
     def sensitive(self) -> Literal[True]:
         return True
+
+
+Setting = Config | Secret
