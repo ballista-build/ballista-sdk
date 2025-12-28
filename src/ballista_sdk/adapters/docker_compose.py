@@ -119,7 +119,9 @@ def _generate_docker_compose_project_from_bolt(
                         requeue = True
 
                         if provider_artifact not in artifact_deque:
-                            artifact_deque.appendleft((provider_artifact_bolt, provider_artifact))
+                            artifact_deque.appendleft(
+                                (provider_artifact_bolt, cast(ExecutableArtifact, provider_artifact))
+                            )
 
                     else:
                         # TODO: Virtual service stuff!

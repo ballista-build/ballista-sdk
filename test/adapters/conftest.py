@@ -1,19 +1,20 @@
 import pytest
 
+from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.adapters.docker_compose import DockerComposeInfrastructureAdapter
 from ballista_sdk.adapters.kubernetes import KubernetesInfrastructureAdapter
 from ballista_sdk.api.v1 import Bolt
 
 
 @pytest.fixture(scope="session")
-def docker_compose_adapter(fake_bolts: list[Bolt]):
+def docker_compose_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
     adapter = DockerComposeInfrastructureAdapter(fake_bolts)
 
     return adapter
 
 
 @pytest.fixture(scope="session")
-def kubernetes_adapter(fake_bolts: list[Bolt]):
+def kubernetes_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
     return KubernetesInfrastructureAdapter(fake_bolts)
 
 
