@@ -160,20 +160,18 @@ def _generate_docker_compose_project_from_bolt(
                     network_name = f"external-{external_service_parameters.host}"
 
                     if network_name not in compose_project.networks:
-                        compose_project.networks[network_name] = {"name": network_name}
+                        compose_project.networks = compose_project.networks | {network_name: {"name": network_name}}
 
         compose_project.services[artifact_ref_name] = compose_service
 
-        compose_project.volumes.update(
-            {
-                f"{artifact_ref_name}-{volume.name}": DockerComposeProjectVolume(
-                    driver="local",
-                    name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
-                )
-                for volume in artifact.execution.volumes
-                if volume.persistent
-            }
-        )
+        compose_project.volumes = compose_project.volumes | {
+            f"{artifact_ref_name}-{volume.name}": DockerComposeProjectVolume(
+                driver="local",
+                name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
+            )
+            for volume in artifact.execution.volumes
+            if volume.persistent
+        }
 
         if artifact.provides:
             resource_service_names.update({resource.name: artifact_ref_name for resource in artifact.provides})
@@ -434,10 +432,8 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
 
         env = {"format": "raw", "path": filename, "required": required}
 
-        if service.env_file is None:
-            service.env_file = [env]
-        elif env not in service.env_file:
-            service.env_file.append(env)
+        if env not in service.env_file:
+            service.env_file = service.env_file + [env]
 
     def add_artifact_setting(
         self, service: DockerComposeService, artifact_reference: ArtifactReference, setting: Setting
@@ -565,7 +561,7 @@ class DockerComposeInfrastructureAdapter:
         """Call docker compose."""
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
-            docker_compose_dict = docker_compose_project.model_dump(exclude_none=True)
+            docker_compose_dict = docker_compose_project.model_dump(exclude_none=True, exclude_unset=True)
             yaml.dump(docker_compose_dict, stream=f, encoding="utf-8")
 
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
@@ -590,7 +586,7 @@ class DockerComposeInfrastructureAdapter:
             commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:
             commands = ["up", "--remove-orphans"]
-        print(docker_compose_project.model_dump_json(exclude_unset=True))
+        print(docker_compose_project.model_dump_json(indent=4, exclude_none=True, exclude_unset=True))
         self._call_compose(docker_compose_project, commands)
 
     def get_artifact_from_reference(

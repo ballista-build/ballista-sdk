@@ -69,7 +69,7 @@ class HealthcheckRequirements(BaseModel):
 class ResourceRequirement(BaseModel):
     """A Resource requirement with optional prefix."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     prefix: Annotated[
         str | None, Field(description="Prefix for injected Resource values. Defaults to Resource's prefix if not set.")
@@ -96,7 +96,7 @@ class ResourceRequirement(BaseModel):
 class ProjectResourceRequirement(BaseOneOfModel):
     """Execution requirement for a specific Project Resource."""
 
-    model_config = ConfigDict(extra="allow")
+    model_config = ConfigDict(extra="forbid")
 
     def which(self) -> str | None:
         which = super().which()
