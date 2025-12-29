@@ -20,7 +20,7 @@ dependencies = [
 [dependency-groups]
 dev = [
     "ruff>=0.9",
-    "pytest>=8.3",
+    "pytest>=9.0",
     "coverage>=7.7",
     "ty>=0.0.1a21",
     "kubernetes-typed[client]>=18.20.2",

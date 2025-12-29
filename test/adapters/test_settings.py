@@ -86,69 +86,17 @@ def secrets_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapte
     raise ValueError()
 
 
-@pytest.fixture(
-    scope="session", params=["bool_false", "bool_true", "bytes", "float", "integer_neg", "integer_pos", "string"]
-)
-def sample_settings(request) -> tuple[str, SettingDataType, SettingValue]:
-    match request.param:
-        case "bool_false":
-            data_type, value = SettingDataType.BOOLEAN, False
-        case "bool_true":
-            data_type, value = SettingDataType.BOOLEAN, True
-        case "bytes":
-            data_type, value = SettingDataType.BYTES, bytes.fromhex("2EF0F1F2")
-        case "float":
-            data_type, value = SettingDataType.FLOAT, 1.24
-        case "integer_pos":
-            data_type, value = SettingDataType.INTEGER, 36
-        case "integer_neg":
-            data_type, value = SettingDataType.INTEGER, -24593
-        case "string":
-            data_type, value = SettingDataType.STRING, "burgundy blue hair"
-        case _:
-            raise ValueError()
-
-    return request.param, data_type, value
-
-
-@pytest.fixture
-def sample_artifact_configs(
-    sample_settings: tuple[str, SettingDataType, SettingValue],
-) -> tuple[ConfigRequirement, SettingValue]:
-    name, data_type, value = sample_settings
-    return ConfigRequirement(
-        name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type
-    ), value
-
-
-@pytest.fixture
-def sample_artifact_secrets(
-    sample_settings: tuple[str, SettingDataType, SettingValue],
-) -> tuple[SecretRequirement, SettingValue]:
-    name, data_type, value = sample_settings
-    return SecretRequirement(
-        name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type
-    ), value
-
-
-@pytest.fixture
-def sample_resource_configs(
-    sample_settings: tuple[str, SettingDataType, SettingValue],
-) -> tuple[ResourceConfig, SettingValue]:
-    name, data_type, value = sample_settings
-    return ResourceConfig(
-        name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type, shared=True
-    ), value
-
-
-@pytest.fixture
-def sample_resource_secrets(
-    sample_settings: tuple[str, SettingDataType, SettingValue],
-) -> tuple[ResourceSecret, SettingValue]:
-    name, data_type, value = sample_settings
-    return ResourceSecret(
-        name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type, shared=True
-    ), value
+@pytest.fixture(scope="session")
+def sample_settings() -> list[tuple[str, SettingDataType, SettingValue]]:
+    return [
+        ("bool_false", SettingDataType.BOOLEAN, False),
+        ("bool_true", SettingDataType.BOOLEAN, True),
+        ("bytes", SettingDataType.BYTES, bytes.fromhex("2EF0F1F2")),
+        ("float", SettingDataType.FLOAT, 1.24),
+        ("integer_pos", SettingDataType.INTEGER, 36),
+        ("integer_neg", SettingDataType.INTEGER, -24593),
+        ("string", SettingDataType.STRING, "burgundy blue hair"),
+    ]
 
 
 def _test_setting(settings_adapter, environment, bound_setting, setting_value, known_setting):
@@ -193,77 +141,81 @@ def _test_setting(settings_adapter, environment, bound_setting, setting_value, k
         assert known_value == "commodity"
 
 
-def test_artifact_configs(
-    sample_artifact_configs: tuple,
+def test_configs(
+    sample_settings: list[tuple[str, SettingDataType, SettingValue]],
     configs_adapters: SettingsAdapter,
     environment: Environment,
+    subtests: pytest.Subtests,
 ):
-    config, setting_value = sample_artifact_configs
     artifact = ArtifactReference("ephemeral", "agasi", "1.2.3")
-    bound_config = BoundSetting(setting=config, artifact=artifact)
+    resource = ResourceReference("ephemeral", "resource")
 
-    # Write a known config to ensure isolation
-    known_config = BoundSetting(
-        setting=ConfigRequirement(name="known", data_type=SettingDataType.STRING), artifact=artifact
-    )
-    with configs_adapters as ca:
-        ca.write(environment, known_config, "commodity")
+    for name, data_type, value in sample_settings:
+        artifact_config = BoundSetting(
+            artifact=artifact,
+            setting=ConfigRequirement(
+                name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type
+            ),
+        )
+        known_artifact_config = BoundSetting(
+            artifact=artifact, setting=ConfigRequirement(name="known", data_type=SettingDataType.STRING)
+        )
 
-    _test_setting(configs_adapters, environment, bound_config, setting_value, known_config)
+        with subtests.test(type="artifact", name=name):
+            with configs_adapters as ca:
+                ca.write(environment, known_artifact_config, "commodity")
+            _test_setting(configs_adapters, environment, artifact_config, value, known_artifact_config)
+
+        resource_config = BoundSetting(
+            resource=resource,
+            setting=ResourceConfig(
+                name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type, shared=True
+            ),
+        )
+        known_resource_config = BoundSetting(
+            resource=resource, setting=ResourceConfig(name="known", data_type=SettingDataType.STRING, shared=True)
+        )
+        with subtests.test(type="resource", name=name):
+            with configs_adapters as ca:
+                ca.write(environment, known_resource_config, "commodity")
+            _test_setting(configs_adapters, environment, resource_config, value, known_resource_config)
 
 
-def test_artifact_secrets(
-    sample_artifact_secrets: tuple,
+def test_secrets(
+    sample_settings: list[tuple[str, SettingDataType, SettingValue]],
     secrets_adapters: SettingsAdapter,
     environment: Environment,
+    subtests: pytest.Subtests,
 ):
-    secret, setting_value = sample_artifact_secrets
     artifact = ArtifactReference("ephemeral", "agasi", "1.2.3")
-    bound_secret = BoundSetting(setting=secret, artifact=artifact)
-
-    # Write a known setting to ensure isolation
-    known_secret = BoundSetting(
-        setting=SecretRequirement(name="known", data_type=SettingDataType.STRING), artifact=artifact
-    )
-    with secrets_adapters as sa:
-        sa.write(environment, known_secret, "commodity")
-
-    _test_setting(secrets_adapters, environment, bound_secret, setting_value, known_secret)
-
-
-def test_resource_configs(
-    sample_resource_configs: tuple,
-    configs_adapters: SettingsAdapter,
-    environment: Environment,
-):
-    config, setting_value = sample_resource_configs
     resource = ResourceReference("ephemeral", "resource")
-    bound_config = BoundSetting(setting=config, resource=resource)
 
-    # Write a known config to ensure isolation
-    known_config = BoundSetting(
-        setting=ResourceConfig(name="known", data_type=SettingDataType.STRING, shared=True), resource=resource
-    )
-    with configs_adapters as ca:
-        ca.write(environment, known_config, "commodity")
+    for name, data_type, value in sample_settings:
+        artifact_secret = BoundSetting(
+            artifact=artifact,
+            setting=SecretRequirement(
+                name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type
+            ),
+        )
+        known_artifact_secret = BoundSetting(
+            artifact=artifact, setting=SecretRequirement(name="known", data_type=SettingDataType.STRING)
+        )
 
-    _test_setting(configs_adapters, environment, bound_config, setting_value, known_config)
+        with subtests.test(type="artifact", name=name):
+            with secrets_adapters as sa:
+                sa.write(environment, known_artifact_secret, "commodity")
+            _test_setting(secrets_adapters, environment, artifact_secret, value, known_artifact_secret)
 
-
-def test_resource_secrets(
-    sample_resource_secrets: tuple,
-    secrets_adapters: SettingsAdapter,
-    environment: Environment,
-):
-    secret, setting_value = sample_resource_secrets
-    resource = ResourceReference("ephemeral", "resource")
-    bound_secret = BoundSetting(setting=secret, resource=resource)
-
-    # Write a known setting to ensure isolation
-    known_secret = BoundSetting(
-        setting=SecretRequirement(name="known", data_type=SettingDataType.STRING), resource=resource
-    )
-    with secrets_adapters as sa:
-        sa.write(environment, known_secret, "commodity")
-
-    _test_setting(secrets_adapters, environment, bound_secret, setting_value, known_secret)
+        resource_secret = BoundSetting(
+            resource=resource,
+            setting=ResourceSecret(
+                name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type, shared=True
+            ),
+        )
+        known_resource_secret = BoundSetting(
+            resource=resource, setting=ResourceSecret(name="known", data_type=SettingDataType.STRING, shared=True)
+        )
+        with subtests.test(type="resource", name=name):
+            with secrets_adapters as sa:
+                sa.write(environment, known_resource_secret, "commodity")
+            _test_setting(secrets_adapters, environment, resource_secret, value, known_resource_secret)
