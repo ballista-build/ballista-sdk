@@ -2,5 +2,11 @@ class UnknownArtifact(ValueError):
     pass
 
 
-class UnknownResourceDependency(ValueError):
+class UnknownResourceRequirement(ValueError):
+    """A Resource need cannot be met because the Resource is unknown."""
+
+    pass
+
+
+class SettingMissing(ValueError):
     pass

@@ -1,31 +1,40 @@
 from __future__ import annotations
 
+import base64
 import os
 import subprocess
 import tempfile
 from collections import deque
-from collections.abc import Collection
-from typing import Any, Literal
+from collections.abc import Sequence
+from dataclasses import dataclass, field
+from typing import Any, Literal, Self, cast
 
+import dotenv
 import yaml
 from pydantic import BaseModel
 
-from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceDependency
-from ballista_sdk.adapters.types import EnvironmentExecutionAdapter, fake_artifact_types
-from ballista_sdk.types import (
+from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResourceRequirement
+from ballista_sdk.adapters.settings import SettingsAdapter
+from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactExecutionParameters,
-    ArtifactExecutionProbe,
-    ArtifactExecutionResourceDependency,
-    ArtifactExecutionService,
     ArtifactReference,
     ArtifactType,
     Bolt,
+    BoundSetting,
     Environment,
     ExecutableArtifact,
     ExecutionParameters,
-    ResourceWithProviderArtifact,
-    SpecificArtifact,
+    HealthcheckProbe,
+    Project,
+    ProjectResourceRequirement,
+    ResourceProviderReference,
+    ResourceReference,
+    ResourceSetting,
+    ServiceRequirement,
+    Setting,
+    SettingDataType,
+    SettingValue,
 )
 
 
@@ -38,42 +47,42 @@ class DockerComposeServiceVolume(BaseModel):
 
 
 class DockerComposeService(BaseModel):
-    build: dict[str, Any] | None = None
-    configs: list[str] | None = None
+    build: dict[str, Any] = {}
+    configs: list[str] = []
     container_name: str | None = None
-    depends_on: dict[str, dict[str, str]] | None = None
-    deploy: dict[str, Any] | None = None
-    develop: dict[str, Any] | None = None
-    environment: dict[str, Any] | None = None
-    env_file: list[dict] | None = None
-    healthcheck: dict[str, Any] | None = None
+    depends_on: dict[str, dict[str, str]] = {}
+    deploy: dict[str, Any] = {}
+    develop: dict[str, Any] = {}
+    environment: dict[str, Any] = {}
+    env_file: list[dict] = []
+    healthcheck: dict[str, Any] = {}
     image: str | None = None
-    networks: list[str] = []
+    networks: dict[str, dict] = {}
     ports: list[dict[str, Any]] = []
-    secrets: list[str] | None = None
+    secrets: list[str] = []
     volumes: list[DockerComposeServiceVolume] = []
 
 
 class DockerComposeProjectVolume(BaseModel):
     driver: str
     name: str
+    """Human-readable volume name. Not the volume identifier."""
 
 
 class DockerComposeProject(BaseModel):
-    configs: dict[str, Any] | None = None
+    configs: dict[str, Any] = {}
     name: str
     networks: dict[str, dict[str, Any]]
-    secrets: dict[str, Any] | None = None
+    secrets: dict[str, Any] = {}
     services: dict[str, DockerComposeService]
     volumes: dict[str, DockerComposeProjectVolume] = {}
 
 
 def _generate_docker_compose_project_from_bolt(
-    project_id: str,
-    version: str,
-    artifacts: Collection[ExecutableArtifact],
-    adapter: DockerComposeExecutionEnvironmentAdapter,
+    adapter: DockerComposeInfrastructureAdapter,
     environment: Environment,
+    bolt: Bolt,
+    artifacts: Sequence[ExecutableArtifact],
     execution_parameters: ExecutionParameters,
 ) -> DockerComposeProject:
     """Generate a docker compose project."""
@@ -81,98 +90,117 @@ def _generate_docker_compose_project_from_bolt(
     if len(artifacts) == 0:
         raise ValueError("No ExecutableArtifactes to generate for.")
 
-    project = DockerComposeProject(name=project_id, networks={}, services={}, volumes={})
+    networks = {f"env-{environment.name}": {"internal": True, "name": f"env-{environment.name}"}}
+    compose_project = DockerComposeProject(name=bolt.project, networks=networks, services={}, volumes={})
 
     resource_service_names: dict[str, str] = {}
 
-    artifact_deque: deque[SpecificArtifact] = deque([(artifact, version, project_id) for artifact in artifacts])
+    artifact_deque = deque([(bolt, artifact) for artifact in artifacts])
 
     # Translate our artifacts into docker compose services
     while artifact_deque:
-        item = artifact_deque.popleft()
-        artifact, artifact_version, artifact_project_id = item
-        artifact_ref_name = _get_artifact_ref_name(artifact_project_id, artifact)
+        artifact_bolt, artifact = artifact_deque.popleft()
+        artifact_ref_name = _get_artifact_ref_name(artifact_bolt, artifact)
 
         if artifact.execution.resources:
             requeue = False
-            for resource_dependency in artifact.execution.resources:
-                if resource_dependency.resource_id not in resource_service_names:
-                    resource_with_provider_artifact = adapter.resolve_resource_dependency(
-                        resource_dependency, environment
+            for resource_requirement in artifact.execution.resources:
+                if resource_requirement.resource_name not in resource_service_names:
+                    resource_with_provider_artifact = adapter.resolve_resource_requirement(
+                        resource_requirement, environment
                     )
-                    provider_artifact = adapter.get_artifact_from_reference(
-                        resource_with_provider_artifact.artifact, environment
-                    )
-                    if provider_artifact.artifact.execution:
+
+                    if artifact_reference := resource_with_provider_artifact.artifact_reference:
+                        # Resource is provided by an artifact that is executable
+                        provider_artifact_bolt, provider_artifact = adapter.get_artifact_from_reference(
+                            artifact_reference, environment
+                        )
+
                         requeue = True
 
                         if provider_artifact not in artifact_deque:
-                            artifact_deque.appendleft(provider_artifact)
+                            artifact_deque.appendleft(
+                                (provider_artifact_bolt, cast(ExecutableArtifact, provider_artifact))
+                            )
 
                     else:
                         # TODO: Virtual service stuff!
                         pass
 
             if requeue:
-                artifact_deque.append(item)
+                artifact_deque.append((artifact_bolt, artifact))
                 continue
 
+        project_network_name = f"project-{artifact_bolt.project}"
+        if project_network_name not in networks:
+            compose_project.networks[project_network_name] = {"internal": True, "name": project_network_name}
+
         # We can generate this artifact!
+        artifact_execution_parameters = execution_parameters.params_for_artifact(
+            environment=environment, bolt=artifact_bolt, artifact=artifact
+        )
         compose_service = _generate_docker_compose_service_from_artifact(
-            project_id=artifact_project_id,
-            artifact=artifact,
-            version=artifact_version,
             adapter=adapter,
             environment=environment,
-            artifact_execution_parameters=execution_parameters.params_for_artifact(
-                environment=environment, project_id=artifact_project_id, artifact=artifact
-            ),
+            bolt=artifact_bolt,
+            artifact=artifact,
+            execution_parameters=artifact_execution_parameters,
         )
 
         if artifact.execution.resources:
             compose_service.depends_on = {
-                resource_service_names[rd.resource_id]: {"condition": "service_healthy"}
-                for rd in artifact.execution.resources
+                resource_service_names[resource_requirement.resource_name]: {"condition": "service_healthy"}
+                for resource_requirement in artifact.execution.resources
             }
 
-        project.services[artifact_ref_name] = compose_service
+        if artifact.execution.services:
+            for service in artifact.execution.services:
+                external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
+                if external_service_parameters and external_service_parameters.host is not None:
+                    network_name = f"external-{external_service_parameters.host}"
 
-        project.volumes.update(
-            {
-                f"{artifact_ref_name}-{volume.id}": DockerComposeProjectVolume(
-                    driver="local", name=volume.name.replace(" ", "-")
-                )
-                for volume in artifact.execution.volumes
-                if volume.persistent
-            }
-        )
+                    if network_name not in compose_project.networks:
+                        compose_project.networks = compose_project.networks | {network_name: {"name": network_name}}
 
-        if artifact.provided_resources:
-            resource_service_names.update({resource.id: artifact_ref_name for resource in artifact.provided_resources})
+        compose_project.services[artifact_ref_name] = compose_service
 
-    return project
+        compose_project.volumes = compose_project.volumes | {
+            f"{artifact_ref_name}-{volume.name}": DockerComposeProjectVolume(
+                driver="local",
+                name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
+            )
+            for volume in artifact.execution.volumes
+            if volume.persistent
+        }
+
+        if artifact.provides:
+            resource_service_names.update({resource.name: artifact_ref_name for resource in artifact.provides})
+
+    return compose_project
 
 
-def _get_artifact_ref_name(project_id: str, artifact: Artifact) -> str:
-    return f"{project_id}-{artifact.id}"
+def _get_artifact_ref_name(bolt: Bolt, artifact: ExecutableArtifact) -> str:
+    return f"{bolt.project}-{artifact.name}"
 
 
 def _generate_docker_compose_service_from_artifact(
-    project_id: str,
-    artifact: ExecutableArtifact,
-    version: str,
-    adapter: DockerComposeExecutionEnvironmentAdapter,
+    adapter: DockerComposeInfrastructureAdapter,
     environment: Environment,
-    artifact_execution_parameters: ArtifactExecutionParameters,
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
+    execution_parameters: ArtifactExecutionParameters,
 ) -> DockerComposeService:
     """Generate a docker compose Service definition for an ExecutableArtifact."""
 
     execution = artifact.execution
-    artifact_ref_name = _get_artifact_ref_name(project_id, artifact)
+    artifact_ref_name = _get_artifact_ref_name(bolt, artifact)
+    artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
-    compose_service = DockerComposeService(container_name=artifact_ref_name)
+    compose_service = DockerComposeService(
+        container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
+    )
 
-    if compute_parameters := artifact_execution_parameters.compute:
+    if compute_parameters := execution_parameters.compute:
         resource_max = {}
         resource_min = {}
         if max_cpu := compute_parameters.max_cpu:
@@ -188,44 +216,34 @@ def _generate_docker_compose_service_from_artifact(
             compose_service.deploy = {"resources": {"limits": resource_max, "reservations": resource_min}}
 
     env = {}
-    env_files = []
 
-    has_service_configs = bool(execution.configs)
-    has_service_secrets = bool(execution.secrets)
+    configs_adapter = adapter.configs_adapter
+    secrets_adapter = adapter.secrets_adapter
 
-    # Resource dependencies
-    if resource_dependencies := execution.resources:
-        for dependency in resource_dependencies:
-            resource, _ = adapter.resolve_resource_dependency(dependency, environment)
+    # Artifact configs
+    [configs_adapter.add_artifact_setting(compose_service, artifact_reference, c) for c in execution.configs]
+    # Artifact secrets
+    [secrets_adapter.add_artifact_setting(compose_service, artifact_reference, s) for s in execution.secrets]
 
-            ref_name = f"{resource.id}-shared"
+    # Resources
+    for resource_requirement in execution.resources:
+        resource, resource_project, _, _ = adapter.resolve_resource_requirement(resource_requirement, environment)
+        resource_reference = ResourceReference(resource_project, resource.name)
+        requirement_prefix = resource_requirement.prefix or resource.prefix
+        requirement_instance = [getattr(resource_requirement.requirement, f) for f in resource.instance_id_fields]
 
-            has_shared_configs = False
-            for config in resource.configs:
-                if config.shared:
-                    has_shared_configs = True
-                else:
-                    has_service_configs = True
-
-            if has_shared_configs:
-                env_files.append({"format": "raw", "path": f"{ref_name}-configs.env", "required": True})
-
-            has_shared_secrets = False
-            for secret in resource.secrets:
-                if secret.shared:
-                    has_shared_secrets = True
-                else:
-                    has_service_secrets = True
-
-            if has_shared_secrets:
-                env_files.append({"format": "raw", "path": f"{ref_name}-secrets.env", "required": True})
-
-    if has_service_configs:
-        # Service configs are NOT required
-        env_files.append({"format": "raw", "path": f"{artifact_ref_name}-configs.env", "required": False})
-
-    if has_service_secrets:
-        env_files.append({"format": "raw", "path": f"{artifact_ref_name}-secrets.env", "required": True})
+        [
+            configs_adapter.add_resource_setting(
+                compose_service, artifact_reference, resource_reference, c, requirement_prefix, requirement_instance
+            )
+            for c in resource.configs
+        ]
+        [
+            secrets_adapter.add_resource_setting(
+                compose_service, artifact_reference, resource_reference, s, requirement_prefix, requirement_instance
+            )
+            for s in resource.secrets
+        ]
 
     # Services
     services_added = {}
@@ -235,24 +253,29 @@ def _generate_docker_compose_service_from_artifact(
             # WTF is it, then? Needs a better abstraction.
             continue
 
-        services_added[service.id] = service
+        services_added[service.name] = service
 
-        key = f"{service.id.upper()}_SERVICE"
+        key = f"{service.name.upper()}_SERVICE"
         host = "localhost"
         path = "/"
-        env[f"{key}_PORT"] = str(port_service.port)
+        env[f"{key}_PORT"] = str(port_service)
 
-        external_service_parameters = artifact_execution_parameters.external_services.get(service.id)
+        external_service_parameters = execution_parameters.external_services.get(service.name)
         if external_service_parameters and external_service_parameters.host is not None:
             host = external_service_parameters.host
+
             if external_service_parameters.path:
                 path = external_service_parameters.path
 
+            network_name = f"external-{host}"
+            if network_name not in compose_service.networks:
+                compose_service.networks[network_name] = {"aliases": [host]}
+
             compose_service.ports.append(
                 {
-                    "name": service.id,
-                    "published": str(external_service_parameters.port or port_service.port),
-                    "target": port_service.port,
+                    "name": service.name,
+                    "published": str(external_service_parameters.port or port_service),
+                    "target": port_service,
                 }
             )
 
@@ -263,7 +286,7 @@ def _generate_docker_compose_service_from_artifact(
     # Healthchecks; processed after services as they can depend on them.
     if healthchecks := execution.healthchecks:
         # Docker Compose only supports a single healthcheck
-        if probe := healthchecks.ready or healthchecks.alive or healthchecks.started:
+        if probe := (healthchecks.ready or healthchecks.alive or healthchecks.started):
             compose_service.healthcheck = _generate_healthcheck(probe, services_added)
 
     # Building
@@ -278,46 +301,39 @@ def _generate_docker_compose_service_from_artifact(
         # TODO: Implement better development specs
         compose_service.develop = {"watch": [{"action": "rebuild", "path": context}]}
     else:
-        compose_service.image = artifact.type.config.get("image", artifact.id)
+        compose_service.image = artifact.type.docker_image.image or artifact.name
 
     # Volumes
-    if volumes := execution.volumes:
-        for volume in volumes:
-            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.id)
+    for volume in execution.volumes:
+        execution_volume_parameters = execution_parameters.volumes.get(volume.name)
 
-            if volume.persistent:
-                volume_options = None
-                if execution_volume_parameters and execution_volume_parameters.path:
-                    volume_options = {"subpath": execution_volume_parameters.path}
+        if volume.persistent:
+            volume_options = None
+            if execution_volume_parameters and execution_volume_parameters.path:
+                volume_options = {"subpath": execution_volume_parameters.path}
 
-                compose_service.volumes.append(
-                    DockerComposeServiceVolume(
-                        source=f"{artifact_ref_name}-{volume.id}",
-                        target=volume.path,
-                        type="volume",
-                        volume=volume_options,
-                    )
+            compose_service.volumes.append(
+                DockerComposeServiceVolume(
+                    source=f"{artifact_ref_name}-{volume.name}",
+                    target=volume.path,
+                    type="volume",
+                    volume=volume_options,
                 )
-            else:
-                tmpfs_options = {"size": f"{volume.capacity}G"}
+            )
+        else:
+            tmpfs_options = {"size": f"{volume.capacity}G"}
 
-                compose_service.volumes.append(
-                    DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")
-                )
+            compose_service.volumes.append(
+                DockerComposeServiceVolume(target=volume.path, tmpfs=tmpfs_options, type="tmpfs")
+            )
 
     if env:
         compose_service.environment = env
-    if env_files:
-        compose_service.env_file = env_files
 
     return compose_service
 
 
-def _generate_compose_volume():
-    pass
-
-
-def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, ArtifactExecutionService]) -> dict:
+def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict:
     options = {
         "start_interval": "1s",
         "start_period": "60s",
@@ -334,10 +350,10 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
 
     # Retrieve services referenced by port-based probes.
     service = None
-    if port_probe.service_id:
-        service = services.get(port_probe.service_id)
+    if port_probe.service:
+        service = services.get(port_probe.service)
         if service is None:
-            raise ValueError(f'Unknown referenced service "{port_probe.service_id}".')
+            raise ValueError(f'Unknown referenced service "{port_probe.service}".')
 
     if probe.grpc:
         port = probe.grpc.port or 50051
@@ -346,7 +362,7 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
             if service.grpc is None:
                 raise ValueError("Must reference a grpc service for a grpc probe.")
 
-            port = service.grpc.port
+            port = service.grpc
 
         # TODO: GRPC probe
         return options | {}
@@ -359,7 +375,7 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
             if service.http is None:
                 raise ValueError("Must reference an http service for an http probe.")
 
-            port = service.http.port
+            port = service.http
 
         return options | {"test": ["CMD-SHELL", f"curl -f http://localhost:{port}{path}"]}
 
@@ -370,7 +386,7 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
             if service.tcp is None:
                 raise ValueError("Must reference a tcp service for a tcp probe.")
 
-            port = service.tcp.port
+            port = service.tcp
 
         if not port:
             raise ValueError("TCP probe needs a port.")
@@ -381,25 +397,171 @@ def _generate_healthcheck(probe: ArtifactExecutionProbe, services: dict[str, Art
     return {}
 
 
-def _generate_env_files():
-    pass
-
-
-class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
-    _executable_artifacts: list[SpecificArtifact]
-
-    def __init__(self, executable_artifacts: list[SpecificArtifact] = []):
-        self._executable_artifacts = executable_artifacts
+@dataclass
+class DockerComposeSettingsAdapter(SettingsAdapter):
+    _loaded: dict[str, dict[str, str]] = field(default_factory=dict)
+    _pending_writes: dict[str, dict[str, str]] = field(default_factory=dict)
 
     @property
-    def name(self) -> str:
+    def verify_before_deploy(self) -> Literal[True]:
+        return True
+
+    def __enter__(self) -> Self:
+        return self
+
+    def __exit__(self, *args) -> bool | None:
+        for filename, obj in self._pending_writes.items():
+            self._write_object(filename, obj)
+
+    # TODO: This would be a great place for t-strings
+    def _get_envfile_filename(self, ref_name: str, sensitive: bool) -> str:
+        return ref_name + ("-secrets" if sensitive else "-configs") + ".env"
+
+    def _get_artifact_setting_envfile(self, artifact_reference: ArtifactReference, sensitive: bool) -> str:
+        return self._get_envfile_filename(
+            f"{artifact_reference.project_name}-{artifact_reference.artifact_name}", sensitive
+        )
+
+    def _get_resource_setting_envfile(self, resource_reference: ResourceReference, sensitive: bool) -> str:
+        return self._get_envfile_filename(
+            f"{resource_reference.project_name}-resources-{resource_reference.resource_name}", sensitive
+        )
+
+    def _add_envfile(self, service: DockerComposeService, filename: str, required: bool):
+        """Add a list of BoundSettings to the Docker Compose Service being generated."""
+
+        env = {"format": "raw", "path": filename, "required": required}
+
+        if env not in service.env_file:
+            service.env_file = service.env_file + [env]
+
+    def add_artifact_setting(
+        self, service: DockerComposeService, artifact_reference: ArtifactReference, setting: Setting
+    ):
+        self._add_envfile(
+            service,
+            self._get_artifact_setting_envfile(artifact_reference, setting.sensitive),
+            setting.sensitive,
+        )
+
+    def add_resource_setting(
+        self,
+        service: DockerComposeService,
+        artifact_reference: ArtifactReference,
+        resource_reference: ResourceReference,
+        resource_setting: ResourceSetting,
+        prefix: str,
+        instance: list[str],
+    ):
+        if resource_setting.shared:
+            self._add_envfile(
+                service, self._get_resource_setting_envfile(resource_reference, resource_setting.sensitive), True
+            )
+
+        else:
+            self.add_artifact_setting(service, artifact_reference, resource_setting)
+
+    def _get_bound_setting_env_filename(self, environment: Environment, bound_setting: BoundSetting) -> str:
+        if bound_setting.artifact:
+            return self._get_artifact_setting_envfile(bound_setting.artifact, bound_setting.setting.sensitive)
+        elif bound_setting.resource:
+            return self._get_resource_setting_envfile(bound_setting.resource, bound_setting.setting.sensitive)
+        else:
+            raise ValueError("BoundSetting needs an artifact or resource reference.")
+
+    def _delete_object(self, filename: str):
+        self._loaded.pop(filename, None)
+
+    def delete(self, environment: Environment, bound_setting: BoundSetting):
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+
+        obj = self._pending_writes.get(filename) or self._read_object(filename)
+        if obj is None:
+            raise ValueError()
+
+        obj.pop(bound_setting.setting.name, None)
+        self._pending_writes[filename] = obj
+
+    def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+
+        obj = self._read_cached_object(filename)
+        if obj is None:
+            return False
+
+        return bound_setting.setting.name in obj
+
+    def _read_object(self, filename: str) -> dict[str, str] | None:
+        if os.path.exists(filename):
+            return {k: v for k, v in dotenv.dotenv_values(filename, interpolate=False).items() if v is not None}
+
+        return None
+
+    def _read_cached_object(self, filename) -> dict[str, str] | None:
+        if loaded_object := self._loaded.get(filename):
+            return loaded_object
+
+        return self._read_object(filename)
+
+    def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+
+        obj = self._read_cached_object(filename)
+        if obj is None or (value := obj[bound_setting.setting.name]) is None:
+            raise ValueError()
+
+        match bound_setting.setting.data_type:
+            case SettingDataType.BYTES:
+                return base64.b64decode(value)
+            case SettingDataType.BOOLEAN:
+                return value.lower() == "true"
+            case SettingDataType.FLOAT:
+                return float(value)
+            case SettingDataType.INTEGER:
+                return int(value)
+            case _:
+                return value
+
+    def _write_object(self, filename: str, obj: dict[str, str]):
+        # Ensure file exists
+        with open(filename, "w"):
+            pass
+
+        for k, v in obj.items():
+            dotenv.set_key(filename, k, v)
+
+        self._loaded.pop(filename, None)
+
+    def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
+        filename = self._get_bound_setting_env_filename(environment, bound_setting)
+
+        obj = self._pending_writes.get(filename) or self._read_object(filename) or {}
+
+        if bound_setting.setting.data_type == SettingDataType.BYTES:
+            encoded_value = base64.b64encode(cast(bytes, value)).decode()
+        else:
+            encoded_value = str(value)
+        obj[bound_setting.setting.name] = encoded_value
+
+        self._pending_writes[filename] = obj
+
+
+@dataclass
+class DockerComposeInfrastructureAdapter:
+    _bolts: list[Bolt] = field(default_factory=list)
+    configs_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
+    # TODO: Make these the same instance
+    secrets_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
+
+    @property
+    def name(self) -> Literal["docker-compose"]:
         return "docker-compose"
 
-    def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Collection[str]):
+    def _call_compose(self, docker_compose_project: DockerComposeProject, commands: Sequence[str]):
         """Call docker compose."""
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
-            docker_compose_dict = docker_compose_project.model_dump(exclude_none=True)
+            docker_compose_dict = docker_compose_project.model_dump(exclude_none=True, exclude_unset=True)
             yaml.dump(docker_compose_dict, stream=f, encoding="utf-8")
 
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
@@ -408,19 +570,15 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
     def deploy(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
-        # Generate .env files
-        _generate_env_files()
-
         docker_compose_project = _generate_docker_compose_project_from_bolt(
-            project_id=bolt.project_id,
-            version=bolt.version,
-            artifacts=artifacts,
             adapter=self,
             environment=environment,
+            bolt=bolt,
+            artifacts=artifacts,
             execution_parameters=execution_parameters,
         )
 
@@ -428,58 +586,84 @@ class DockerComposeExecutionEnvironmentAdapter(EnvironmentExecutionAdapter):
             commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:
             commands = ["up", "--remove-orphans"]
+        print(docker_compose_project.model_dump_json(indent=4, exclude_none=True, exclude_unset=True))
         self._call_compose(docker_compose_project, commands)
 
     def get_artifact_from_reference(
         self, artifact_reference: ArtifactReference, environment: Environment
-    ) -> SpecificArtifact:
-        for artifact, version, project_id in self._executable_artifacts:
-            if (
-                artifact.id == artifact_reference.artifact_id
-                and version == artifact_reference.version
-                and project_id == artifact_reference.project_id
-            ):
-                return SpecificArtifact(artifact, version, project_id)
+    ) -> tuple[Bolt, Artifact]:
+        for bolt in self._bolts:
+            for artifact in bolt.artifacts:
+                if (
+                    artifact_reference.artifact_name == artifact.name
+                    and artifact_reference.version == bolt.version
+                    and artifact_reference.project_name == bolt.project
+                ):
+                    return bolt, artifact
 
         raise UnknownArtifact(artifact_reference)
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
-        return fake_artifact_types()
-
-    def list_resources(self, environment: Environment) -> list[ResourceWithProviderArtifact]:
-        """List available Resources with a providing ArtifactReference in the specified Environment."""
-
-        return [
-            ResourceWithProviderArtifact(resource, ArtifactReference(artifact.id, version, project_id))
-            for artifact, version, project_id in self._executable_artifacts
-            for resource in artifact.provided_resources
-        ]
+        return [ArtifactType(name="docker_image", title="Docker Image")]
 
     def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
-        return [(artifact.id, version, project_id) for artifact, version, project_id in self._executable_artifacts]
+        references = []
 
-    def resolve_resource_dependency(
-        self, resource_dependency: ArtifactExecutionResourceDependency, environment: Environment
-    ) -> ResourceWithProviderArtifact:
-        for resource_with_provider_artifact in self.list_resources(environment=environment):
-            if resource_with_provider_artifact.resource.id == resource_dependency.resource_id:
-                return resource_with_provider_artifact
+        for bolt in self._bolts:
+            references.extend(
+                [ArtifactReference(bolt.project, artifact.name, bolt.version) for artifact in bolt.executable_artifacts]
+            )
 
-        raise UnknownResourceDependency(resource_dependency.resource_id)
+        return references
+
+    def list_projects(self, environments: Sequence[Environment] | None = None) -> list[Project]:
+        return []
+
+    def list_project_bolts(self, project: Project) -> list[Bolt]:
+        return []
+
+    def list_resources(self, environment: Environment) -> list[ResourceProviderReference]:
+        """List available Resources with a providing ArtifactReference in the specified Environment."""
+
+        references = []
+        for bolt in self._bolts:
+            references.extend(
+                [
+                    ResourceProviderReference(resource, bolt.project, artifact.name, bolt.version)
+                    for artifact in bolt.executable_artifacts
+                    for resource in artifact.provides
+                ]
+            )
+
+        return references
+
+    def resolve_resource_requirement(
+        self, resource_requirement: ProjectResourceRequirement, environment: Environment
+    ) -> ResourceProviderReference:
+        # Get the project_name of the requirement points to and compare our resources
+        requirement_project_name = resource_requirement.which()
+        requirement_resource_name = resource_requirement.resource_name
+        for resource_provider_artifact_reference in self.list_resources(environment=environment):
+            if (
+                resource_provider_artifact_reference.project_name == requirement_project_name
+                and resource_provider_artifact_reference.resource.name == requirement_resource_name
+            ):
+                return resource_provider_artifact_reference
+
+        raise UnknownResourceRequirement(requirement_project_name, requirement_resource_name)
 
     def teardown(
         self,
         bolt: Bolt,
-        artifacts: Collection[ExecutableArtifact],
+        artifacts: Sequence[ExecutableArtifact],
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
         docker_compose_project = _generate_docker_compose_project_from_bolt(
-            project_id=bolt.project_id,
-            version=bolt.version,
-            artifacts=artifacts,
             adapter=self,
             environment=environment,
+            bolt=bolt,
+            artifacts=artifacts,
             execution_parameters=execution_parameters,
         )
 

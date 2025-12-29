@@ -1,252 +1,244 @@
-from unittest.mock import Mock
-
 import pytest
-from pydantic import BaseModel
+import yaml
 
-from ballista_sdk.types import (
+from ballista_sdk.api.v1 import (
     Artifact,
-    ArtifactExecutionComputeParameters,
-    ArtifactExecutionExternalServiceParameters,
-    ArtifactExecutionHealthChecks,
-    ArtifactExecutionHTTPProbe,
-    ArtifactExecutionProbe,
-    ArtifactExecutionRequirements,
-    ArtifactExecutionResourceDependency,
-    ArtifactExecutionService,
-    ArtifactExecutionVolume,
-    ArtifactExecutionVolumeParameters,
-    ArtifactInjectedValue,
-    ArtifactSettingType,
-    ArtifactTypeDependency,
+    ArtifactTypeRequirement,
     Bolt,
+    ComputeExecutionParameters,
     DefaultExecutionParameters,
     Environment,
     EnvironmentTier,
+    ExecAction,
     ExecutionParameters,
+    ExecutionRequirements,
+    ExternalizedServiceParameters,
+    HealthcheckProbe,
+    HealthcheckRequirements,
     Project,
     Resource,
-    ResourceDependencyInjectedValue,
+    ResourceConfig,
+    ResourceRequirementParameters,
+    ResourceSecret,
+    ScalingExecutionParameters,
+    SecretRequirement,
+    ServiceRequirement,
+    SettingDataType,
+    VolumeExecutionParameters,
+    VolumeRequirement,
 )
 
 
 @pytest.fixture(scope="session")
 def project():
-    return Mock(Project, id="typical", name="Typical Project")
+    return Project(name="typical", title="Typical Project")
 
 
 @pytest.fixture(scope="session")
-def docker_image_artifact_type_dependency():
-    return Mock(ArtifactTypeDependency, config={"image": "hello-world:latest"}, id="docker_image")
+def docker_image_artifact_type_need() -> ArtifactTypeRequirement:
+    return ArtifactTypeRequirement.model_validate({"docker_image": {"image": "hello-world:latest"}})
 
 
-@pytest.fixture(scope="session", params=["empty", "simple", "typical", "resource_provider"])
-def bolt(docker_image_artifact_type_dependency: ArtifactTypeDependency, request):
-    match request.param:
-        case "empty":
-            # An empty project, having no artifacts. Invalid.
-            return Mock(
-                Bolt, buildable_artifacts=[], artifacts=[], executable_artifacts=[], project_id="empty", version="1"
-            )
-        case "simple":
-            # A simple project with one ExecutableArtifact
-            # Name cannot be mocked via the constructor.
-            volume_a = Mock(
-                ArtifactExecutionVolume, capacity=0.01, id="volume_a", path="/var/volume_a", persistent=True
-            )
-            volume_a.name = "Volume A"
-            artifacts = [
-                Mock(
-                    Artifact,
-                    build=None,
-                    execution=Mock(
-                        ArtifactExecutionRequirements,
-                        configs=[Mock(ArtifactInjectedValue, alias=None, id="option_a", type="string")],
-                        healthchecks=Mock(
-                            ArtifactExecutionHealthChecks,
-                            alive=None,
-                            ready=Mock(
-                                ArtifactExecutionProbe,
-                                exec=None,
-                                grpc=None,
-                                http=Mock(ArtifactExecutionHTTPProbe, path=None, port=None, service_id="http"),
-                                port=None,
-                            ),
-                            started=None,
-                        ),
-                        resources=[
-                            Mock(
-                                ArtifactExecutionResourceDependency,
-                                resource_id="postgres-database",
-                                config={"database_id": "testdatabase"},
-                            )
-                        ],
-                        secrets=[Mock(ArtifactInjectedValue, alias=None, id="secret_a", type="password")],
-                        services=[Mock(ArtifactExecutionService, grpc=None, http=Mock(port=80), id="http", tcp=None)],
-                        volumes=[volume_a],
-                    ),
-                    id="api",
-                    provided_resources=[],
-                    type=docker_image_artifact_type_dependency,
+TEST_BOLTS: dict[str, str] = {
+    "simple": """
+api_version: "v1"
+artifacts:
+      - name: api
+        execution:
+            configs:
+              - name: "option_a"
+                data_type: "string"
+            healthchecks:
+                ready:
+                    http:
+                        path: "/healthz"
+                        service: "http"
+            resources:
+              - postgres:
+                    database:
+                        name: "testdatabase"
+            secrets:
+              - name: "secret_a"
+                data_type: "string"
+            services:
+              - name: http
+                http: 80
+            volumes:
+              - name: "volume_a"
+                capacity: 0.01
+                path: "/var/volume_a"
+                persistent: True
+                title: "Volume A"
+        type:
+            docker_image:
+                image: "hello-world:latest"
+project: "simple"
+version: "1"
+""",
+    #     "typical": """
+    # YAML
+    # """,
+    "resource_provider": """
+api_version: "v1"
+artifacts:
+      - name: "server"
+        execution: {}
+        provides:
+          - configs:
+              - data_type: "string"
+                description: "Host of Database server."
+                name: "host"
+                shared: True
+                title: "Host"
+              - data_type: "integer"
+                description: "Port Database server listens on."
+                name: "port"
+                shared: True
+                title: "Port"
+            description: "Resource Description"
+            name: "resource_provider-resource1"
+            instance_id_fields: ["name"]
+            prefix: "RESOURCE1"
+            requirements:
+                properties:
+                    name:
+                        type: string
+                required: ["name"]
+            secrets:
+              - data_type: "string"
+                description: "Name of database"
+                name: "name"
+                shared: False
+                title: "Database"
+              - data_type: "string"
+                description: "Login username to access database"
+                name: "username"
+                shared: False
+                title: "Username"
+              - data_type: "string"
+                description: "Login password to access database"
+                name: "password"
+                shared: False
+                title: "Password"
+            title: "Resource Provider Resource"
+        type:
+            docker_image:
+                image: "hello-world:latest"
+project: "resource_provider"
+version: "1"
+    """,
+}
+
+
+@pytest.fixture(scope="session", params=["simple", "resource_provider"])
+def bolt_yaml(request) -> dict[str, str | dict]:
+    return yaml.safe_load(TEST_BOLTS[request.param])
+
+
+@pytest.fixture(scope="session")
+def postgres_bolt() -> Bolt:
+    # Fake Postgres
+    postgres_probe = HealthcheckProbe(exec=ExecAction(commands=["pg_isready -U $POSTGRES_USER"], shell=True))
+    postgres = Artifact(
+        execution=ExecutionRequirements(
+            healthchecks=HealthcheckRequirements(alive=postgres_probe, ready=postgres_probe, started=postgres_probe),
+            secrets=[
+                SecretRequirement(
+                    # alias="POSTGRES_USER",
+                    description="Username for the default/root login.",
+                    name="root_username",
+                    title="Root username",
+                    data_type=SettingDataType.STRING,
+                ),
+                SecretRequirement(
+                    # alias="POSTGRES_PASSWORD",
+                    description="Password for the default/root login",
+                    name="root_password",
+                    title="Root Password",
+                    data_type=SettingDataType.STRING,
+                ),
+            ],
+            services=[ServiceRequirement(name="postgres", tcp=5432)],
+            volumes=[
+                VolumeRequirement(
+                    capacity=0.1,
+                    name="data",
+                    path="/var/lib/postgresql/data",
+                    persistent=True,
+                    title="PostgreSQL Data",
                 )
-            ]
-            return Mock(
-                Bolt,
-                artifacts=artifacts,
-                buildable_artifacts=[],
-                executable_artifacts=artifacts,
-                project_id="simple",
-                version="1",
-            )
-        case "typical":
-            # A typical project with two artifacts using various dependencies
-            # Name cannot be mocked via the constructor.
-            volume_a = Mock(
-                ArtifactExecutionVolume, capacity=0.01, id="volume_a", path="/var/volume_a", persistent=True
-            )
-            volume_a.name = "Volume A"
-            volume_b = Mock(
-                ArtifactExecutionVolume, capacity=0.25, id="volume_b", path="/var/volume_b", persistent=False
-            )
-            volume_b.name = "Volume B"
-
-            artifacts = [
-                Mock(
-                    Artifact,
-                    build=None,
-                    execution=Mock(
-                        ArtifactExecutionRequirements,
-                        configs=[Mock(ArtifactInjectedValue, alias=None, id="option_a", type="string")],
-                        healthchecks=Mock(
-                            ArtifactExecutionHealthChecks,
-                            alive=None,
-                            ready=None,
-                            started=None,
-                        ),
-                        resources=[],
-                        secrets=[Mock(ArtifactInjectedValue, alias=None, id="secret_a", type="password")],
-                        services=[],
-                        volumes=[volume_a, volume_b],
-                    ),
-                    id="api",
-                    provided_resources=[],
-                    type=docker_image_artifact_type_dependency,
-                ),
-                Mock(Artifact, build=None, execution=None, id="frontend", type=docker_image_artifact_type_dependency),
-            ]
-            return Mock(
-                Bolt,
-                artifacts=artifacts,
-                buildable_artifacts=[],
-                executable_artifacts=[artifacts[0]],
-                project_id="typical",
-                version="1",
-            )
-        case "resource_provider":
-            # A project with artifacts that provide resources
-            class ResourceRequirements(BaseModel):
-                prefix: str | None = None
-                """Key prefix."""
-                database_id: str
-                """ID of database."""
-
-            resource1 = Mock(
-                Resource,
+            ],
+        ),
+        name="server",
+        provides=[
+            Resource(
+                name="database",
                 configs=[
-                    Mock(
-                        ResourceDependencyInjectedValue,
-                        description="Host of Database server.",
-                        id="host",
+                    ResourceConfig(
+                        description="Host of Postgres server.",
+                        name="host",
                         shared=True,
-                        template="",
-                        type=ArtifactSettingType.STRING,
+                        title="Host",
+                        data_type=SettingDataType.STRING,
                     ),
-                    Mock(
-                        ResourceDependencyInjectedValue,
-                        description="Port Database server listens on.",
-                        id="port",
+                    ResourceConfig(
+                        description="Port Postgres server listens on.",
+                        name="port",
                         shared=True,
-                        template="",
-                        type=ArtifactSettingType.INTEGER,
+                        title="Port",
+                        data_type=SettingDataType.INTEGER,
                     ),
                 ],
-                description="Resource Description",
-                id="resource_provider-resource1",
-                instance_id_fields=["database_id"],
-                prefix="RESOURCE",
-                requirements=ResourceRequirements,
-                secrets=[
-                    Mock(
-                        ResourceDependencyInjectedValue,
-                        description="Name of database",
-                        id="database",
-                        shared=False,
-                        template="",
-                        type=ArtifactSettingType.STRING,
-                    ),
-                    Mock(
-                        ResourceDependencyInjectedValue,
-                        description="Login username to access database",
-                        id="username",
-                        shared=False,
-                        template="",
-                        type=ArtifactSettingType.STRING,
-                    ),
-                    Mock(
-                        ResourceDependencyInjectedValue,
-                        description="Login password to access database",
-                        id="password",
-                        shared=False,
-                        template=None,
-                        type=ArtifactSettingType.PASSWORD,
-                    ),
-                ],
-            )
-            resource1.name = "Resource Provider Resource"
-            resource1.configs[0].name = "Host"
-            resource1.configs[1].name = "Port"
-            resource1.secrets[0].name = "Database"
-            resource1.secrets[1].name = "Username"
-            resource1.secrets[2].name = "Password"
-
-            resource2 = Mock(Resource, id="service-resource2")
-            artifact = Mock(
-                Artifact,
-                build=None,
-                execution=Mock(
-                    ArtifactExecutionRequirements,
-                    configs=[],
-                    healthchecks=Mock(ArtifactExecutionHealthChecks, alive=None, ready=None, started=None),
-                    resources=[],
-                    secrets=[],
-                    services=[],
-                    volumes=[],
+                description="Postgres Database",
+                instance_id_fields=["name"],
+                prefix="POSTGRES",
+                requirements=ResourceRequirementParameters.model_validate(
+                    {"properties": {"name": {"type": "string"}}, "required": ["name"]}
                 ),
-                id="server",
-                provided_resources=[resource1],
-                type=docker_image_artifact_type_dependency,
+                secrets=[
+                    ResourceSecret(
+                        data_type=SettingDataType.STRING,
+                        description="Name of postgres database",
+                        name="name",
+                        shared=False,
+                        title="Database Name",
+                    ),
+                    ResourceSecret(
+                        data_type=SettingDataType.STRING,
+                        description="Login username to access database",
+                        name="username",
+                        shared=False,
+                        title="Username",
+                    ),
+                    ResourceSecret(
+                        data_type=SettingDataType.STRING,
+                        description="Login password to access database",
+                        name="password",
+                        shared=False,
+                        title="Password",
+                    ),
+                ],
+                title="Postgres Database",
             )
+        ],
+        type=ArtifactTypeRequirement.model_validate({"docker_image": {"image": "postgres:18.1"}}),
+    )
 
-            return Mock(
-                Bolt,
-                artifacts=[artifact],
-                buildable_artifacts=[],
-                executable_artifacts=[artifact],
-                project_id="resource_provider",
-                version="1",
-            )
+    return Bolt(api_version="v1", artifacts=[postgres], project="postgres", version="18.1.0")
 
 
 @pytest.fixture(scope="session")
 def environment() -> Environment:
-    return Environment(id="test", name="Test Environment", tier=EnvironmentTier.DEVELOPMENT)
+    return Environment(name="test", title="Test Environment", tier=EnvironmentTier.DEVELOPMENT)
 
 
 @pytest.fixture(scope="session")
 def execution_parameters() -> ExecutionParameters:
     return ExecutionParameters(
-        DefaultExecutionParameters(
-            compute=ArtifactExecutionComputeParameters(max_memory=1.0, min_cpu=0.25, min_memory=0.1),
-            external_service=ArtifactExecutionExternalServiceParameters(host="test.ballista.build"),
-            volume=ArtifactExecutionVolumeParameters(max_capacity=1.0, path="/custom/path", type="generic-storage"),
+        initial=DefaultExecutionParameters(
+            compute=ComputeExecutionParameters(max_memory=1.0, min_cpu=0.25, min_memory=0.1),
+            external_service=ExternalizedServiceParameters(host="test.ballista.build"),
+            scaling=ScalingExecutionParameters(),
+            volume=VolumeExecutionParameters(max_capacity=1.0, path="/custom/path", type="generic-storage"),
         )
     )

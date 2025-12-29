@@ -5,22 +5,25 @@ description = "Ballista.build SDK for Python"
 readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 license = "MIT"
-requires-python = ">=3.11"
+requires-python = ">=3.12"
 dependencies = [
     "kubernetes>=32.0",
     "openapi-pydantic>=0.5.1",
     "pydantic>=2",
+    "python-dotenv>=1.2.1",
     "pyyaml>=6.0",
     "semver>=3.0",
+    "ty>=0.0.1a32",
     "urllib3>=1.25,<3.0.0",
 ]
 
 [dependency-groups]
 dev = [
     "ruff>=0.9",
-    "pytest>=8.3",
+    "pytest>=9.0",
     "coverage>=7.7",
     "ty>=0.0.1a21",
+    "kubernetes-typed[client]>=18.20.2",
 ]
 
 [build-system]
@@ -30,6 +33,12 @@ build-backend = "hatchling.build"
 [tool.coverage.run]
 source = ["src"]
 
+[tool.pytest.ini_options]
+markers = [
+    "unit: Tests with no other dependent systems",
+    "integration: Tests requiring dependent systems"
+]
+
 [tool.ruff]
 line-length = 120
-target-version = "py311"
+target-version = "py312"

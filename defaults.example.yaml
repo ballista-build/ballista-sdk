@@ -1,7 +1,8 @@
 ---
 api_version: v1
 artifacts:
-  - id: server
+  - name: server
+    build: {}
     execution:
       healthchecks:
         alive: &probe
@@ -11,220 +12,54 @@ artifacts:
         ready: *probe
         started: *probe
       secrets:
-        - alias: POSTGRES_USER
+        - name: root_username
+          alias: POSTGRES_USER
           description: Root username.
-          id: root_user
-          name: Root Username
-          template: postgres
+          title: Root Username
           type: string
-        - alias: POSTGRES_PASSWORD
+        - name: root_password
+          alias: POSTGRES_PASSWORD
           description: Root password.
-          name: Root Password
-          id: root_password
-          type: password
+          title: Root Password
+          type: string
       services:
-        - id: postgres
-          tcp:
-            port: 5432
+        - name: postgres
+          tcp: 5432
       volumes:
-        - id: data
+        - name: data
           capacity: 1
-          name: PostgreSQL Data
+          title: PostgreSQL Data
           path: /var/lib/postgresql/data
-    resource:
-      configs:
-        - id: host
-          description: Host of Postgres
-          shared: true
-          name: Host
-          type: string
-          template:
-        - id: port
-          description: Port of Postgres
-          name: Port
-          shared: true
-          type: integer
-          template:
-      id: postgres
-      name: Postgres Database
-      prefix: POSTGRES
-      requirements:
-        properties:
-          database_id:
-            description: Database name.
-            title: Database
+    provides:
+      - name: database
+        configs:
+          - name: host
+            shared: true
             type: string
-        required: [database_id]
-      secrets:
-        - id: database
-          description: Database name
-          shared: false
-          name: Database
-          type: string
-          template: "{environment.id}-{requirements.database_id}"
-        - id: username
-          description: Username
-          shared: false
-          name: Username
-          type: string
-          template: "{environment.id}-{artifact.id}-{requirements.database_id}"
-        - id: password
-          description: Password
-          name: Password
-          shared: false
-          type: password
+          - name: port
+            shared: true
+            type: integer
+        title: Postgres Database
+        prefix: POSTGRES
+        requirements:
+          properties:
+            - name: name
+              description: Database name.
+              title: Database
+              type: string
+          required: [name]
+        secrets:
+          - name: database
+            shared: false
+            type: string
+          - name: username
+            shared: false
+            type: string
+          - name: password
+            shared: false
+            type: string
     type:
       docker_image:
-        image: postgres:17.5
-project_id: postgres
-version: "1"
----
-# yaml-language-server: $schema=http://localhost:8000/api/v1/schema
-api_version: v1
-artifacts:
-  - id: server
-    execution:
-      healthchecks:
-        alive: &probe
-          exec:
-            commands:
-              - /health/ping_liveness.sh
-            shell: True
-        ready: *probe
-        started: *probe
-      services:
-        - id: redis
-          tcp:
-            port: 6379
-      volumes:
-        - id: data
-          capacity: 1
-          path: /data
-          name: Redis Data
-    resource:
-      configs:
-        - description: Host of Redis server
-          id: host
-          name: Host
-          shared: True
-          template: ""
-          type: string
-        - description: Port of Redis server
-          id: port
-          name: Port
-          shared: True
-          template: ""
-          type: integer
-      description: "Redis index"
-      id: redis
-      name: Redis Index
-      prefix: "REDIS"
-      requirements:
-        properties:
-          index_id:
-            description: Index ID description
-            title: Index
-            type: string
-      secrets:
-        - description: "Index"
-          id: "index"
-          name: Index
-          shared: False
-          template: ""
-          type: string
-        - description: "User"
-          id: "user"
-          name: User
-          shared: False
-          template: ""
-          type: string
-        - description: "Password"
-          id: "password"
-          name: Password
-          shared: False
-          template: ""
-          type: password
-    type:
-      docker_image:
-        image: redis:8
-project_id: redis
-version: "1"
----
-api_version: v1
-artifacts:
-  - id: server
-    execution:
-      healthchecks:
-        alive: &probe
-          exec:
-            commands: ["mysqladmin", "ping", "-h", "localhost"]
-        ready: *probe
-        started: *probe
-      secrets:
-        - alias: MYSQL_ROOT_USER
-          description: Root username.
-          id: root_user
-          name: Root Username
-          template: root
-          type: string
-        - alias: MYSQL_ROOT_PASSWORD
-          description: Root password.
-          name: Root Password
-          id: root_password
-          type: password
-      services:
-        - id: mysql
-          tcp:
-            port: 3306
-      volumes:
-        - id: data
-          capacity: 1
-          name: MySQL Data
-          path: /var/lib/mysql
-    resource:
-      configs:
-        - id: host
-          description: Host of MySQL server
-          shared: true
-          name: Host
-          type: string
-          template:
-        - id: port
-          description: Port of MySQL server
-          name: Port
-          shared: true
-          type: integer
-          template:
-      id: mysql
-      name: MySQL Database
-      prefix: MYSQL
-      requirements:
-        properties:
-          database_id:
-            description: Database identifier.
-            title: Database
-            type: string
-        required: [database_id]
-      secrets:
-        - id: database
-          description: Database name
-          shared: false
-          name: Database
-          type: string
-          template: "{environment.id}-{requirements.database_id}"
-        - id: username
-          description: Username
-          shared: false
-          name: Username
-          type: string
-          template: "{environment.id}-{artifact.id}-{requirements.database_id}"
-        - id: password
-          description: Password
-          name: Password
-          shared: false
-          type: password
-    type:
-      docker_image:
-        image: mysql:8.0
-project_id: mysql
-version: "1"
+        image: postgres:18.1
+project: postgres
+version: "18.1"
