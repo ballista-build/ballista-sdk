@@ -61,7 +61,9 @@ Environments:
 
 
 PER_PROJECT_NAMESPACES = False
-"""Eventually a setting in an environment to create namespaces per project."""
+"""Eventually an environment setting. Create namespaces per project."""
+ENSURE_ENVIRONMENT_NAMESPACES = True
+"""Eventually an environment setting. Ensures an Environment has a proper Namespace created."""
 
 METADATA_MANAGED_BY = "Ballista"
 METADATA_DOMAIN = "ballista.build"
@@ -665,7 +667,7 @@ class KubernetesInfrastructureAdapter:
 
         namespace = _get_bolt_kubernetes_namespace(environment, bolt)
 
-        if True:
+        if ENSURE_ENVIRONMENT_NAMESPACES:
             self._ensure_namespace_exists(environment, api_client, namespace)
 
         [utils.create_from_dict(api_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
@@ -815,22 +817,30 @@ class KubernetesInfrastructureAdapter:
         pass
 
     def _ensure_namespace_exists(self, environment: Environment, api_client, namespace: str):
-        # Create namespace
+        """Ensure the specified Environment has a properly setup Kubernetes Namespace."""
+
         api = client.CoreV1Api(api_client)
 
-        try:
-            api.read_namespace(namespace)
+        labels = _get_environment_labels(environment)
 
-            # TODO: Make sure the namespace is labelled correctly.
+        try:
+            existing_namespace = cast(client.V1Namespace, api.read_namespace(namespace))
+
         except client.ApiException:
             api.create_namespace(
                 client.V1Namespace(
                     metadata=client.V1ObjectMeta(
-                        labels=_get_environment_labels(environment),
+                        labels=labels,
                         name=namespace,
                     )
                 )
             )
+
+        else:
+            # Update labels
+            existing_metadata = cast(client.V1ObjectMeta, existing_namespace.metadata)
+            existing_metadata.labels.update(labels)
+            api.patch_namespace(namespace, client.V1Namespace(metadata=existing_metadata))
 
     def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
         # TODO: Get context where environment is
