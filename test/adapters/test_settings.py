@@ -26,14 +26,18 @@ from ballista_sdk.api.v1 import (
 
 @dataclass
 class MockKubernetesConfigsAdapter(KubernetesConfigsAdapter):
-    _persisted: dict[tuple[str, str], kubernetes_client.V1ConfigMap] = field(default_factory=dict)
+    _persisted: dict[tuple[Environment, str, str], kubernetes_client.V1ConfigMap] = field(default_factory=dict)
 
-    def _read_object(self, namespace: str, ref_name: str) -> kubernetes_client.V1ConfigMap | None:
-        if obj := self._persisted.get((namespace, ref_name)):
+    def _read_object(
+        self, environment: Environment, namespace: str, ref_name: str
+    ) -> kubernetes_client.V1ConfigMap | None:
+        if obj := self._persisted.get((environment, namespace, ref_name)):
             return obj
 
-    def _write_object(self, namespace: str, ref_name: str, obj: kubernetes_client.V1ConfigMap):
-        cache_key = (namespace, ref_name)
+    def _write_object(
+        self, environment: Environment, namespace: str, ref_name: str, obj: kubernetes_client.V1ConfigMap
+    ):
+        cache_key = (environment, namespace, ref_name)
 
         self._persisted[cache_key] = obj
         self._loaded.pop(cache_key, None)
@@ -41,14 +45,16 @@ class MockKubernetesConfigsAdapter(KubernetesConfigsAdapter):
 
 @dataclass
 class MockKubernetesSecretsAdapter(KubernetesSecretsAdapter):
-    _persisted: dict[tuple[str, str], kubernetes_client.V1Secret] = field(default_factory=dict)
+    _persisted: dict[tuple[Environment, str, str], kubernetes_client.V1Secret] = field(default_factory=dict)
 
-    def _read_object(self, namespace: str, ref_name: str) -> kubernetes_client.V1Secret | None:
-        if obj := self._persisted.get((namespace, ref_name)):
+    def _read_object(
+        self, environment: Environment, namespace: str, ref_name: str
+    ) -> kubernetes_client.V1Secret | None:
+        if obj := self._persisted.get((environment, namespace, ref_name)):
             return obj
 
-    def _write_object(self, namespace: str, ref_name: str, obj: kubernetes_client.V1Secret):
-        cache_key = (namespace, ref_name)
+    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: kubernetes_client.V1Secret):
+        cache_key = (environment, namespace, ref_name)
 
         self._persisted[cache_key] = obj
         self._loaded.pop(cache_key, None)
@@ -57,15 +63,18 @@ class MockKubernetesSecretsAdapter(KubernetesSecretsAdapter):
 @pytest.fixture(
     params=[
         pytest.param("docker_compose", marks=[pytest.mark.unit]),
-        pytest.param("mock_kubernetes_configmap", marks=[pytest.mark.unit]),
+        pytest.param("mock_kubernetes_config_map", marks=[pytest.mark.unit]),
+        pytest.param("kubernetes_config_map", marks=[pytest.mark.integration]),
     ]
 )
 def configs_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapter) -> SettingsAdapter:
     match request.param:
         case "docker_compose":
             return DockerComposeSettingsAdapter()
-        case "mock_kubernetes_configmap":
+        case "mock_kubernetes_config_map":
             return MockKubernetesConfigsAdapter(kubernetes_adapter)
+        case "kubernetes_config_map":
+            return KubernetesConfigsAdapter(kubernetes_adapter)
 
     raise ValueError()
 
@@ -74,6 +83,7 @@ def configs_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapte
     params=[
         pytest.param("docker_compose", marks=[pytest.mark.unit]),
         pytest.param("mock_kubernetes_secret", marks=[pytest.mark.unit]),
+        pytest.param("kubernetes_secret", marks=[pytest.mark.integration]),
     ]
 )
 def secrets_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapter) -> SettingsAdapter:
@@ -82,6 +92,8 @@ def secrets_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapte
             return DockerComposeSettingsAdapter()
         case "mock_kubernetes_secret":
             return MockKubernetesSecretsAdapter(kubernetes_adapter)
+        case "kubernetes_secret":
+            return KubernetesSecretsAdapter(kubernetes_adapter)
 
     raise ValueError()
 
@@ -99,7 +111,13 @@ def sample_settings() -> list[tuple[str, SettingDataType, SettingValue]]:
     ]
 
 
-def _test_setting(settings_adapter, environment, bound_setting, setting_value, known_setting):
+def _test_setting(
+    settings_adapter: SettingsAdapter,
+    environment: Environment,
+    bound_setting: BoundSetting,
+    setting_value: SettingValue,
+    known_setting: BoundSetting,
+):
     # Setting doesn't exist prior.
     with settings_adapter as sa:
         exists = sa.exists(environment, bound_setting)

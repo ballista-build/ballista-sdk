@@ -1,5 +1,12 @@
-from ballista_sdk.adapters import BoundSetting, InfrastructureAdapter
-from ballista_sdk.api.v1 import ArtifactReference, Bolt, Environment, ExecutableArtifact, ResourceReference
+from ballista_sdk.adapters import InfrastructureAdapter
+from ballista_sdk.api.v1 import (
+    ArtifactReference,
+    Bolt,
+    BoundSetting,
+    Environment,
+    ExecutableArtifact,
+    ResourceReference,
+)
 
 
 class Deployer:

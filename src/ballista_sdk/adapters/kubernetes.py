@@ -61,7 +61,9 @@ Environments:
 
 
 PER_PROJECT_NAMESPACES = False
-"""Eventually a setting in an environment to create namespaces per project."""
+"""Eventually an environment setting. Create namespaces per project."""
+ENSURE_ENVIRONMENT_NAMESPACES = True
+"""Eventually an environment setting. Ensures an Environment has a proper Namespace created."""
 
 METADATA_MANAGED_BY = "Ballista"
 METADATA_DOMAIN = "ballista.build"
@@ -228,29 +230,52 @@ def _generate_yaml_files(k8s_resources: Sequence[KubernetesResource]) -> dict[st
     return {kind.lower() + ".yaml": str(yaml.dump(data)) for kind, data in k8s_resources}
 
 
+class KubernetesSettingsAdapter(SettingsAdapter, Protocol):
+    def __init__(self, adapter: KubernetesInfrastructureAdapter): ...
+
+    def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting): ...
+
+    def add_resource_setting(
+        self,
+        container_spec: dict,
+        artifact_reference: ArtifactReference,
+        resource_reference: ResourceReference,
+        resource_setting: ResourceSetting,
+        prefix: str,
+        instance: list[str],
+    ): ...
+
+    def generate_kubernetes_resources(
+        self,
+        adapter: KubernetesInfrastructureAdapter,
+        environment: Environment,
+        bolt: Bolt,
+        artifact: ExecutableArtifact,
+        artifact_execution_parameters: ArtifactExecutionParameters,
+    ) -> list[KubernetesResource]: ...
+
+
 # Settings
 @dataclass
 class BaseKubernetesSettingsAdapter[SettingKind: object]:
     adapter: KubernetesInfrastructureAdapter
-    _loaded: dict[tuple[str, str], SettingKind] = field(default_factory=dict)
+    _loaded: dict[tuple[Environment, str, str], SettingKind] = field(default_factory=dict)
     """Loaded objects."""
-    _pending_writes: dict[tuple[str, str], SettingKind] = field(default_factory=dict)
+    _pending_writes: dict[tuple[Environment, str, str], SettingKind] = field(default_factory=dict)
     """Objects pending being written."""
-    _pending_deletes: set[tuple[str, str]] = field(default_factory=set)
+    _pending_deletes: set[tuple[Environment, str, str]] = field(default_factory=set)
 
     def __enter__(self) -> Self:
         return self
 
     def __exit__(self, *args) -> bool | None:
         for pending, obj in self._pending_writes.items():
-            namespace, ref_name = pending
-
-            self._write_object(namespace, ref_name, obj)
+            self._write_object(*pending, obj)
 
         self._pending_writes.clear()
 
-        for namespace, ref_name in self._pending_deletes:
-            self._delete_object(namespace, ref_name)
+        for pending in self._pending_deletes:
+            self._delete_object(*pending)
 
         self._pending_deletes.clear()
 
@@ -333,8 +358,8 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
         else:
             raise ValueError()
 
-    def _delete_object(self, namespace: str, ref_name: str):
-        cache_key = (namespace, ref_name)
+    def _delete_object(self, environment: Environment, namespace: str, ref_name: str):
+        cache_key = (environment, namespace, ref_name)
 
         self._loaded.pop(cache_key, None)
 
@@ -343,18 +368,20 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
         namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
 
         # Attempt to read a new copy of the object or use one that has pending writes.
-        obj = self._pending_writes.get((namespace, ref_name)) or self._read_object(namespace, ref_name)
+        obj = self._pending_writes.get((environment, namespace, ref_name)) or self._read_object(
+            environment, namespace, ref_name
+        )
 
         if obj is None:
             raise ValueError()
 
         self._delete_object_value(obj, bound_setting.setting)
-        self._pending_writes[(namespace, ref_name)] = obj
+        self._pending_writes[(environment, namespace, ref_name)] = obj
 
     def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
         """Checks if the value for the BoundSetting exists/persists."""
         namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
-        obj = self._read_cached_object(namespace, ref_name)
+        obj = self._read_cached_object(environment, namespace, ref_name)
         if not obj:
             return False
 
@@ -374,21 +401,21 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
     ) -> list[KubernetesResource]:
         return []
 
-    def _read_object(self, namespace: str, ref_name: str) -> SettingKind | None:
+    def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> SettingKind | None:
         return None
 
-    def _read_cached_object(self, namespace: str, ref_name: str) -> SettingKind | None:
-        cache_key = (namespace, ref_name)
+    def _read_cached_object(self, environment: Environment, namespace: str, ref_name: str) -> SettingKind | None:
+        cache_key = (environment, namespace, ref_name)
 
         if loaded_object := self._loaded.get(cache_key):
             return loaded_object
 
-        return self._read_object(namespace, ref_name)
+        return self._read_object(environment, namespace, ref_name)
 
     def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
         """Retrieve the value for the BoundSetting in the specified Environment."""
         namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
-        obj = self._read_cached_object(namespace, ref_name)
+        obj = self._read_cached_object(environment, namespace, ref_name)
 
         if obj is None:
             raise ValueError()
@@ -403,8 +430,8 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
     def _delete_object_value(self, obj: SettingKind, setting: Setting): ...
 
-    def _write_object(self, namespace: str, ref_name: str, obj: SettingKind):
-        cache_key = (namespace, ref_name)
+    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: SettingKind):
+        cache_key = (environment, namespace, ref_name)
 
         self._loaded.pop(cache_key, None)
 
@@ -413,17 +440,17 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
         # Attempt to read a new copy of the object or use one that has pending writes.
         obj = (
-            self._pending_writes.get((namespace, ref_name))
-            or self._read_object(namespace, ref_name)
+            self._pending_writes.get((environment, namespace, ref_name))
+            or self._read_object(environment, namespace, ref_name)
             or self._create_object(environment, bound_setting)
         )
 
         self._set_object_value(obj, bound_setting.setting, value)
-        self._pending_writes[(namespace, ref_name)] = obj
+        self._pending_writes[(environment, namespace, ref_name)] = obj
 
 
 @dataclass
-class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap], SettingsAdapter):
+class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap], KubernetesSettingsAdapter):
     @property
     def verify_before_deploy(self) -> Literal[True]:
         return True
@@ -432,6 +459,29 @@ class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap]
         return client.V1ConfigMap(
             api_version="v1", kind="ConfigMap", metadata=self._get_bound_setting_metadata(environment, bound_setting)
         )
+
+    def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> client.V1ConfigMap | None:
+        api_client = self.adapter._get_kubernetes_client(environment)
+        api = client.CoreV1Api(api_client)
+        try:
+            return api.read_namespaced_config_map(name=ref_name, namespace=namespace)
+        except client.ApiException:
+            return None
+
+    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: client.V1ConfigMap):
+        api_client = self.adapter._get_kubernetes_client(environment)
+
+        self.adapter._ensure_namespace_exists(environment, api_client, namespace)
+
+        api = client.CoreV1Api(api_client)
+        try:
+            api.read_namespaced_config_map(name=ref_name, namespace=namespace)
+        except client.ApiException:
+            api.create_namespaced_config_map(namespace=namespace, body=obj)
+        else:
+            api.replace_namespaced_config_map(name=ref_name, namespace=namespace, body=obj)
+
+        self._loaded.pop((environment, namespace, ref_name), None)
 
     def _get_object_value(self, obj: client.V1ConfigMap, setting: Setting) -> SettingValue:
         source = obj.binary_data if setting.data_type == SettingDataType.BYTES else obj.data
@@ -453,8 +503,8 @@ class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap]
 
     def _set_object_value(self, obj: client.V1ConfigMap, setting: Setting, value: SettingValue):
         if setting.data_type == SettingDataType.BYTES:
-            # Bytes go into binary_data as base64 encoded.
-            encoded_value = base64.b64encode(cast(bytes, value))
+            # Bytes go into binary_data as a base64 encoded string.
+            encoded_value = base64.b64encode(cast(bytes, value)).decode()
 
             obj.binary_data = obj.binary_data or {}
             obj.binary_data[setting.name] = encoded_value
@@ -467,12 +517,12 @@ class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap]
     def _delete_object_value(self, obj: client.V1ConfigMap, setting: Setting):
         if setting.data_type == SettingDataType.BYTES:
             if obj.binary_data and setting.name in obj.binary_data:
-                del obj.binary_data[setting.name]
+                obj.binary_data.pop(setting.name)
                 return
 
         else:
             if obj.data and setting.name in obj.data:
-                del obj.data[setting.name]
+                obj.data.pop(setting.name)
                 return
 
         raise ValueError()
@@ -489,7 +539,7 @@ class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap]
 
 
 @dataclass
-class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], SettingsAdapter):
+class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], KubernetesSettingsAdapter):
     @property
     def verify_before_deploy(self) -> Literal[True]:
         return True
@@ -501,6 +551,29 @@ class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], S
             metadata=self._get_bound_setting_metadata(environment, bound_setting),
             type="Opaque",
         )
+
+    def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> client.V1Secret | None:
+        api_client = self.adapter._get_kubernetes_client(environment)
+        api = client.CoreV1Api(api_client)
+        try:
+            return api.read_namespaced_secret(name=ref_name, namespace=namespace)
+        except client.ApiException:
+            return None
+
+    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: client.V1Secret):
+        api_client = self.adapter._get_kubernetes_client(environment)
+
+        self.adapter._ensure_namespace_exists(environment, api_client, namespace)
+
+        api = client.CoreV1Api(api_client)
+        try:
+            api.read_namespaced_secret(name=ref_name, namespace=namespace)
+        except client.ApiException:
+            api.create_namespaced_secret(namespace=namespace, body=obj)
+        else:
+            api.replace_namespaced_secret(name=ref_name, namespace=namespace, body=obj)
+
+        self._loaded.pop((environment, namespace, ref_name), None)
 
     def _get_object_value(self, obj: client.V1Secret, setting: Setting) -> SettingValue:
         if obj.data and (value := obj.data.get(setting.name)):
@@ -525,7 +598,7 @@ class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], S
         bytes_value = cast(bytes, value) if setting.data_type == SettingDataType.BYTES else str(value).encode()
 
         obj.data = obj.data or {}
-        obj.data[setting.name] = base64.b64encode(bytes_value)
+        obj.data[setting.name] = base64.b64encode(bytes_value).decode()
 
     def _delete_object_value(self, obj: client.V1Secret, setting: Setting):
         if obj.data and setting.name in obj.data:
@@ -546,7 +619,7 @@ class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], S
 
 
 @dataclass
-class ExternalSecretsAdapter(BaseKubernetesSettingsAdapter):
+class ExternalSecretsAdapter(KubernetesSettingsAdapter):
     @property
     def verify_before_deploy(self) -> Literal[False]:
         return False
@@ -558,8 +631,8 @@ class KubernetesInfrastructureAdapter:
 
     _bolts: list[Bolt] = field(default_factory=list)
     # TODO: These shouldn't be here; they are going to be Environment dependent!
-    configs_adapter: KubernetesConfigsAdapter = field(init=False)
-    secrets_adapter: KubernetesSecretsAdapter = field(init=False)
+    configs_adapter: KubernetesSettingsAdapter = field(init=False)
+    secrets_adapter: KubernetesSettingsAdapter = field(init=False)
 
     def __post_init__(self):
         self.configs_adapter = KubernetesConfigsAdapter(self)
@@ -594,22 +667,8 @@ class KubernetesInfrastructureAdapter:
 
         namespace = _get_bolt_kubernetes_namespace(environment, bolt)
 
-        if True:
-            # Create namespace
-            api = client.CoreV1Api(api_client)
-            try:
-                api.read_namespace(namespace)
-
-                # TODO: Make sure the namespace is labelled correctly.
-            except client.ApiException:
-                api.create_namespace(
-                    client.V1Namespace(
-                        metadata=client.V1ObjectMeta(
-                            labels=_get_environment_labels(environment),
-                            name=namespace,
-                        )
-                    )
-                )
+        if ENSURE_ENVIRONMENT_NAMESPACES:
+            self._ensure_namespace_exists(environment, api_client, namespace)
 
         [utils.create_from_dict(api_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
 
@@ -756,6 +815,32 @@ class KubernetesInfrastructureAdapter:
         execution_parameters: ExecutionParameters,
     ):
         pass
+
+    def _ensure_namespace_exists(self, environment: Environment, api_client, namespace: str):
+        """Ensure the specified Environment has a properly setup Kubernetes Namespace."""
+
+        api = client.CoreV1Api(api_client)
+
+        labels = _get_environment_labels(environment)
+
+        try:
+            existing_namespace = cast(client.V1Namespace, api.read_namespace(namespace))
+
+        except client.ApiException:
+            api.create_namespace(
+                client.V1Namespace(
+                    metadata=client.V1ObjectMeta(
+                        labels=labels,
+                        name=namespace,
+                    )
+                )
+            )
+
+        else:
+            # Update labels
+            existing_metadata = cast(client.V1ObjectMeta, existing_namespace.metadata)
+            existing_metadata.labels.update(labels)
+            api.patch_namespace(namespace, client.V1Namespace(metadata=existing_metadata))
 
     def _get_kubernetes_client(self, environment: Environment) -> client.ApiClient:
         # TODO: Get context where environment is
