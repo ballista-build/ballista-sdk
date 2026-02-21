@@ -101,13 +101,17 @@ def secrets_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapte
 @pytest.fixture(scope="session")
 def sample_settings() -> list[tuple[str, SettingDataType, SettingValue]]:
     return [
-        ("bool_false", SettingDataType.BOOLEAN, False),
-        ("bool_true", SettingDataType.BOOLEAN, True),
+        ("bool_false", SettingDataType.BOOL, False),
+        ("bool_true", SettingDataType.BOOL, True),
         ("bytes", SettingDataType.BYTES, bytes.fromhex("2EF0F1F2")),
         ("float", SettingDataType.FLOAT, 1.24),
-        ("integer_pos", SettingDataType.INTEGER, 36),
-        ("integer_neg", SettingDataType.INTEGER, -24593),
+        ("int32_pos", SettingDataType.INT32, 36),
+        ("int32_neg", SettingDataType.INT32, -24593),
+        ("int64_pos", SettingDataType.INT32, 12345678901),
+        ("int64_neg", SettingDataType.INT32, -5678901234),
         ("string", SettingDataType.STRING, "burgundy blue hair"),
+        ("uint32", SettingDataType.UINT32, 45503),
+        ("uint64", SettingDataType.UINT64, 1),
     ]
 
 

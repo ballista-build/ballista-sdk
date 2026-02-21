@@ -8,16 +8,24 @@ from .common import BaseNamedModel
 
 
 class SettingDataType(StrEnum):
-    BOOLEAN = auto()
+    BOOL = auto()
     """A boolean."""
     BYTES = auto()
     """Raw bytes."""
+    DOUBLE = auto()
+    """64-bit floating point number."""
     FLOAT = auto()
-    """64-bit float."""
-    INTEGER = auto()
-    """32-bit integer."""
+    """32-bit floating point number."""
+    INT32 = auto()
+    """Signed 32-bit integer."""
+    INT64 = auto()
+    """Signed 64-bit integer."""
     STRING = auto()
     """UTF-8 encoded string."""
+    UINT32 = auto()
+    """32-bit unsigned integer."""
+    UINT64 = auto()
+    """Unsigned 64-bit integer."""
 
 
 SettingValue = bool | bytes | float | str

@@ -90,7 +90,7 @@ artifacts:
                 name: "host"
                 shared: True
                 title: "Host"
-              - data_type: "integer"
+              - data_type: "uint32"
                 description: "Port Database server listens on."
                 name: "port"
                 shared: True
@@ -186,7 +186,7 @@ def postgres_bolt() -> Bolt:
                         name="port",
                         shared=True,
                         title="Port",
-                        data_type=SettingDataType.INTEGER,
+                        data_type=SettingDataType.INT32,
                     ),
                 ],
                 description="Postgres Database",
