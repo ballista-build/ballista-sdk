@@ -488,13 +488,13 @@ class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap]
 
         if source and (value := source.get(setting.name)):
             match setting.data_type:
-                case SettingDataType.BOOLEAN:
+                case SettingDataType.BOOL:
                     return value.lower() == "true"
                 case SettingDataType.BYTES:
                     return base64.b64decode(value)
-                case SettingDataType.FLOAT:
+                case SettingDataType.DOUBLE | SettingDataType.FLOAT:
                     return float(value)
-                case SettingDataType.INTEGER:
+                case SettingDataType.INT32 | SettingDataType.INT64 | SettingDataType.UINT32 | SettingDataType.UINT64:
                     return int(value)
                 case SettingDataType.STRING:
                     return value
@@ -583,14 +583,15 @@ class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], K
                 return bytes_value
 
             decoded_string = bytes_value.decode()
-            if setting.data_type == SettingDataType.BOOLEAN:
-                return decoded_string.lower() == "true"
-            elif setting.data_type == SettingDataType.INTEGER:
-                return int(decoded_string)
-            elif setting.data_type == SettingDataType.FLOAT:
-                return float(decoded_string)
-            else:
-                return decoded_string
+            match setting.data_type:
+                case SettingDataType.BOOL:
+                    return decoded_string.lower() == "true"
+                case SettingDataType.DOUBLE | SettingDataType.FLOAT:
+                    return float(decoded_string)
+                case SettingDataType.INT32 | SettingDataType.INT64 | SettingDataType.UINT32 | SettingDataType.UINT64:
+                    return int(decoded_string)
+                case _:
+                    return decoded_string
 
         raise ValueError()
 

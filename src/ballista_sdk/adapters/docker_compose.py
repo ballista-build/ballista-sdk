@@ -513,11 +513,11 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
         match bound_setting.setting.data_type:
             case SettingDataType.BYTES:
                 return base64.b64decode(value)
-            case SettingDataType.BOOLEAN:
+            case SettingDataType.BOOL:
                 return value.lower() == "true"
-            case SettingDataType.FLOAT:
+            case SettingDataType.DOUBLE | SettingDataType.FLOAT:
                 return float(value)
-            case SettingDataType.INTEGER:
+            case SettingDataType.INT32 | SettingDataType.INT64 | SettingDataType.UINT32 | SettingDataType.UINT64:
                 return int(value)
             case _:
                 return value
