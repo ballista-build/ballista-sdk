@@ -3,11 +3,10 @@ from typing import cast
 import pytest
 
 from ballista_sdk.adapters.kubernetes import (
-    KubernetesEnvironmentConfig,
-    KubernetesInfrastructureAdapter,
-    KubernetesResource,
-    _generate_bolt_resources,
+    KubernetesAPIInfrastructureAdapter,
 )
+from ballista_sdk.adapters.kubernetes.environments import KubernetesEnvironmentConfig
+from ballista_sdk.adapters.kubernetes.resources import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
     Environment,
@@ -21,9 +20,9 @@ from ballista_sdk.bolts.v1 import BoltV1Factory
 def bolt(
     bolt_yaml: dict[str, dict | str],
     environment: Environment,
-    kubernetes_adapter: KubernetesInfrastructureAdapter,
+    kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
 ) -> Bolt:
-    factory = BoltV1Factory(environment, kubernetes_adapter)
+    factory = BoltV1Factory(environment, kubernetes_api_adapter)
 
     bolt = factory.get_bolt(bolt_yaml)
     if bolt:
@@ -296,22 +295,19 @@ def test_generate_resources(
     bolt: Bolt,
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
-    kubernetes_adapter: KubernetesInfrastructureAdapter,
+    kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
     execution_parameters: ExecutionParameters,
 ):
     bolt_name = request.node.callspec.params.get("bolt_yaml")
-    resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]] = request.getfixturevalue(
-        f"{bolt_name}_bolt_resources"
+    expected_bolt_resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]] = (
+        request.getfixturevalue(f"{bolt_name}_bolt_resources")
     )
     executable_artifacts = [cast(ExecutableArtifact, a) for a in bolt.artifacts if a.execution is not None]
-    assert (
-        _generate_bolt_resources(
-            artifacts=executable_artifacts,
-            bolt=bolt,
-            adapter=kubernetes_adapter,
-            environment=environment,
-            environment_config=environment_config,
-            execution_parameters=execution_parameters,
-        )
-        == resources
+    bolt_resources = kubernetes_api_adapter.generate_bolt_resources(
+        bolt=bolt,
+        artifacts=executable_artifacts,
+        environment=environment,
+        environment_config=environment_config,
+        execution_parameters=execution_parameters,
     )
+    assert bolt_resources == expected_bolt_resources
