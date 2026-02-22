@@ -3,10 +3,11 @@ from __future__ import annotations
 import base64
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Any, ClassVar, Literal, NotRequired, Protocol, Self, TypedDict, cast
+from typing import Annotated, Any, ClassVar, Literal, NotRequired, Protocol, Self, TypedDict, cast
 
 import yaml
 from kubernetes import client, config, utils
+from pydantic import BaseModel, Field
 
 from ballista_sdk.adapters.exceptions import UnknownResourceRequirement
 from ballista_sdk.adapters.settings import SettingsAdapter
@@ -36,6 +37,30 @@ from ballista_sdk.api.v1 import (
 )
 
 
+class KubernetesEnvironmentConfig(BaseModel):
+    """Configuration for a Kubernetes environment."""
+
+    # TODO: This might change when there's better support for building and publishing artifacts.
+    image_registry: Annotated[
+        str | None,
+        Field(
+            description="Docker Image registry where executable artifacts are stored. Used for artifacts that were built by Ballista."
+        ),
+    ] = None
+    """Image registry for image execution."""
+
+    ensure_namespaces: bool = True
+    """Ensures proper Namespaces are available and configured."""
+
+    force_image_registry: Annotated[
+        bool, Field(description="Force images to be retrieved and executed from configured image registry.")
+    ] = False
+    """Force images to be retrieved and executed from configured image registry."""
+
+    project_namespaces: bool = False
+    """Projects are deployed into their own namespaces."""
+
+
 class KubernetesMetadata(TypedDict):
     annotations: NotRequired[dict[str, str]]
     labels: NotRequired[dict[str, str]]
@@ -59,26 +84,12 @@ Environments:
 
 """
 
-
-PER_PROJECT_NAMESPACES = False
-"""Eventually an environment setting. Create namespaces per project."""
-ENSURE_ENVIRONMENT_NAMESPACES = True
-"""Eventually an environment setting. Ensures an Environment has a proper Namespace created."""
-
 METADATA_MANAGED_BY = "Ballista"
 METADATA_DOMAIN = "ballista.build"
 METADATA_LABEL_ENVIRONMENT = f"{METADATA_DOMAIN}/environment"
 METADATA_LABEL_ENVIRONMENT_TIER = f"{METADATA_DOMAIN}/environment-tier"
 METADATA_LABEL_RESOURCE = f"{METADATA_DOMAIN}/resource"
 METADATA_ANNOTATION_RESOURCE = f"{METADATA_DOMAIN}/resource-json"
-
-
-def _get_environment_labels(environment: Environment) -> dict[str, str]:
-    return {
-        "app.kubernetes.io/managed-by": METADATA_MANAGED_BY,
-        METADATA_LABEL_ENVIRONMENT: environment.name,
-        METADATA_LABEL_ENVIRONMENT_TIER: str(environment.tier),
-    }
 
 
 def _get_selector_labels(environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> dict[str, str]:
@@ -91,64 +102,93 @@ def _get_selector_labels(environment: Environment, bolt: Bolt, artifact: Executa
     }
 
 
-def _get_versioned_metadata_labels(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
-) -> dict[str, str]:
-    return _get_environment_labels(environment) | {
-        "app.kubernetes.io/instance": f"{artifact.name}-{bolt.version}",
-        "app.kubernetes.io/part-of": bolt.project,
-        "app.kubernetes.io/name": artifact.name,
-        "app.kubernetes.io/version": bolt.version,
+def _get_environment_config(environment: Environment) -> KubernetesEnvironmentConfig:
+    """Get a shaped configuration from an Environment."""
+
+    return KubernetesEnvironmentConfig.model_validate(environment.config if environment.config else {})
+
+
+def _get_environment_labels(name: str, tier: EnvironmentTier) -> dict[str, str]:
+    return {
+        "app.kubernetes.io/managed-by": METADATA_MANAGED_BY,
+        METADATA_LABEL_ENVIRONMENT: name,
+        METADATA_LABEL_ENVIRONMENT_TIER: str(tier),
     }
 
 
 def _get_metadata_labels(environment: Environment, project_name: str, artifact_name: str) -> dict[str, str]:
-    return _get_environment_labels(environment) | {
+    return _get_environment_labels(environment.name, environment.tier) | {
         "app.kubernetes.io/part-of": project_name,
         "app.kubernetes.io/name": artifact_name,
     }
 
 
-def _get_bolt_kubernetes_namespace(environment: Environment, bolt: Bolt) -> str:
-    # TODO: This will need to be changed and allow customization
-    if PER_PROJECT_NAMESPACES:
+def _get_versioned_metadata_labels(
+    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+) -> dict[str, str]:
+    return _get_metadata_labels(environment, bolt.project, artifact.name) | {
+        "app.kubernetes.io/instance": f"{artifact.name}-{bolt.version}",
+        "app.kubernetes.io/version": bolt.version,
+    }
+
+
+def _get_bolt_kubernetes_namespace(
+    environment: Environment, environment_config: KubernetesEnvironmentConfig, bolt: Bolt
+) -> str:
+    if environment_config.project_namespaces:
         return f"{bolt.project}-{environment.name}"
     else:
         return environment.name
 
 
 def _get_reference_kubernetes_namespace(
-    environment: Environment, reference: ArtifactReference | ResourceReference
+    environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
+    reference: ArtifactReference | ResourceReference,
 ) -> str:
-    if PER_PROJECT_NAMESPACES:
+    if environment_config.project_namespaces:
         return f"{reference.project_name}-{environment.name}"
     else:
         return environment.name
 
 
 def _get_artifact_kubernetes_name(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact, name: str | None = None
+    environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
+    name: str | None = None,
 ) -> str:
-    # TODO: This will need to be changed and allow customization
-    if PER_PROJECT_NAMESPACES:
+    if environment_config.project_namespaces:
         return artifact.name + (f"-{name}" if name else "")
     else:
         return f"{bolt.project}-{artifact.name}" + (f"-{name}" if name else "")
 
 
 def _get_artifact_metadata(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact, name: str | None = None
+    environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
+    bolt: Bolt,
+    artifact: ExecutableArtifact,
+    name: str | None = None,
 ) -> KubernetesMetadata:
     return {
         "labels": _get_versioned_metadata_labels(environment, bolt, artifact),
-        "name": _get_artifact_kubernetes_name(environment, bolt, artifact, name),
-        "namespace": _get_bolt_kubernetes_namespace(environment, bolt),
+        "name": _get_artifact_kubernetes_name(environment, environment_config, bolt, artifact, name),
+        "namespace": _get_bolt_kubernetes_namespace(environment, environment_config, bolt),
     }
+
+
+def _generate_artifact_docker_image_name(bolt: Bolt, artifact: ExecutableArtifact) -> str:
+    """Generate the Docker Image name for a docker_image Artifact."""
+
+    return f"{bolt.project}_{artifact.name}:{bolt.version}"
 
 
 def _generate_bolt_resources(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifacts: Sequence[ExecutableArtifact],
     execution_parameters: ExecutionParameters,
@@ -161,6 +201,7 @@ def _generate_bolt_resources(
         artifact.name: _generate_artifact_resources(
             adapter=adapter,
             environment=environment,
+            environment_config=environment_config,
             bolt=bolt,
             artifact=artifact,
             artifact_execution_parameters=execution_parameters.params_for_artifact(
@@ -208,6 +249,7 @@ def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirem
 def _generate_artifact_resources(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -218,6 +260,7 @@ def _generate_artifact_resources(
         k8s_resources += generator(
             adapter=adapter,
             environment=environment,
+            environment_config=environment_config,
             bolt=bolt,
             artifact=artifact,
             artifact_execution_parameters=artifact_execution_parameters,
@@ -332,28 +375,32 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
             # Unique setting is already inside the normal artifact settings
             self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
 
-    def _get_bound_setting_metadata(self, environment: Environment, bound_setting: BoundSetting) -> KubernetesMetadata:
+    def _get_bound_setting_metadata(
+        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+    ) -> KubernetesMetadata:
         if bound_setting.artifact:
-            namespace = _get_reference_kubernetes_namespace(environment, bound_setting.artifact)
+            namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.artifact)
             name = self._get_artifact_settings_refname(bound_setting.artifact)
 
             return {"labels": {}, "name": name, "namespace": namespace}
         elif bound_setting.resource:
-            namespace = _get_reference_kubernetes_namespace(environment, bound_setting.resource)
+            namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.resource)
             name = self._get_resource_settings_refname(bound_setting.resource)
 
             return {"labels": {}, "name": name, "namespace": namespace}
         else:
             raise ValueError()
 
-    def _get_bound_setting_names(self, environment: Environment, bound_setting: BoundSetting) -> tuple[str, str]:
+    def _get_bound_setting_names(
+        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+    ) -> tuple[str, str]:
         if bound_setting.artifact:
             return _get_reference_kubernetes_namespace(
-                environment, bound_setting.artifact
+                environment, environment_config, bound_setting.artifact
             ), self._get_artifact_settings_refname(bound_setting.artifact)
         elif bound_setting.resource:
             return _get_reference_kubernetes_namespace(
-                environment, bound_setting.resource
+                environment, environment_config, bound_setting.resource
             ), self._get_resource_settings_refname(bound_setting.resource)
         else:
             raise ValueError()
@@ -365,7 +412,9 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
     def delete(self, environment: Environment, bound_setting: BoundSetting):
         """Delete the value stored for the BoundSetting in specified Environment."""
-        namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
+
+        environment_config = _get_environment_config(environment)
+        namespace, ref_name = self._get_bound_setting_names(environment, environment_config, bound_setting)
 
         # Attempt to read a new copy of the object or use one that has pending writes.
         obj = self._pending_writes.get((environment, namespace, ref_name)) or self._read_object(
@@ -380,7 +429,9 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
     def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
         """Checks if the value for the BoundSetting exists/persists."""
-        namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
+
+        environment_config = _get_environment_config(environment)
+        namespace, ref_name = self._get_bound_setting_names(environment, environment_config, bound_setting)
         obj = self._read_cached_object(environment, namespace, ref_name)
         if not obj:
             return False
@@ -414,7 +465,9 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
     def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
         """Retrieve the value for the BoundSetting in the specified Environment."""
-        namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
+
+        environment_config = _get_environment_config(environment)
+        namespace, ref_name = self._get_bound_setting_names(environment, environment_config, bound_setting)
         obj = self._read_cached_object(environment, namespace, ref_name)
 
         if obj is None:
@@ -422,7 +475,9 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
         return self._get_object_value(obj, bound_setting.setting)
 
-    def _create_object(self, environment: Environment, bound_setting: BoundSetting) -> SettingKind: ...
+    def _create_object(
+        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+    ) -> SettingKind: ...
 
     def _get_object_value(self, obj: SettingKind, setting: Setting) -> SettingValue: ...
 
@@ -435,14 +490,20 @@ class BaseKubernetesSettingsAdapter[SettingKind: object]:
 
         self._loaded.pop(cache_key, None)
 
-    def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
-        namespace, ref_name = self._get_bound_setting_names(environment, bound_setting)
+    def write(
+        self,
+        environment: Environment,
+        bound_setting: BoundSetting,
+        value: SettingValue,
+    ):
+        environment_config = _get_environment_config(environment)
+        namespace, ref_name = self._get_bound_setting_names(environment, environment_config, bound_setting)
 
         # Attempt to read a new copy of the object or use one that has pending writes.
         obj = (
             self._pending_writes.get((environment, namespace, ref_name))
             or self._read_object(environment, namespace, ref_name)
-            or self._create_object(environment, bound_setting)
+            or self._create_object(environment, environment_config, bound_setting)
         )
 
         self._set_object_value(obj, bound_setting.setting, value)
@@ -455,9 +516,13 @@ class KubernetesConfigsAdapter(BaseKubernetesSettingsAdapter[client.V1ConfigMap]
     def verify_before_deploy(self) -> Literal[True]:
         return True
 
-    def _create_object(self, environment: Environment, bound_setting: BoundSetting) -> client.V1ConfigMap:
+    def _create_object(
+        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+    ) -> client.V1ConfigMap:
         return client.V1ConfigMap(
-            api_version="v1", kind="ConfigMap", metadata=self._get_bound_setting_metadata(environment, bound_setting)
+            api_version="v1",
+            kind="ConfigMap",
+            metadata=self._get_bound_setting_metadata(environment, environment_config, bound_setting),
         )
 
     def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> client.V1ConfigMap | None:
@@ -544,11 +609,13 @@ class KubernetesSecretsAdapter(BaseKubernetesSettingsAdapter[client.V1Secret], K
     def verify_before_deploy(self) -> Literal[True]:
         return True
 
-    def _create_object(self, environment: Environment, bound_setting: BoundSetting) -> client.V1Secret:
+    def _create_object(
+        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+    ) -> client.V1Secret:
         return client.V1Secret(
             api_version="v1",
             kind="Secret",
-            metadata=self._get_bound_setting_metadata(environment, bound_setting),
+            metadata=self._get_bound_setting_metadata(environment, environment_config, bound_setting),
             type="Opaque",
         )
 
@@ -656,19 +723,22 @@ class KubernetesInfrastructureAdapter:
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
+        environment_config = _get_environment_config(environment)
+
         bolt_resources, all_artifact_resources = _generate_bolt_resources(
             bolt=bolt,
             artifacts=artifacts,
             adapter=self,
             environment=environment,
+            environment_config=environment_config,
             execution_parameters=execution_parameters,
         )
 
         api_client = self._get_kubernetes_client(environment)
 
-        namespace = _get_bolt_kubernetes_namespace(environment, bolt)
+        namespace = _get_bolt_kubernetes_namespace(environment, environment_config, bolt)
 
-        if ENSURE_ENVIRONMENT_NAMESPACES:
+        if environment_config.ensure_namespaces:
             self._ensure_namespace_exists(environment, api_client, namespace)
 
         [utils.create_from_dict(api_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
@@ -822,7 +892,7 @@ class KubernetesInfrastructureAdapter:
 
         api = client.CoreV1Api(api_client)
 
-        labels = _get_environment_labels(environment)
+        labels = _get_environment_labels(environment.name, environment.tier)
 
         try:
             existing_namespace = cast(client.V1Namespace, api.read_namespace(namespace))
@@ -849,6 +919,33 @@ class KubernetesInfrastructureAdapter:
 
         return config.new_client_from_config(context=context)
 
+    def _get_docker_image_name(
+        self,
+        environment: Environment,
+        environment_config: KubernetesEnvironmentConfig,
+        bolt: Bolt,
+        artifact: ExecutableArtifact,
+    ) -> str:
+        """Get the name of the image to use in a PodSpec Container definition."""
+
+        if not artifact.type.docker_image:
+            raise ValueError()
+
+        if not (image := artifact.type.docker_image.image):
+            # No specified image name, so generate one.
+            image = _generate_artifact_docker_image_name(bolt, artifact)
+
+        if environment_config.force_image_registry or artifact.build is not None:
+            # Use configured registry
+            registry = environment_config.image_registry
+
+            if registry is None:
+                raise ValueError("Image requires configured registry, but no registry has been configured.")
+
+            return f"{registry}/{image}"
+
+        return image
+
 
 class KubernetesResourcesGenerator(Protocol):
     """Generates a Sequence of KubernetesResources."""
@@ -857,6 +954,7 @@ class KubernetesResourcesGenerator(Protocol):
     def __call__(
         adapter: KubernetesInfrastructureAdapter,
         environment: Environment,
+        environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         artifact: ExecutableArtifact,
         artifact_execution_parameters: ArtifactExecutionParameters,
@@ -867,6 +965,7 @@ class KubernetesResourcesGenerator(Protocol):
 def _generate_config_kubernetes_resources(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -878,6 +977,7 @@ def _generate_config_kubernetes_resources(
 def _generate_secrets_kubernetes_resources(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -889,6 +989,7 @@ def _generate_secrets_kubernetes_resources(
 def _generate_deployment(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -896,18 +997,16 @@ def _generate_deployment(
     execution = artifact.execution
     artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
-    metadata = _get_artifact_metadata(environment, bolt, artifact)
+    metadata = _get_artifact_metadata(environment, environment_config, bolt, artifact)
 
     env: list[dict] = []
     env_from: list[dict] = []
 
-    # TODO: This will need a better abstraction so it can use explicit Docker registries.
-    artifact.type.docker_image
-    if (image := artifact.type.docker_image.image) is None:
-        image = f"{bolt.project}_{artifact.name}:{bolt.version}"
-
-    # Create barebones PodSpec
-    container: dict[str, Any] = {"name": artifact.name, "image": image}
+    # Start PodSpec
+    container: dict[str, Any] = {
+        "name": artifact.name,
+        "image": adapter._get_docker_image_name(environment, environment_config, bolt, artifact),
+    }
     pod_spec = {"containers": [container]}
 
     # Execution Parameters Resources
@@ -1014,7 +1113,9 @@ def _generate_deployment(
                 {
                     "name": volume.name,
                     "persistentVolumeClaim": {
-                        "claimName": _get_artifact_kubernetes_name(environment, bolt, artifact, volume.name)
+                        "claimName": _get_artifact_kubernetes_name(
+                            environment, environment_config, bolt, artifact, volume.name
+                        )
                     },
                 }
             )
@@ -1076,6 +1177,7 @@ def _generate_deployment(
 def _generate_services(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -1095,7 +1197,7 @@ def _generate_services(
         {
             "apiVersion": "v1",
             "kind": "Service",
-            "metadata": _get_artifact_metadata(environment, bolt, artifact),
+            "metadata": _get_artifact_metadata(environment, environment_config, bolt, artifact),
             "spec": {"selector": _get_selector_labels(environment, bolt, artifact), "ports": ports},
         }
     ]
@@ -1126,6 +1228,7 @@ def _get_volume_claim(
 def _generate_persistent_volume_claims(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -1141,7 +1244,7 @@ def _generate_persistent_volume_claims(
             {
                 "apiVersion": "v1",
                 "kind": "PersistentVolumeClaim",
-                "metadata": _get_artifact_metadata(environment, bolt, artifact, volume.name),
+                "metadata": _get_artifact_metadata(environment, environment_config, bolt, artifact, volume.name),
                 "spec": _get_volume_claim(volume, ["ReadWriteMany"], execution_volume_parameters),
             }
         )
@@ -1153,6 +1256,7 @@ def _generate_persistent_volume_claims(
 def _generate_ingresses(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
@@ -1173,7 +1277,7 @@ def _generate_ingresses(
             "pathType": "Prefix",
             "backend": {
                 "service": {
-                    "name": _get_artifact_kubernetes_name(environment, bolt, artifact),
+                    "name": _get_artifact_kubernetes_name(environment, environment_config, bolt, artifact),
                     "port": {"number": service_execution_parameters.port or http_service_port},
                 }
             },
@@ -1193,7 +1297,7 @@ def _generate_ingresses(
         {
             "apiVersion": "networking.k8s.io/v1",
             "kind": "Ingress",
-            "metadata": _get_artifact_metadata(environment, bolt, artifact),
+            "metadata": _get_artifact_metadata(environment, environment_config, bolt, artifact),
             "spec": {"rules": list(hosts.values())},
         }
     ]
