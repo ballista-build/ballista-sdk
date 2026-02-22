@@ -3,6 +3,7 @@ from typing import cast
 import pytest
 
 from ballista_sdk.adapters.kubernetes import (
+    KubernetesEnvironmentConfig,
     KubernetesInfrastructureAdapter,
     KubernetesResource,
     _generate_bolt_resources,
@@ -29,6 +30,11 @@ def bolt(
         return bolt
 
     raise Exception("WTF")
+
+
+@pytest.fixture(scope="session")
+def environment_config() -> KubernetesEnvironmentConfig:
+    return KubernetesEnvironmentConfig()
 
 
 @pytest.fixture(scope="session")
@@ -289,6 +295,7 @@ def test_generate_resources(
     request,
     bolt: Bolt,
     environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
     kubernetes_adapter: KubernetesInfrastructureAdapter,
     execution_parameters: ExecutionParameters,
 ):
@@ -303,6 +310,7 @@ def test_generate_resources(
             bolt=bolt,
             adapter=kubernetes_adapter,
             environment=environment,
+            environment_config=environment_config,
             execution_parameters=execution_parameters,
         )
         == resources
