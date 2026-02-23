@@ -23,8 +23,8 @@ from ballista_sdk.api.v1 import (
 
 from . import consts
 from .environments import get_environment_config, get_kubernetes_client
-from .generation import KubernetesInfrastructureAdapter, _get_bolt_kubernetes_namespace, _get_environment_labels
-from .settings import KubernetesAPIConfigsAdapter, KubernetesAPISecretsAdapter, KubernetesSettingsAdapter
+from .generation import KubernetesInfrastructureAdapter, generate_bolt_kubernetes_namespace, generate_environment_labels
+from .settings import KubernetesAPIConfigsAdapter, KubernetesAPISecretsAdapter
 
 
 @dataclass
@@ -33,12 +33,20 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
     _bolts: list[Bolt] = field(default_factory=list)
 
-    configs_adapter: KubernetesSettingsAdapter = field(default_factory=KubernetesAPIConfigsAdapter, init=False)
-    secrets_adapter: KubernetesSettingsAdapter = field(default_factory=KubernetesAPISecretsAdapter, init=False)
+    _configs_adapter: KubernetesAPIConfigsAdapter = field(default_factory=KubernetesAPIConfigsAdapter, init=False)
+    _secrets_adapter: KubernetesAPISecretsAdapter = field(default_factory=KubernetesAPISecretsAdapter, init=False)
 
     @property
     def name(self) -> Literal["kubernetes_api"]:
         return "kubernetes_api"
+
+    @property
+    def configs_adapter(self) -> KubernetesAPIConfigsAdapter:
+        return self._configs_adapter
+
+    @property
+    def secrets_adapter(self) -> KubernetesAPISecretsAdapter:
+        return self._secrets_adapter
 
     def deploy(
         self,
@@ -59,7 +67,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         api_client = get_kubernetes_client(environment)
 
-        namespace = _get_bolt_kubernetes_namespace(environment, environment_config, bolt)
+        namespace = generate_bolt_kubernetes_namespace(environment, environment_config, bolt)
 
         if environment_config.ensure_namespaces:
             self._ensure_namespace_exists(environment, api_client, namespace)
@@ -234,7 +242,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         api = client.CoreV1Api(api_client)
 
-        labels = _get_environment_labels(environment.name, environment.tier)
+        labels = generate_environment_labels(environment.name, environment.tier)
 
         try:
             existing_namespace = cast(client.V1Namespace, api.read_namespace(namespace))

@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-from abc import ABC
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, Sequence
 
@@ -17,7 +16,9 @@ from ballista_sdk.api.v1 import (
     ExecutionParameters,
     HealthcheckProbe,
     ResourceReference,
+    ResourceSetting,
     ServiceRequirement,
+    Setting,
     VolumeExecutionParameters,
     VolumeRequirement,
 )
@@ -25,10 +26,9 @@ from ballista_sdk.api.v1 import (
 from . import consts
 from .environments import KubernetesEnvironmentConfig
 from .resources import KubernetesMetadata, KubernetesResource
-from .settings import KubernetesSettingsAdapter
 
 
-def _get_selector_labels(environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> dict[str, str]:
+def generate_selector_labels(environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> dict[str, str]:
     """Get labels specifically for targeting Resources."""
 
     return {
@@ -38,7 +38,7 @@ def _get_selector_labels(environment: Environment, bolt: Bolt, artifact: Executa
     }
 
 
-def _get_environment_labels(name: str, tier: EnvironmentTier) -> dict[str, str]:
+def generate_environment_labels(name: str, tier: EnvironmentTier) -> dict[str, str]:
     return {
         "app.kubernetes.io/managed-by": consts.METADATA_MANAGED_BY,
         consts.METADATA_LABEL_ENVIRONMENT: name,
@@ -46,23 +46,23 @@ def _get_environment_labels(name: str, tier: EnvironmentTier) -> dict[str, str]:
     }
 
 
-def _get_metadata_labels(environment: Environment, project_name: str, artifact_name: str) -> dict[str, str]:
-    return _get_environment_labels(environment.name, environment.tier) | {
+def generate_metadata_labels(environment: Environment, project_name: str, artifact_name: str) -> dict[str, str]:
+    return generate_environment_labels(environment.name, environment.tier) | {
         "app.kubernetes.io/part-of": project_name,
         "app.kubernetes.io/name": artifact_name,
     }
 
 
-def _get_versioned_metadata_labels(
+def generate_versioned_metadata_labels(
     environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
 ) -> dict[str, str]:
-    return _get_metadata_labels(environment, bolt.project, artifact.name) | {
+    return generate_metadata_labels(environment, bolt.project, artifact.name) | {
         "app.kubernetes.io/instance": f"{artifact.name}-{bolt.version}",
         "app.kubernetes.io/version": bolt.version,
     }
 
 
-def _get_bolt_kubernetes_namespace(
+def generate_bolt_kubernetes_namespace(
     environment: Environment, environment_config: KubernetesEnvironmentConfig, bolt: Bolt
 ) -> str:
     if environment_config.project_namespaces:
@@ -71,7 +71,7 @@ def _get_bolt_kubernetes_namespace(
         return environment.name
 
 
-def _get_artifact_kubernetes_name(
+def generate_artifact_kubernetes_name(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
@@ -84,7 +84,15 @@ def _get_artifact_kubernetes_name(
         return f"{bolt.project}-{artifact.name}" + (f"-{name}" if name else "")
 
 
-def _get_artifact_metadata(
+def generate_artifact_settings_refname(artifact_reference: ArtifactReference) -> str:
+    return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
+
+
+def generate_resource_settings_refname(resource_reference: ResourceReference) -> str:
+    return f"{resource_reference.project_name}.resources.{resource_reference.resource_name}"
+
+
+def generate_artifact_metadata(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
@@ -92,9 +100,9 @@ def _get_artifact_metadata(
     name: str | None = None,
 ) -> KubernetesMetadata:
     return {
-        "labels": _get_versioned_metadata_labels(environment, bolt, artifact),
-        "name": _get_artifact_kubernetes_name(environment, environment_config, bolt, artifact, name),
-        "namespace": _get_bolt_kubernetes_namespace(environment, environment_config, bolt),
+        "labels": generate_versioned_metadata_labels(environment, bolt, artifact),
+        "name": generate_artifact_kubernetes_name(environment, environment_config, bolt, artifact, name),
+        "namespace": generate_bolt_kubernetes_namespace(environment, environment_config, bolt),
     }
 
 
@@ -143,19 +151,64 @@ class KubernetesResourcesGenerator(Protocol):
 
 
 # TODO: Break out into a "Default" adapter?
-class KubernetesInfrastructureAdapter(ABC, InfrastructureAdapter):
+@dataclass
+class KubernetesInfrastructureAdapter(InfrastructureAdapter):
     """Infrastructure Adapter for Kubernetes."""
 
     _generators: ClassVar[list[KubernetesResourcesGenerator]] = []
-
-    configs_adapter: KubernetesSettingsAdapter
-    secrets_adapter: KubernetesSettingsAdapter
 
     @classmethod
     def add_generator(cls: type[KubernetesInfrastructureAdapter], method: KubernetesResourcesGenerator):
         """Add KubernetesResourceGenerator to be included when generating."""
         cls._generators.append(method)
         return method
+
+    def _add_setting_reference(
+        self, container_spec: dict, ref_name: str, sensitive: bool, required: bool, prefix: str | None
+    ):
+        ref_type = "secretRef" if sensitive else "configMapRef"
+        reference = {"name": ref_name, "optional": not required}
+
+        env: dict[str, dict | str] = {ref_type: reference}
+        if prefix:
+            env["prefix"] = prefix + "_"
+
+        if "envFrom" not in container_spec:
+            container_spec["envFrom"] = [env]
+        elif env not in container_spec["envFrom"]:
+            container_spec["envFrom"].append(env)
+
+    def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting):
+        self._add_setting_reference(
+            container_spec,
+            generate_artifact_settings_refname(artifact_reference),
+            setting.sensitive,
+            setting.sensitive,
+            None,
+        )
+
+    def add_resource_setting(
+        self,
+        container_spec: dict,
+        artifact_reference: ArtifactReference,
+        resource_reference: ResourceReference,
+        resource_setting: ResourceSetting,
+        prefix: str,
+        instance: list[str],
+    ):
+        if resource_setting.shared:
+            # Shared setting means we reference it into the artifact
+            self._add_setting_reference(
+                container_spec,
+                generate_resource_settings_refname(resource_reference),
+                resource_setting.sensitive,
+                True,
+                prefix,
+            )
+
+        else:
+            # Unique setting is already inside the normal artifact settings
+            self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
 
     def generate_bolt_resources(
         self,
@@ -275,7 +328,7 @@ def _generate_deployment(
     execution = artifact.execution
     artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
-    metadata = _get_artifact_metadata(environment, environment_config, bolt, artifact)
+    metadata = generate_artifact_metadata(environment, environment_config, bolt, artifact)
 
     env: list[dict] = []
     env_from: list[dict] = []
@@ -302,13 +355,8 @@ def _generate_deployment(
     if pod_resources["requests"] or pod_resources["limits"]:
         container["resources"] = pod_resources
 
-    # Artifact configs
-    configs_adapter = adapter.configs_adapter
-    [configs_adapter.add_artifact_setting(container, artifact_reference, c) for c in execution.configs]
-
-    # Artifact secrets
-    secrets_adapter = adapter.secrets_adapter
-    [secrets_adapter.add_artifact_setting(container, artifact_reference, s) for s in execution.secrets]
+    # Artifact configs and secrets
+    [adapter.add_artifact_setting(container, artifact_reference, s) for s in execution.configs + execution.secrets]
 
     # Resources
     for resource_requirement in execution.resources:
@@ -318,16 +366,10 @@ def _generate_deployment(
         requirement_instance = [getattr(resource_requirement.requirement, f) for f in resource.instance_id_fields]
 
         [
-            configs_adapter.add_resource_setting(
-                container, artifact_reference, resource_reference, c, requirement_prefix, requirement_instance
-            )
-            for c in resource.configs
-        ]
-        [
-            secrets_adapter.add_resource_setting(
+            adapter.add_resource_setting(
                 container, artifact_reference, resource_reference, s, requirement_prefix, requirement_instance
             )
-            for s in resource.secrets
+            for s in resource.configs + resource.secrets
         ]
 
     # Services
@@ -391,7 +433,7 @@ def _generate_deployment(
                 {
                     "name": volume.name,
                     "persistentVolumeClaim": {
-                        "claimName": _get_artifact_kubernetes_name(
+                        "claimName": generate_artifact_kubernetes_name(
                             environment, environment_config, bolt, artifact, volume.name
                         )
                     },
@@ -406,7 +448,7 @@ def _generate_deployment(
                     "ephemeral": {
                         "volumeClaimTemplate": {
                             "metadata": {"labels": metadata["labels"]},
-                            "spec": _get_volume_claim(volume, ["ReadWriteOnce"], execution_volume_parameters),
+                            "spec": generate_volume_claim(volume, ["ReadWriteOnce"], execution_volume_parameters),
                         }
                     },
                 }
@@ -440,7 +482,7 @@ def _generate_deployment(
             "kind": "Deployment",
             "metadata": deployment_metadata,
             "spec": {
-                "selector": {"matchLabels": _get_selector_labels(environment, bolt, artifact)},
+                "selector": {"matchLabels": generate_selector_labels(environment, bolt, artifact)},
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
                     "type": "RollingUpdate",
@@ -475,13 +517,13 @@ def _generate_services(
         {
             "apiVersion": "v1",
             "kind": "Service",
-            "metadata": _get_artifact_metadata(environment, environment_config, bolt, artifact),
-            "spec": {"selector": _get_selector_labels(environment, bolt, artifact), "ports": ports},
+            "metadata": generate_artifact_metadata(environment, environment_config, bolt, artifact),
+            "spec": {"selector": generate_selector_labels(environment, bolt, artifact), "ports": ports},
         }
     ]
 
 
-def _get_volume_claim(
+def generate_volume_claim(
     volume: VolumeRequirement,
     access_modes: list[str],
     execution_volume_parameters: VolumeExecutionParameters | None,
@@ -522,8 +564,8 @@ def _generate_persistent_volume_claims(
             {
                 "apiVersion": "v1",
                 "kind": "PersistentVolumeClaim",
-                "metadata": _get_artifact_metadata(environment, environment_config, bolt, artifact, volume.name),
-                "spec": _get_volume_claim(volume, ["ReadWriteMany"], execution_volume_parameters),
+                "metadata": generate_artifact_metadata(environment, environment_config, bolt, artifact, volume.name),
+                "spec": generate_volume_claim(volume, ["ReadWriteMany"], execution_volume_parameters),
             }
         )
 
@@ -555,7 +597,7 @@ def _generate_ingresses(
             "pathType": "Prefix",
             "backend": {
                 "service": {
-                    "name": _get_artifact_kubernetes_name(environment, environment_config, bolt, artifact),
+                    "name": generate_artifact_kubernetes_name(environment, environment_config, bolt, artifact),
                     "port": {"number": service_execution_parameters.port or http_service_port},
                 }
             },
@@ -575,7 +617,7 @@ def _generate_ingresses(
         {
             "apiVersion": "networking.k8s.io/v1",
             "kind": "Ingress",
-            "metadata": _get_artifact_metadata(environment, environment_config, bolt, artifact),
+            "metadata": generate_artifact_metadata(environment, environment_config, bolt, artifact),
             "spec": {"rules": list(hosts.values())},
         }
     ]

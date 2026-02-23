@@ -1,41 +1,27 @@
 import base64
+from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal, Protocol, Self, cast
+from typing import Literal, Self, cast
 
 from kubernetes import client
 
-from ballista_sdk.adapters.settings import SettingsAdapter
 from ballista_sdk.api.v1 import (
     ArtifactReference,
     BoundSetting,
     Environment,
     ResourceReference,
-    ResourceSetting,
     Setting,
     SettingDataType,
     SettingValue,
 )
 
 from .environments import KubernetesEnvironmentConfig, get_environment_config, get_kubernetes_client
+from .generation import generate_artifact_settings_refname, generate_resource_settings_refname
 from .resources import KubernetesMetadata
 
 
-class KubernetesSettingsAdapter(SettingsAdapter, Protocol):
-    def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting): ...
-
-    def add_resource_setting(
-        self,
-        container_spec: dict,
-        artifact_reference: ArtifactReference,
-        resource_reference: ResourceReference,
-        resource_setting: ResourceSetting,
-        prefix: str,
-        instance: list[str],
-    ): ...
-
-
 @dataclass
-class BaseKubernetesAPISettingsAdapter[SettingKind: object]:
+class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
     """SettingsAdapter using the Kubernetes API."""
 
     _loaded: dict[tuple[Environment, str, str], SettingKind] = field(default_factory=dict, init=False)
@@ -59,70 +45,17 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object]:
 
         self._pending_deletes.clear()
 
-    def _get_artifact_settings_refname(self, artifact_reference: ArtifactReference) -> str:
-        return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
-
-    def _get_resource_settings_refname(self, resource_reference: ResourceReference) -> str:
-        return f"{resource_reference.project_name}.resources.{resource_reference.resource_name}"
-
-    def _add_setting_reference(
-        self, container_spec: dict, ref_name: str, sensitive: bool, required: bool, prefix: str | None
-    ):
-        ref_type = "secretRef" if sensitive else "configMapRef"
-        reference = {"name": ref_name, "optional": not required}
-
-        env: dict[str, dict | str] = {ref_type: reference}
-        if prefix:
-            env["prefix"] = prefix + "_"
-
-        if "envFrom" not in container_spec:
-            container_spec["envFrom"] = [env]
-        elif env not in container_spec["envFrom"]:
-            container_spec["envFrom"].append(env)
-
-    def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting):
-        self._add_setting_reference(
-            container_spec,
-            self._get_artifact_settings_refname(artifact_reference),
-            setting.sensitive,
-            setting.sensitive,
-            None,
-        )
-
-    def add_resource_setting(
-        self,
-        container_spec: dict,
-        artifact_reference: ArtifactReference,
-        resource_reference: ResourceReference,
-        resource_setting: ResourceSetting,
-        prefix: str,
-        instance: list[str],
-    ):
-        if resource_setting.shared:
-            # Shared setting means we reference it into the artifact
-            self._add_setting_reference(
-                container_spec,
-                self._get_resource_settings_refname(resource_reference),
-                resource_setting.sensitive,
-                True,
-                prefix,
-            )
-
-        else:
-            # Unique setting is already inside the normal artifact settings
-            self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
-
     def _get_bound_setting_metadata(
         self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
     ) -> KubernetesMetadata:
         if bound_setting.artifact:
             namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.artifact)
-            name = self._get_artifact_settings_refname(bound_setting.artifact)
+            name = generate_artifact_settings_refname(bound_setting.artifact)
 
             return {"labels": {}, "name": name, "namespace": namespace}
         elif bound_setting.resource:
             namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.resource)
-            name = self._get_resource_settings_refname(bound_setting.resource)
+            name = generate_resource_settings_refname(bound_setting.resource)
 
             return {"labels": {}, "name": name, "namespace": namespace}
         else:
@@ -134,11 +67,11 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object]:
         if bound_setting.artifact:
             return _get_reference_kubernetes_namespace(
                 environment, environment_config, bound_setting.artifact
-            ), self._get_artifact_settings_refname(bound_setting.artifact)
+            ), generate_artifact_settings_refname(bound_setting.artifact)
         elif bound_setting.resource:
             return _get_reference_kubernetes_namespace(
                 environment, environment_config, bound_setting.resource
-            ), self._get_resource_settings_refname(bound_setting.resource)
+            ), generate_resource_settings_refname(bound_setting.resource)
         else:
             raise ValueError()
 
@@ -202,14 +135,18 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object]:
 
         return self._get_object_value(obj, bound_setting.setting)
 
+    @abstractmethod
     def _create_object(
         self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
     ) -> SettingKind: ...
 
+    @abstractmethod
     def _get_object_value(self, obj: SettingKind, setting: Setting) -> SettingValue: ...
 
+    @abstractmethod
     def _set_object_value(self, obj: SettingKind, setting: Setting, value: SettingValue): ...
 
+    @abstractmethod
     def _delete_object_value(self, obj: SettingKind, setting: Setting): ...
 
     def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: SettingKind):
@@ -238,7 +175,7 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object]:
 
 
 @dataclass
-class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1ConfigMap], KubernetesSettingsAdapter):
+class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1ConfigMap]):
     """Configs adapter using the Kubernetes API."""
 
     @property
@@ -321,7 +258,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
 
 
 @dataclass
-class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secret], KubernetesSettingsAdapter):
+class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secret]):
     @property
     def verify_before_deploy(self) -> Literal[True]:
         return True
@@ -390,13 +327,6 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
 
         else:
             raise ValueError()
-
-
-@dataclass
-class ExternalSecretsAdapter(KubernetesSettingsAdapter):
-    @property
-    def verify_before_deploy(self) -> Literal[False]:
-        return False
 
 
 def _get_reference_kubernetes_namespace(
