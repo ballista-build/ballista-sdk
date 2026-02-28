@@ -27,7 +27,7 @@ class InfrastructureAdapter(Protocol):
 
     @property
     def name(self) -> str:
-        """Name of the adapter."""
+        """Unique name of the adapter."""
         ...
 
     @property

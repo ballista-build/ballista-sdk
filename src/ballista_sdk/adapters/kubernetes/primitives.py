@@ -10,9 +10,12 @@ METADATA_LABEL_RESOURCE = f"{METADATA_DOMAIN}/resource"
 METADATA_ANNOTATION_RESOURCE = f"{METADATA_DOMAIN}/resource-json"
 
 
+KubernetesMetadataLabels = dict[str, str]
+
+
 class KubernetesMetadata(TypedDict):
     annotations: NotRequired[dict[str, str]]
-    labels: NotRequired[dict[str, str]]
+    labels: NotRequired[KubernetesMetadataLabels]
     name: str
     namespace: str
 

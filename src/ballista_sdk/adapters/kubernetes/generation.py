@@ -11,7 +11,6 @@ from ballista_sdk.api.v1 import (
     ArtifactReference,
     Bolt,
     Environment,
-    EnvironmentTier,
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
@@ -25,49 +24,66 @@ from ballista_sdk.api.v1 import (
 
 from . import primitives
 from .environments import KubernetesEnvironmentConfig
-from .primitives import KubernetesMetadata, KubernetesResource
+from .primitives import KubernetesMetadata, KubernetesMetadataLabels, KubernetesResource
 
 
-def generate_selector_labels(environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> dict[str, str]:
-    """Get labels specifically for targeting Resources."""
+def generate_environment_labels(environment) -> KubernetesMetadataLabels:
+    """Generate metadata labels for a specific Environment."""
 
     return {
+        "app.kubernetes.io/managed-by": primitives.METADATA_MANAGED_BY,
+        primitives.METADATA_LABEL_ENVIRONMENT: environment.name,
+        primitives.METADATA_LABEL_ENVIRONMENT_TIER: str(environment.tier),
+    }
+
+
+def generate_artifact_metadata_labels(
+    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+) -> KubernetesMetadataLabels:
+    """Generate metadata labels for an ExecutableArtifact in a specific Environment."""
+
+    return generate_environment_labels(environment) | {
+        "app.kubernetes.io/part-of": bolt.project,
+        "app.kubernetes.io/name": artifact.name,
+    }
+
+
+def generate_versioned_artifact_metadata_labels(
+    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+) -> KubernetesMetadataLabels:
+    """Generate metadata labels for an ExecutableArtifact and version in a specific Environment."""
+
+    return generate_artifact_metadata_labels(environment, bolt, artifact) | {
+        "app.kubernetes.io/instance": f"{artifact.name}-{bolt.version}",
+        "app.kubernetes.io/version": bolt.version,
+    }
+
+
+def generate_artifact_selector_labels(
+    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+) -> KubernetesMetadataLabels:
+    """Generate labels for selecting an ExecutableArtifact in a specific Environment."""
+
+    return {
+        # Environment configuration may not guarantee namespace separation, so its name is included.
         primitives.METADATA_LABEL_ENVIRONMENT: environment.name,
         "app.kubernetes.io/part-of": bolt.project,
         "app.kubernetes.io/name": artifact.name,
     }
 
 
-def generate_environment_labels(name: str, tier: EnvironmentTier) -> dict[str, str]:
-    return {
-        "app.kubernetes.io/managed-by": primitives.METADATA_MANAGED_BY,
-        primitives.METADATA_LABEL_ENVIRONMENT: name,
-        primitives.METADATA_LABEL_ENVIRONMENT_TIER: str(tier),
-    }
-
-
-def generate_metadata_labels(environment: Environment, project_name: str, artifact_name: str) -> dict[str, str]:
-    return generate_environment_labels(environment.name, environment.tier) | {
-        "app.kubernetes.io/part-of": project_name,
-        "app.kubernetes.io/name": artifact_name,
-    }
-
-
-def generate_versioned_metadata_labels(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
-) -> dict[str, str]:
-    return generate_metadata_labels(environment, bolt.project, artifact.name) | {
-        "app.kubernetes.io/instance": f"{artifact.name}-{bolt.version}",
-        "app.kubernetes.io/version": bolt.version,
-    }
-
-
 def generate_bolt_kubernetes_namespace(
     environment: Environment, environment_config: KubernetesEnvironmentConfig, bolt: Bolt
 ) -> str:
+    """Generate the Kubernetes name for a Bolt's namespace when running in a specific Environment."""
+
     if environment_config.project_namespaces:
+        # Projects are configured for their own unique namespace.
+
         return f"{bolt.project}-{environment.name}"
     else:
+        # All projects are in the same Environment namespace.
+
         return environment.name
 
 
@@ -78,6 +94,8 @@ def generate_artifact_kubernetes_name(
     artifact: ExecutableArtifact,
     name: str | None = None,
 ) -> str:
+    """Generate the Kubernetes name used for an ExecutableArtifact or Artifact-specific item when running in a specific Environment."""
+
     if environment_config.project_namespaces:
         return artifact.name + (f"-{name}" if name else "")
     else:
@@ -99,41 +117,13 @@ def generate_artifact_metadata(
     artifact: ExecutableArtifact,
     name: str | None = None,
 ) -> KubernetesMetadata:
+    """Generates the Kubernetes metadata for an ExecutableArtifact in a specific Environment."""
+
     return {
-        "labels": generate_versioned_metadata_labels(environment, bolt, artifact),
+        "labels": generate_versioned_artifact_metadata_labels(environment, bolt, artifact),
         "name": generate_artifact_kubernetes_name(environment, environment_config, bolt, artifact, name),
         "namespace": generate_bolt_kubernetes_namespace(environment, environment_config, bolt),
     }
-
-
-def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict[str, dict] | None:
-    if probe.exec:
-        commands = ["sh", "-c"] if probe.exec.shell else []
-
-        return {"exec": {"command": commands + probe.exec.commands}}
-
-    # Get port common in grpc, http, and port probes
-    port_probe = probe.grpc or probe.http or probe.tcp
-    if port_probe is None:
-        return None
-
-    port = port_probe.port
-    service = services.get(port_probe.service) if port_probe.service else None
-
-    if probe.grpc:
-        # GRPC cannot use a named port
-        return {"grpc": {"port": service.grpc if service and service.grpc else port}}
-
-    if probe.http:
-        return {
-            "httpGet": {
-                "path": probe.http.path or "/healthz",
-                "port": service.name if service and service.http else port,
-            }
-        }
-
-    if probe.tcp:
-        return {"tcpSocket": {"port": service.name if service and service.tcp else port}}
 
 
 class KubernetesResourcesGenerator(Protocol):
@@ -179,6 +169,8 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
             container_spec["envFrom"].append(env)
 
     def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting):
+        """Add an Artifact-specific setting into a PodSpec container."""
+
         self._add_setting_reference(
             container_spec,
             generate_artifact_settings_refname(artifact_reference),
@@ -196,8 +188,10 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         prefix: str,
         instance: list[str],
     ):
+        """Add an Artifact and Resource-specific setting into a PodSpec container."""
+
         if resource_setting.shared:
-            # Shared setting means we reference it into the artifact
+            # Shared setting means we reference it into the artifact.
             self._add_setting_reference(
                 container_spec,
                 generate_resource_settings_refname(resource_reference),
@@ -207,7 +201,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
             )
 
         else:
-            # Unique setting is already inside the normal artifact settings
+            # Unique settings are added as normal Artifact settings.
             self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
 
     def generate_bolt_resources(
@@ -314,6 +308,36 @@ def _generate_secrets_kubernetes_resources(
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     return []
+
+
+def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict[str, dict] | None:
+    if probe.exec:
+        commands = ["sh", "-c"] if probe.exec.shell else []
+
+        return {"exec": {"command": commands + probe.exec.commands}}
+
+    # Get port common in grpc, http, and port probes
+    port_probe = probe.grpc or probe.http or probe.tcp
+    if port_probe is None:
+        return None
+
+    port = port_probe.port
+    service = services.get(port_probe.service) if port_probe.service else None
+
+    if probe.grpc:
+        # GRPC cannot use a named port
+        return {"grpc": {"port": service.grpc if service and service.grpc else port}}
+
+    if probe.http:
+        return {
+            "httpGet": {
+                "path": probe.http.path or "/healthz",
+                "port": service.name if service and service.http else port,
+            }
+        }
+
+    if probe.tcp:
+        return {"tcpSocket": {"port": service.name if service and service.tcp else port}}
 
 
 @KubernetesInfrastructureAdapter.add_generator
@@ -482,7 +506,7 @@ def _generate_deployment(
             "kind": "Deployment",
             "metadata": deployment_metadata,
             "spec": {
-                "selector": {"matchLabels": generate_selector_labels(environment, bolt, artifact)},
+                "selector": {"matchLabels": generate_artifact_selector_labels(environment, bolt, artifact)},
                 "strategy": {
                     "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
                     "type": "RollingUpdate",
@@ -518,7 +542,10 @@ def _generate_services(
             "apiVersion": "v1",
             "kind": "Service",
             "metadata": generate_artifact_metadata(environment, environment_config, bolt, artifact),
-            "spec": {"selector": generate_selector_labels(environment, bolt, artifact), "ports": ports},
+            "spec": {
+                "selector": generate_artifact_selector_labels(environment, bolt, artifact),
+                "ports": ports,
+            },
         }
     ]
 

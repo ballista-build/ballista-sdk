@@ -9,7 +9,7 @@ from ballista_sdk.api.v1 import Environment
 class KubernetesEnvironmentConfig(BaseModel):
     """Configuration for a Kubernetes environment."""
 
-    # TODO: This might change when there's better support for building and publishing artifacts.
+    # TODO: This might change when there's fleshed-out support for building and publishing artifacts.
     image_registry: Annotated[
         str | None,
         Field(

@@ -242,7 +242,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         api = client.CoreV1Api(api_client)
 
-        labels = generate_environment_labels(environment.name, environment.tier)
+        labels = generate_environment_labels(environment)
 
         try:
             existing_namespace = cast(client.V1Namespace, api.read_namespace(namespace))
