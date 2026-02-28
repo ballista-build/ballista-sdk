@@ -6,8 +6,9 @@ from typing import Literal, cast
 
 from kubernetes import client, config, utils
 
-from ballista_sdk.adapters.exceptions import UnknownResourceRequirement
+from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResource
 from ballista_sdk.api.v1 import (
+    Artifact,
     ArtifactReference,
     ArtifactType,
     Bolt,
@@ -19,6 +20,7 @@ from ballista_sdk.api.v1 import (
     ProjectResourceRequirement,
     Resource,
     ResourceProviderReference,
+    ResourceReference,
 )
 
 from . import primitives
@@ -37,8 +39,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     _secrets_adapter: KubernetesAPISecretsAdapter = field(default_factory=KubernetesAPISecretsAdapter, init=False)
 
     @property
-    def name(self) -> Literal["kubernetes_api"]:
-        return "kubernetes_api"
+    def name(self) -> Literal["kubernetes-api"]:
+        return "kubernetes-api"
 
     @property
     def configs_adapter(self) -> KubernetesAPIConfigsAdapter:
@@ -209,14 +211,17 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         return resources
 
+    def resolve_artifact_reference(
+        self, artifact_reference: ArtifactReference, environment: Environment
+    ) -> tuple[Bolt, Artifact]:
+        # TODO: Do this when the bolts are stored
+        raise UnknownArtifact(artifact_reference)
+
     def resolve_resource_requirement(
         self, resource_requirement: ProjectResourceRequirement, environment: Environment
     ) -> ResourceProviderReference:
         requirement_project_name = resource_requirement.which()
         requirement_resource_name = resource_requirement.resource_name
-
-        if requirement_project_name is None or requirement_resource_name is None:
-            raise UnknownResourceRequirement("PROJECT", "RESOURCE")
 
         # TODO: Do a smarter lookup via K8s API
         for resource_with_provider_artifact in self.list_resources(environment):
@@ -226,7 +231,9 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             ):
                 return resource_with_provider_artifact
 
-        raise UnknownResourceRequirement(requirement_project_name, requirement_resource_name)
+        raise UnknownResource(
+            ResourceReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
+        )
 
     def teardown(
         self,

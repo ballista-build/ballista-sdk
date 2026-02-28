@@ -5,6 +5,7 @@ from typing import Protocol
 
 from ballista_sdk.adapters.settings import SettingsAdapter
 from ballista_sdk.api.v1 import (
+    Artifact,
     ArtifactReference,
     ArtifactType,
     Bolt,
@@ -65,10 +66,16 @@ class InfrastructureAdapter(Protocol):
         """List available Resources with the providing ArtifactReference in the specified Environment."""
         ...
 
+    def resolve_artifact_reference(
+        self, artifact_reference: ArtifactReference, environment: Environment
+    ) -> tuple[Bolt, Artifact]:
+        """Resolves a reference to an Artifact in the specified Environment, returning the Artifact and the Bolt it was from. Raises UnknownArtifact if it cannot be found."""
+        ...
+
     def resolve_resource_requirement(
         self, resource_requirement: ProjectResourceRequirement, environment: Environment
     ) -> ResourceProviderReference:
-        """Resolves a requirement for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises exception if dependency cannot be met."""
+        """Resolves a requirement for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
     def teardown(

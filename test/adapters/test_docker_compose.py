@@ -1,12 +1,11 @@
 import pytest
 
-from ballista_sdk.adapters.docker_compose import (
-    DockerComposeInfrastructureAdapter,
+from ballista_sdk.adapters.docker_compose import DockerComposeInfrastructureAdapter
+from ballista_sdk.adapters.docker_compose.generation import (
     DockerComposeProject,
     DockerComposeProjectVolume,
     DockerComposeService,
     DockerComposeServiceVolume,
-    _generate_docker_compose_project_from_bolt,
 )
 from ballista_sdk.api.v1 import (
     Bolt,
@@ -161,8 +160,7 @@ def test_generate_docker_compose(
     docker_compose_project = request.getfixturevalue(f"{bolt_name}_docker_compose_project")
 
     assert (
-        _generate_docker_compose_project_from_bolt(
-            adapter=docker_compose_adapter,
+        docker_compose_adapter.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,
             artifacts=bolt.executable_artifacts,
