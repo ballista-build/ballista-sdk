@@ -549,9 +549,9 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
 @dataclass
 class DockerComposeInfrastructureAdapter:
     _bolts: list[Bolt] = field(default_factory=list)
-    configs_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
+    configs_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter, init=False)
     # TODO: Make these the same instance
-    secrets_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter)
+    secrets_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter, init=False)
 
     @property
     def name(self) -> Literal["docker-compose"]:
@@ -616,10 +616,10 @@ class DockerComposeInfrastructureAdapter:
 
         return references
 
-    def list_projects(self, environments: Sequence[Environment] | None = None) -> list[Project]:
+    def list_projects(self, environments: Sequence[Environment]) -> list[Project]:
         return []
 
-    def list_project_bolts(self, project: Project) -> list[Bolt]:
+    def list_project_bolts(self, project: Project, environments: Sequence[Environment]) -> list[Bolt]:
         return []
 
     def list_resources(self, environment: Environment) -> list[ResourceProviderReference]:

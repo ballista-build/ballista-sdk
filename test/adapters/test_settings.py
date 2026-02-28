@@ -4,10 +4,9 @@ import pytest
 from kubernetes import client as kubernetes_client
 
 from ballista_sdk.adapters.docker_compose import DockerComposeSettingsAdapter
-from ballista_sdk.adapters.kubernetes import (
-    KubernetesConfigsAdapter,
-    KubernetesInfrastructureAdapter,
-    KubernetesSecretsAdapter,
+from ballista_sdk.adapters.kubernetes.settings import (
+    KubernetesAPIConfigsAdapter,
+    KubernetesAPISecretsAdapter,
 )
 from ballista_sdk.adapters.settings import SettingsAdapter
 from ballista_sdk.api.v1 import (
@@ -25,7 +24,7 @@ from ballista_sdk.api.v1 import (
 
 
 @dataclass
-class MockKubernetesConfigsAdapter(KubernetesConfigsAdapter):
+class MockKubernetesConfigsAdapter(KubernetesAPIConfigsAdapter):
     _persisted: dict[tuple[Environment, str, str], kubernetes_client.V1ConfigMap] = field(default_factory=dict)
 
     def _read_object(
@@ -44,7 +43,7 @@ class MockKubernetesConfigsAdapter(KubernetesConfigsAdapter):
 
 
 @dataclass
-class MockKubernetesSecretsAdapter(KubernetesSecretsAdapter):
+class MockKubernetesSecretsAdapter(KubernetesAPISecretsAdapter):
     _persisted: dict[tuple[Environment, str, str], kubernetes_client.V1Secret] = field(default_factory=dict)
 
     def _read_object(
@@ -67,14 +66,14 @@ class MockKubernetesSecretsAdapter(KubernetesSecretsAdapter):
         pytest.param("kubernetes_config_map", marks=[pytest.mark.integration]),
     ]
 )
-def configs_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapter) -> SettingsAdapter:
+def configs_adapters(request) -> SettingsAdapter:
     match request.param:
         case "docker_compose":
             return DockerComposeSettingsAdapter()
         case "mock_kubernetes_config_map":
-            return MockKubernetesConfigsAdapter(kubernetes_adapter)
+            return MockKubernetesConfigsAdapter()
         case "kubernetes_config_map":
-            return KubernetesConfigsAdapter(kubernetes_adapter)
+            return KubernetesAPIConfigsAdapter()
 
     raise ValueError()
 
@@ -86,14 +85,14 @@ def configs_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapte
         pytest.param("kubernetes_secret", marks=[pytest.mark.integration]),
     ]
 )
-def secrets_adapters(request, kubernetes_adapter: KubernetesInfrastructureAdapter) -> SettingsAdapter:
+def secrets_adapters(request) -> SettingsAdapter:
     match request.param:
         case "docker_compose":
             return DockerComposeSettingsAdapter()
         case "mock_kubernetes_secret":
-            return MockKubernetesSecretsAdapter(kubernetes_adapter)
+            return MockKubernetesSecretsAdapter()
         case "kubernetes_secret":
-            return KubernetesSecretsAdapter(kubernetes_adapter)
+            return KubernetesAPISecretsAdapter()
 
     raise ValueError()
 

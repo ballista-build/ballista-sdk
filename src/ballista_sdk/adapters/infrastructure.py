@@ -27,7 +27,7 @@ class InfrastructureAdapter(Protocol):
 
     @property
     def name(self) -> str:
-        """Name of the adapter."""
+        """Unique name of the adapter."""
         ...
 
     @property
@@ -53,11 +53,11 @@ class InfrastructureAdapter(Protocol):
         """List ExecutableArtifacts in the specified Environment."""
         ...
 
-    def list_projects(self, environments: Sequence[Environment] | None = None) -> Sequence[Project]:
-        """List Projects."""
+    def list_projects(self, environments: Sequence[Environment]) -> Sequence[Project]:
+        """List Projects that exist in the specified Environments."""
         ...
 
-    def list_project_bolts(self, project: Project) -> Sequence[Bolt]:
+    def list_project_bolts(self, project: Project, environments: Sequence[Environment]) -> Sequence[Bolt]:
         """List Bolts associated with a Project."""
         ...
 
