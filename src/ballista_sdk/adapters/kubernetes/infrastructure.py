@@ -21,7 +21,7 @@ from ballista_sdk.api.v1 import (
     ResourceProviderReference,
 )
 
-from . import consts
+from . import primitives
 from .environments import get_environment_config, get_kubernetes_client
 from .generation import KubernetesInfrastructureAdapter, generate_bolt_kubernetes_namespace, generate_environment_labels
 from .settings import KubernetesAPIConfigsAdapter, KubernetesAPISecretsAdapter
@@ -94,14 +94,14 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             # TODO: We don't have an Environment type, so use Namespace with labels for now.
             corev1_api = client.CoreV1Api(api_client=api_client)
             ballista_namespaces = corev1_api.list_namespace(
-                label_selector=f"app.kubernetes.io/managed-by={consts.METADATA_MANAGED_BY},{consts.METADATA_LABEL_ENVIRONMENT},{consts.METADATA_LABEL_ENVIRONMENT_TIER}"
+                label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}"
             )
 
             environments.extend(
                 [
                     Environment(
                         name=n.metadata.name,
-                        tier=EnvironmentTier(n.metadata.labels.get(consts.METADATA_LABEL_ENVIRONMENT_TIER)),
+                        tier=EnvironmentTier(n.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)),
                     )
                     for n in ballista_namespaces.items
                 ]
@@ -126,7 +126,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         # 1:1 ExecutableArtifact:Deployment
         api = client.AppsV1Api(api_client)
         deployments = api.list_deployment_for_all_namespaces(
-            label_selector=f"app.kubernetes.io/managed-by={consts.METADATA_MANAGED_BY},{consts.METADATA_LABEL_ENVIRONMENT}={environment.name}"
+            label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}"
         )
 
         executable_artifacts = []
@@ -155,7 +155,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             # 1:1 ExecutableArtifact:Deployment
             api = client.AppsV1Api(api_client)
             deployments = api.list_deployment_for_all_namespaces(
-                label_selector=f"app.kubernetes.io/managed-by={consts.METADATA_MANAGED_BY},{consts.METADATA_LABEL_ENVIRONMENT}={environment.name}"
+                label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}"
             )
 
             for deployment in deployments.items:
@@ -188,11 +188,11 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         resources = []
         api = client.AppsV1Api(api_client)
         for deployment in api.list_deployment_for_all_namespaces(
-            label_selector=f"app.kubernetes.io/managed-by={consts.METADATA_MANAGED_BY},{consts.METADATA_LABEL_ENVIRONMENT}={environment.name},{consts.METADATA_LABEL_RESOURCE}"
+            label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name},{primitives.METADATA_LABEL_RESOURCE}"
         ).items:
             metadata = cast(client.models.V1ObjectMeta, deployment.metadata)
             labels = cast(dict[str, str], metadata.labels)
-            resource_json = metadata.annotations.get(consts.METADATA_ANNOTATION_RESOURCE)
+            resource_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_RESOURCE)
             if resource_json is not None:
                 try:
                     resource = Resource.model_validate_json(resource_json)

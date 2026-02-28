@@ -17,7 +17,7 @@ from ballista_sdk.api.v1 import (
 
 from .environments import KubernetesEnvironmentConfig, get_environment_config, get_kubernetes_client
 from .generation import generate_artifact_settings_refname, generate_resource_settings_refname
-from .resources import KubernetesMetadata
+from .primitives import KubernetesMetadata
 
 
 @dataclass

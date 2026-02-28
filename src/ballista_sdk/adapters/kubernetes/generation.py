@@ -23,16 +23,16 @@ from ballista_sdk.api.v1 import (
     VolumeRequirement,
 )
 
-from . import consts
+from . import primitives
 from .environments import KubernetesEnvironmentConfig
-from .resources import KubernetesMetadata, KubernetesResource
+from .primitives import KubernetesMetadata, KubernetesResource
 
 
 def generate_selector_labels(environment: Environment, bolt: Bolt, artifact: ExecutableArtifact) -> dict[str, str]:
     """Get labels specifically for targeting Resources."""
 
     return {
-        consts.METADATA_LABEL_ENVIRONMENT: environment.name,
+        primitives.METADATA_LABEL_ENVIRONMENT: environment.name,
         "app.kubernetes.io/part-of": bolt.project,
         "app.kubernetes.io/name": artifact.name,
     }
@@ -40,9 +40,9 @@ def generate_selector_labels(environment: Environment, bolt: Bolt, artifact: Exe
 
 def generate_environment_labels(name: str, tier: EnvironmentTier) -> dict[str, str]:
     return {
-        "app.kubernetes.io/managed-by": consts.METADATA_MANAGED_BY,
-        consts.METADATA_LABEL_ENVIRONMENT: name,
-        consts.METADATA_LABEL_ENVIRONMENT_TIER: str(tier),
+        "app.kubernetes.io/managed-by": primitives.METADATA_MANAGED_BY,
+        primitives.METADATA_LABEL_ENVIRONMENT: name,
+        primitives.METADATA_LABEL_ENVIRONMENT_TIER: str(tier),
     }
 
 
@@ -467,11 +467,11 @@ def _generate_deployment(
 
     deployment_metadata = metadata
     for provided_resource in artifact.provides:
-        metadata["labels"][consts.METADATA_LABEL_RESOURCE] = provided_resource.name
+        metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = provided_resource.name
 
         deployment_metadata = metadata.copy()
         deployment_metadata["annotations"] = {
-            consts.METADATA_ANNOTATION_RESOURCE: provided_resource.model_dump_json(exclude_unset=True)
+            primitives.METADATA_ANNOTATION_RESOURCE: provided_resource.model_dump_json(exclude_unset=True)
         }
         break
 

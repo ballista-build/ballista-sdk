@@ -6,7 +6,7 @@ from ballista_sdk.adapters.kubernetes import (
     KubernetesAPIInfrastructureAdapter,
 )
 from ballista_sdk.adapters.kubernetes.environments import KubernetesEnvironmentConfig
-from ballista_sdk.adapters.kubernetes.resources import KubernetesResource
+from ballista_sdk.adapters.kubernetes.primitives import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
     Environment,
