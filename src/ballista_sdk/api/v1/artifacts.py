@@ -98,7 +98,7 @@ class ProjectResourceRequirement(BaseOneOfModel):
 
     model_config = ConfigDict(extra="forbid")
 
-    def which(self) -> str | None:
+    def which(self) -> str:
         which = super().which()
         if which:
             return which

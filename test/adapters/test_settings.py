@@ -3,7 +3,7 @@ from dataclasses import dataclass, field
 import pytest
 from kubernetes import client as kubernetes_client
 
-from ballista_sdk.adapters.docker_compose import DockerComposeSettingsAdapter
+from ballista_sdk.adapters.docker_compose.settings import DockerComposeSettingsAdapter
 from ballista_sdk.adapters.kubernetes.settings import (
     KubernetesAPIConfigsAdapter,
     KubernetesAPISecretsAdapter,
