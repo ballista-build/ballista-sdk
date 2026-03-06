@@ -19,9 +19,9 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     Project,
-    ProjectResourceRequirement,
     ResourceProviderReference,
     ResourceReference,
+    ResourceRequirementProject,
 )
 
 from .generation import BaseDockerComposeInfrastructureAdapter, DockerComposeProject
@@ -125,7 +125,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         raise UnknownArtifact(artifact_reference)
 
     def resolve_resource_requirement(
-        self, resource_requirement: ProjectResourceRequirement, environment: Environment
+        self, resource_requirement: ResourceRequirementProject, environment: Environment
     ) -> ResourceProviderReference:
         # Get the project_name of the requirement points to and compare our resources
         requirement_project_name = resource_requirement.which()

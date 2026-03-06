@@ -9,8 +9,8 @@ from .artifacts import (
     GRPCHealthCheckAction,
     HealthcheckProbe,
     HealthcheckRequirements,
-    ProjectResourceRequirement,
     ResourceRequirement,
+    ResourceRequirementProject,
     SecretRequirement,
     ServiceRequirement,
     VolumeRequirement,
@@ -35,7 +35,14 @@ from .execution import (
     ScalingExecutionParameters,
     VolumeExecutionParameters,
 )
-from .resources import ResourceConfig, ResourceRequirementParameters, ResourceSecret, ResourceSetting
+from .resources import (
+    ResourceConfig,
+    ResourceProviderStatus,
+    ResourceRequirementSchema,
+    ResourceSecret,
+    ResourceSetting,
+    ResourceStatus,
+)
 from .settings import Config, Secret, Setting, SettingDataType, SettingValue
 
 __all__ = [
@@ -62,15 +69,17 @@ __all__ = [
     "HealthcheckRequirements",
     "HTTPGETAction",
     "Project",
-    "ProjectResourceRequirement",
     "Resource",
     "ResourceConfig",
     "ResourceProviderReference",
+    "ResourceProviderStatus",
     "ResourceReference",
     "ResourceRequirement",
-    "ResourceRequirementParameters",
+    "ResourceRequirementProject",
+    "ResourceRequirementSchema",
     "ResourceSecret",
     "ResourceSetting",
+    "ResourceStatus",
     "ScalingExecutionParameters",
     "Secret",
     "SecretRequirement",

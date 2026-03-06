@@ -17,10 +17,10 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     Project,
-    ProjectResourceRequirement,
     Resource,
     ResourceProviderReference,
     ResourceReference,
+    ResourceRequirementProject,
 )
 
 from . import primitives
@@ -218,7 +218,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         raise UnknownArtifact(artifact_reference)
 
     def resolve_resource_requirement(
-        self, resource_requirement: ProjectResourceRequirement, environment: Environment
+        self, resource_requirement: ResourceRequirementProject, environment: Environment
     ) -> ResourceProviderReference:
         requirement_project_name = resource_requirement.which()
         requirement_resource_name = resource_requirement.resource_name

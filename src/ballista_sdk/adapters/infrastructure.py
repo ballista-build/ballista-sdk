@@ -13,8 +13,8 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     Project,
-    ProjectResourceRequirement,
     ResourceProviderReference,
+    ResourceRequirementProject,
 )
 
 
@@ -73,7 +73,7 @@ class InfrastructureAdapter(Protocol):
         ...
 
     def resolve_resource_requirement(
-        self, resource_requirement: ProjectResourceRequirement, environment: Environment
+        self, resource_requirement: ResourceRequirementProject, environment: Environment
     ) -> ResourceProviderReference:
         """Resolves a requirement for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...

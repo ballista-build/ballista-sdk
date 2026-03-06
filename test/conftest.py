@@ -3,6 +3,7 @@ import yaml
 
 from ballista_sdk.api.v1 import (
     Artifact,
+    ArtifactReference,
     ArtifactTypeRequirement,
     Bolt,
     ComputeExecutionParameters,
@@ -18,7 +19,7 @@ from ballista_sdk.api.v1 import (
     Project,
     Resource,
     ResourceConfig,
-    ResourceRequirementParameters,
+    ResourceRequirementSchema,
     ResourceSecret,
     ScalingExecutionParameters,
     SecretRequirement,
@@ -192,7 +193,7 @@ def postgres_bolt() -> Bolt:
                 description="Postgres Database",
                 instance_id_fields=["name"],
                 prefix="POSTGRES",
-                requirements=ResourceRequirementParameters.model_validate(
+                requirements=ResourceRequirementSchema.model_validate(
                     {"properties": {"name": {"type": "string"}}, "required": ["name"]}
                 ),
                 secrets=[
@@ -225,6 +226,11 @@ def postgres_bolt() -> Bolt:
     )
 
     return Bolt(api_version="v1", artifacts=[postgres], project="postgres", version="18.1.0")
+
+
+@pytest.fixture(scope="session")
+def artifact_reference() -> ArtifactReference:
+    return ArtifactReference(project_name="simple", artifact_name="api", version="1")
 
 
 @pytest.fixture(scope="session")

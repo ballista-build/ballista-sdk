@@ -1,4 +1,5 @@
-from typing import Annotated
+from enum import StrEnum, auto
+from typing import Annotated, NamedTuple
 
 from openapi_pydantic import DataType, Schema
 from pydantic import BaseModel, Field, create_model
@@ -22,8 +23,16 @@ class ResourceSecret(BaseResourceSetting, Secret):
 ResourceSetting = ResourceConfig | ResourceSecret
 
 
-class ResourceRequirementParameters(Schema, frozen=True):
+class ResourceRequirementSchema(Schema, frozen=True):
+    """Schema defining a ResourceRequirement."""
+
     pass
+
+
+class ResourceRequirement(BaseModel):
+    """Requirement data for a Resource."""
+
+    model_config = {"extra": "forbid"}
 
 
 class Resource(BaseNamedModel):
@@ -37,25 +46,25 @@ class Resource(BaseNamedModel):
             title="instance_id Fields",
         ),
     ] = []
-    prefix: Annotated[str, Field(description="Default prefix of injected values.")]
+    prefix: Annotated[str, Field(description="Default prefix of values received by Artifact.")]
     requirements: Annotated[
-        ResourceRequirementParameters,
+        ResourceRequirementSchema,
         Field(
             alias="requirements",
-            default_factory=ResourceRequirementParameters,
+            default_factory=ResourceRequirementSchema,
             description="OpenAPI Schema representing requirements for a resource.",
         ),
     ]
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
 
-    def get_requirements_model(self, project_title: str) -> type[BaseModel]:
+    def get_requirements_model(self, project_title: str) -> type[ResourceRequirement]:
         return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
 
 
 DATATYPE_MAP = {DataType.BOOLEAN: bool, DataType.INTEGER: int, DataType.NUMBER: float, DataType.STRING: str}
 
 
-def _schema_to_model(schema: Schema, model_name: str) -> type[BaseModel]:
+def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequirement]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
         raise ValueError()
@@ -81,7 +90,42 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[BaseModel]:
 
             fields[prop_name] = Annotated[pt, field]
 
-        return create_model(model_name, **fields, __base__=BaseModel)
+        return create_model(model_name, **fields, __base__=ResourceRequirement)
 
     else:
         raise ValueError("NYI")
+
+
+class ResourceReference(NamedTuple):
+    """Reference to a Resource by its name and the Project's name its in."""
+
+    project_name: str
+    resource_name: str
+
+
+class ResourceStatus(StrEnum):
+    UNKNOWN = auto()
+    """Resource status is unknown."""
+    MISSING = auto()
+    """Resource should exist but does not."""
+    PROVISIONING = auto()
+    """Resource is being created."""
+    AVAILABLE = auto()
+    """Resource is ready to be used."""
+    UNHEALTHY = auto()
+    """Resource exists but is not healthy."""
+    DESTROYING = auto()
+    """Resource is being destroyed."""
+
+
+class ResourceProviderStatus(StrEnum):
+    UNKNOWN = auto()
+    STARTING = auto()
+    AVAILALBE = auto()
+    TERMINATING = auto()
+
+
+class ResourceAccess(StrEnum):
+    READ = auto()
+    READ_WRITE = auto()
+    OWNER = auto()

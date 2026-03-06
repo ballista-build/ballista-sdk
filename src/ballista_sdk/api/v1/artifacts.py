@@ -1,10 +1,10 @@
-from typing import Annotated, ClassVar
+from typing import Annotated, ClassVar, NamedTuple, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
 from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
-from .resources import Resource
+from .resources import Resource, ResourceRequirement
 from .settings import Config, Secret
 
 
@@ -66,20 +66,23 @@ class HealthcheckRequirements(BaseModel):
 ##
 ## Resources
 ##
-class ResourceRequirement(BaseModel):
-    """A Resource requirement with optional prefix."""
+
+
+class ResourceRequirementResourceName(BaseModel):
+    """Resource name for a ResourceRequirement."""
 
     model_config = ConfigDict(extra="forbid")
 
     prefix: Annotated[
         str | None, Field(description="Prefix for injected Resource values. Defaults to Resource's prefix if not set.")
     ] = None
+    alias: Annotated[str | None, Field(description="Alias for injected Resource values.")]
     # service: Annotated[str | None, Field(description="Connect to referenced service by name.")] = None
 
     @property
-    def requirement(self) -> BaseModel:
+    def resource_requirement(self) -> ResourceRequirement:
         for f in self.model_fields_set:
-            if f != "prefix":
+            if f != "prefix" and f != "alias":
                 return getattr(self, f)
 
         raise Exception("WTF")
@@ -87,14 +90,14 @@ class ResourceRequirement(BaseModel):
     @property
     def resource_name(self) -> str:
         for f in self.model_fields_set:
-            if f != "prefix":
+            if f != "prefix" and f != "alias":
                 return f
 
         raise Exception("WTF")
 
 
-class ProjectResourceRequirement(BaseOneOfModel):
-    """Execution requirement for a specific Project Resource."""
+class ResourceRequirementProject(BaseOneOfModel):
+    """Project name for a ResourceRequirement."""
 
     model_config = ConfigDict(extra="forbid")
 
@@ -107,7 +110,7 @@ class ProjectResourceRequirement(BaseOneOfModel):
         raise Exception(self.__pydantic_extra__)
 
     @property
-    def _resource_requirement(self) -> ResourceRequirement:
+    def _resource_requirement_resource_name(self) -> ResourceRequirementResourceName:
         if which := self.which():
             return getattr(self, which)
 
@@ -116,16 +119,16 @@ class ProjectResourceRequirement(BaseOneOfModel):
 
     @property
     def prefix(self) -> str | None:
-        return self._resource_requirement.prefix
+        return self._resource_requirement_resource_name.prefix
 
     @property
-    def requirement(self) -> BaseModel:
-        return self._resource_requirement.requirement
+    def resource_requirement(self) -> BaseModel:
+        return self._resource_requirement_resource_name.resource_requirement
 
     @property
     def resource_name(self) -> str:
         """Unique identifier for Resource."""
-        return self._resource_requirement.resource_name
+        return self._resource_requirement_resource_name.resource_name
 
 
 ##
@@ -166,7 +169,7 @@ class ExecutionRequirements(BaseModel):
         Field(description="Healthchecks to ensure monitor execution lifecycle."),
     ] = None
     resources: Annotated[
-        list[ProjectResourceRequirement], Field(description="List of Resources required for execution.")
+        list[ResourceRequirementProject], Field(description="List of Resources required for execution.")
     ] = []
     secrets: Annotated[
         list[SecretRequirement], Field(description="List of sensitive settings required for execution.")
@@ -187,12 +190,49 @@ class ArtifactType(BaseNamedModel):
     pass
 
 
+# TODO: Update this to be dynamic like the resource requirements have done.
 class DockerImageArtifactTypeRequirement(BaseModel):
     image: Annotated[str | None, Field(description="Existing Docker image name and tag.")] = None
 
 
 class ArtifactTypeRequirement(BaseOneOfModel):
     docker_image: Annotated[DockerImageArtifactTypeRequirement, Field(description="Artifact is a Docker image.")]
+
+
+class BaseArtifactProtocol(Protocol):
+    @property
+    def annotations(self) -> dict[str, str]: ...
+
+    @property
+    def build(self) -> BuildParameters | None: ...
+
+    @property
+    def description(self) -> str | None: ...
+
+    @property
+    def execution(self) -> ExecutionRequirements | None: ...
+
+    @property
+    def name(self) -> str: ...
+
+    @property
+    def provides(self) -> list[Resource]: ...
+
+    @property
+    def title(self) -> str | None: ...
+
+    @property
+    def type(self) -> ArtifactTypeRequirement: ...
+
+
+class BuildableArtifact(BaseArtifactProtocol, Protocol):
+    @property
+    def build(self) -> BuildParameters: ...
+
+
+class ExecutableArtifact(BaseArtifactProtocol, Protocol):
+    @property
+    def execution(self) -> ExecutionRequirements: ...
 
 
 class Artifact(BaseNamedModel):
@@ -203,11 +243,9 @@ class Artifact(BaseNamedModel):
     type: Annotated[ArtifactTypeRequirement, Field(description="Type of artifact.")]
 
 
-class BuildableArtifact(Artifact):
-    build: Annotated[BuildParameters, Field(description="Parameters for building artifact.")]
+class ArtifactReference(NamedTuple):
+    """Reference to an Artifact by its name, a version number, and the Project's name its in."""
 
-
-class ExecutableArtifact(Artifact):
-    """An artifact that can be executed in an environment."""
-
-    execution: Annotated[ExecutionRequirements, Field(description="Requirements for artifact execution.")]
+    project_name: str
+    artifact_name: str
+    version: str
