@@ -106,8 +106,8 @@ class ResourceReference(NamedTuple):
 class ResourceStatus(StrEnum):
     UNKNOWN = auto()
     """Resource status is unknown."""
-    MISSING = auto()
-    """Resource should exist but does not."""
+    NOT_FOUND = auto()
+    """Resource not found."""
     PROVISIONING = auto()
     """Resource is being created."""
     AVAILABLE = auto()
@@ -120,9 +120,13 @@ class ResourceStatus(StrEnum):
 
 class ResourceProviderStatus(StrEnum):
     UNKNOWN = auto()
+    """Resource Provider status is unknown."""
     STARTING = auto()
-    AVAILALBE = auto()
+    """Resource Provider is starting and not yet able to process requests."""
+    AVAILABLE = auto()
+    """Resource Provider is available to process requests."""
     TERMINATING = auto()
+    """Resource Provider is not longer processing requests and terminating."""
 
 
 class ResourceAccess(StrEnum):

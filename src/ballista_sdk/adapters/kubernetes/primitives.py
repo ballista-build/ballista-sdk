@@ -15,7 +15,7 @@ KubernetesMetadataLabels = dict[str, str]
 
 class KubernetesMetadata(TypedDict):
     annotations: NotRequired[dict[str, str]]
-    labels: NotRequired[KubernetesMetadataLabels]
+    labels: KubernetesMetadataLabels
     name: str
     namespace: str
 

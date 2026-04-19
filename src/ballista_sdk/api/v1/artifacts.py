@@ -68,15 +68,15 @@ class HealthcheckRequirements(BaseModel):
 ##
 
 
-class ResourceRequirementResourceName(BaseModel):
-    """Resource name for a ResourceRequirement."""
+class BaseProjectResourceRequirementName(BaseModel):
+    """Resource requirement in a specific Project."""
 
     model_config = ConfigDict(extra="forbid")
 
     prefix: Annotated[
         str | None, Field(description="Prefix for injected Resource values. Defaults to Resource's prefix if not set.")
     ] = None
-    alias: Annotated[str | None, Field(description="Alias for injected Resource values.")]
+    alias: Annotated[str | None, Field(description="Alias for injected Resource values.")] = None
     # service: Annotated[str | None, Field(description="Connect to referenced service by name.")] = None
 
     @property
@@ -110,7 +110,7 @@ class ResourceRequirementProject(BaseOneOfModel):
         raise Exception(self.__pydantic_extra__)
 
     @property
-    def _resource_requirement_resource_name(self) -> ResourceRequirementResourceName:
+    def _resource_requirement_resource_name(self) -> BaseProjectResourceRequirementName:
         if which := self.which():
             return getattr(self, which)
 

@@ -1,5 +1,5 @@
 from .infrastructure import EnvironmentWithAdapter, InfrastructureAdapter
-from .resources import ResourceProvider
+from .resources.provider import ResourceProvider
 from .settings import SettingsAdapter
 
 __all__ = [

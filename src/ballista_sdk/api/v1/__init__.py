@@ -3,6 +3,7 @@ from .artifacts import (
     Artifact,
     ArtifactType,
     ArtifactTypeRequirement,
+    BaseProjectResourceRequirementName,
     ConfigRequirement,
     ExecutableArtifact,
     ExecutionRequirements,
@@ -36,6 +37,7 @@ from .execution import (
     VolumeExecutionParameters,
 )
 from .resources import (
+    ResourceAccess,
     ResourceConfig,
     ResourceProviderStatus,
     ResourceRequirementSchema,
@@ -51,6 +53,7 @@ __all__ = [
     "ArtifactReference",
     "ArtifactType",
     "ArtifactTypeRequirement",
+    "BaseProjectResourceRequirementName",
     "Bolt",
     "BoundSetting",
     "ComputeExecutionParameters",
@@ -70,6 +73,7 @@ __all__ = [
     "HTTPGETAction",
     "Project",
     "Resource",
+    "ResourceAccess",
     "ResourceConfig",
     "ResourceProviderReference",
     "ResourceProviderStatus",
