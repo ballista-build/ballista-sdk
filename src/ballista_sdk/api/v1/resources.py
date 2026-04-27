@@ -4,7 +4,8 @@ from typing import Annotated, NamedTuple
 from openapi_pydantic import DataType, Schema
 from pydantic import BaseModel, Field, create_model
 
-from .common import BaseNamedModel
+from . import actions
+from .common import BaseNamedModel, BaseOneOfModel
 from .settings import Config, Secret
 
 
@@ -35,6 +36,19 @@ class ResourceRequirement(BaseModel):
     model_config = {"extra": "forbid"}
 
 
+class RESTResourceTransport(actions.HTTPGETAction):
+    """Resource provider communication via REST."""
+
+    pass
+
+
+class ResourceTransport(BaseOneOfModel):
+    # exec: Annotated[actions.ExecAction | None, Field()] = None
+    # grpc: Annotated[GRPCHealthCheckAction | None, Field()] = None
+    rest: Annotated[RESTResourceTransport | None, Field()] = None
+    # tcp: Annotated[actions.TCPAction | None, Field()] = None
+
+
 class Resource(BaseNamedModel):
     """Resource available to use as an artifact requirement."""
 
@@ -56,6 +70,9 @@ class Resource(BaseNamedModel):
         ),
     ]
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
+    transport: Annotated[
+        ResourceTransport, Field(description="Transport method for communication with Resource Provider.")
+    ]
 
     def get_requirements_model(self, project_title: str) -> type[ResourceRequirement]:
         return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
@@ -131,5 +148,8 @@ class ResourceProviderStatus(StrEnum):
 
 class ResourceAccess(StrEnum):
     READ = auto()
+    """Resource can only be read from."""
     READ_WRITE = auto()
+    """Resource can be read from and written to."""
     OWNER = auto()
+    """Resource can be read from, written to, and modified."""

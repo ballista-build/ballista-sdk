@@ -69,6 +69,18 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             execution_parameters=execution_parameters,
         )
 
+        # Do some resource shit
+        artifact_resources = []
+        for artifact in artifacts:
+            if artifact.execution and artifact.execution.resources:
+                artifact_reference = ArtifactReference(
+                    project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
+                )
+                artifact_resources.extend([(artifact_reference, r, environment) for r in artifact.execution.resources])
+
+        if artifact_resources:
+            pass
+
         if True:
             commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:

@@ -8,15 +8,15 @@ class ArtifactException(Exception):
     artifact: ArtifactReference
 
 
-@dataclass
-class ResourceException(Exception):
-    resource: ResourceReference
-
-
 class UnknownArtifact(ArtifactException):
     """Artifact referenced is unknown."""
 
     pass
+
+
+@dataclass
+class ResourceException(Exception):
+    resource: ResourceReference
 
 
 class UnknownResource(ResourceException):

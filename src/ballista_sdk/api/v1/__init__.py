@@ -44,6 +44,8 @@ from .resources import (
     ResourceSecret,
     ResourceSetting,
     ResourceStatus,
+    ResourceTransport,
+    RESTResourceTransport,
 )
 from .settings import Config, Secret, Setting, SettingDataType, SettingValue
 
@@ -84,6 +86,8 @@ __all__ = [
     "ResourceSecret",
     "ResourceSetting",
     "ResourceStatus",
+    "ResourceTransport",
+    "RESTResourceTransport",
     "ScalingExecutionParameters",
     "Secret",
     "SecretRequirement",

@@ -21,6 +21,8 @@ from ballista_sdk.api.v1 import (
     ResourceConfig,
     ResourceRequirementSchema,
     ResourceSecret,
+    ResourceTransport,
+    RESTResourceTransport,
     ScalingExecutionParameters,
     SecretRequirement,
     ServiceRequirement,
@@ -220,6 +222,7 @@ def postgres_bolt() -> Bolt:
                     ),
                 ],
                 title="Postgres Database",
+                transport=ResourceTransport(rest=RESTResourceTransport(path="/resources")),
             )
         ],
         type=ArtifactTypeRequirement.model_validate({"docker_image": {"image": "postgres:18.1"}}),

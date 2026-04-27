@@ -15,27 +15,27 @@ class ResourceProvider(Protocol):
 
     Resources provided by Python code should use this. A ResourceProviderTransport will communicate with it."""
 
-    def get_status(self, environment: Environment) -> ResourceProviderStatus:
+    async def get_status(self, environment: Environment) -> ResourceProviderStatus:
         """Get the status of the ResourceProvider itself."""
         ...
 
-    def get_resource_status(
+    async def get_resource_status(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ) -> ResourceStatus:
         """Get the status of a specific Resource."""
         ...
 
-    def provision_resource(
+    async def provision_resource(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ):
-        """Provisions a new resource. Grants ownership.
+        """Provisions a new resource. Grants ownership access to the referenced Artifact + Environment.
 
         :raises ResourceAlreadyExists: Resource already exists and can't be provisioned.
         :raises ResourceProviderException: Resource could not be provisioned.
         """
         ...
 
-    def update_resource(
+    async def update_resource(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ):
         """Updates an existing resource. If the requirement changes are substantial, triggers a re-provisioning.
@@ -46,13 +46,13 @@ class ResourceProvider(Protocol):
         :raises ResourceProviderException: Resource could not be updated."""
         ...
 
-    def triggers_reprovision(
+    async def triggers_reprovision(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ) -> bool:
         """Returns if a resource requirement update would trigger a reprovision."""
         ...
 
-    def copy_resource(
+    async def copy_resource(
         self,
         artifact: ArtifactReference,
         resource_requirement: ResourceRequirement,
@@ -71,7 +71,7 @@ class ResourceProvider(Protocol):
         """
         ...
 
-    def destroy_resource(
+    async def destroy_resource(
         self,
         artifact: ArtifactReference,
         resource_requirement: ResourceRequirement,
@@ -87,20 +87,27 @@ class ResourceProvider(Protocol):
         :raises ResourceHasDependencies: Resource has dependencies and can not be destroyed."""
         ...
 
-    def get_resource_access(
+    async def get_resource_access(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ) -> ResourceAccess | None:
-        """Get artifact's access level to resource."""
+        """Get artifact's access level to resource. If no access, returns `None`.
+
+        :raises ResourceNotFound: Resource could not be found to check access.
+        """
         ...
 
-    def add_resource_access(
+    async def grant_resource_access(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ):
-        """Add artifact access to resource."""
+        """Grant artifact access to resource.
+
+        :raises ResourceNotFound: Resource could not be found to grant access."""
         ...
 
-    def remove_resource_access(
+    async def revoke_resource_access(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
     ):
-        """Remove artifact access to resource."""
+        """Revoke artifact access to resource.
+
+        :raises ResourceNotFound: Resource could not be found to revoke access."""
         ...
