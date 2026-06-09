@@ -71,14 +71,23 @@ class Resource(BaseNamedModel):
     ]
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
     transport: Annotated[
-        ResourceTransport, Field(description="Transport method for communication with Resource Provider.")
-    ]
+        ResourceTransport | None,
+        Field(
+            description="Transport method for communication with Resource Provider. If not specified, resource lifecycle is managed externally."
+        ),
+    ] = None
 
     def get_requirements_model(self, project_title: str) -> type[ResourceRequirement]:
         return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
 
 
-DATATYPE_MAP = {DataType.BOOLEAN: bool, DataType.INTEGER: int, DataType.NUMBER: float, DataType.STRING: str}
+DATATYPE_MAP = {
+    DataType.BOOLEAN: bool,
+    DataType.INTEGER: int,
+    DataType.NUMBER: float,
+    DataType.NULL: None,
+    DataType.STRING: str,
+}
 
 
 def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequirement]:
@@ -97,6 +106,9 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequiremen
             if prop.type == DataType.OBJECT:
                 raise ValueError("NYI")
                 # pt = _schema_to_model(prop, "")
+            elif isinstance(prop.type, list):
+                # No idea what to do here
+                pt = None
             else:
                 pt = DATATYPE_MAP.get(prop.type)
 

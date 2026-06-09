@@ -28,7 +28,7 @@ dev = [
     "coverage>=7.7",
     "ty>=0.0.1a21",
     "kubernetes-typed[client]>=18.20.2",
-    "pyrefly>=0.54.0",
+    "pyrefly>=1.0.0",
     "fastapi",
     "pytest-asyncio>=1.3.0",
 ]

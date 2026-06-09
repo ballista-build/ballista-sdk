@@ -124,6 +124,9 @@ artifacts:
                 shared: False
                 title: "Password"
             title: "Resource Provider Resource"
+            transport:
+                rest:
+                    path: "/resources"
         type:
             docker_image:
                 image: "hello-world:latest"

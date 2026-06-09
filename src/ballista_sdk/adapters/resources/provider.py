@@ -52,6 +52,12 @@ class ResourceProvider(Protocol):
         """Returns if a resource requirement update would trigger a reprovision."""
         ...
 
+    async def backup_resource(self):
+        pass
+
+    async def restore_resource(self):
+        pass
+
     async def copy_resource(
         self,
         artifact: ArtifactReference,

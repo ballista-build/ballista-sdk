@@ -24,6 +24,13 @@ class ResourceProviderTransport(ResourceProvider, Protocol):
 
 
 @dataclass
+class ExecResourceProviderTransport(ResourceProviderTransport):
+    """Control resource lifecycle via command execution."""
+
+    pass
+
+
+@dataclass
 class RESTResourceProviderTransport(ResourceProviderTransport):
     """Control resource lifecycle via REST API."""
 
