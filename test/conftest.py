@@ -3,6 +3,7 @@ import yaml
 
 from ballista_sdk.api.v1 import (
     Artifact,
+    ArtifactReference,
     ArtifactTypeRequirement,
     Bolt,
     ComputeExecutionParameters,
@@ -18,8 +19,10 @@ from ballista_sdk.api.v1 import (
     Project,
     Resource,
     ResourceConfig,
-    ResourceRequirementParameters,
+    ResourceRequirementSchema,
     ResourceSecret,
+    ResourceTransport,
+    RESTResourceTransport,
     ScalingExecutionParameters,
     SecretRequirement,
     ServiceRequirement,
@@ -121,6 +124,9 @@ artifacts:
                 shared: False
                 title: "Password"
             title: "Resource Provider Resource"
+            transport:
+                rest:
+                    path: "/resources"
         type:
             docker_image:
                 image: "hello-world:latest"
@@ -192,7 +198,7 @@ def postgres_bolt() -> Bolt:
                 description="Postgres Database",
                 instance_id_fields=["name"],
                 prefix="POSTGRES",
-                requirements=ResourceRequirementParameters.model_validate(
+                requirements=ResourceRequirementSchema.model_validate(
                     {"properties": {"name": {"type": "string"}}, "required": ["name"]}
                 ),
                 secrets=[
@@ -219,12 +225,18 @@ def postgres_bolt() -> Bolt:
                     ),
                 ],
                 title="Postgres Database",
+                transport=ResourceTransport(rest=RESTResourceTransport(path="/resources")),
             )
         ],
         type=ArtifactTypeRequirement.model_validate({"docker_image": {"image": "postgres:18.1"}}),
     )
 
     return Bolt(api_version="v1", artifacts=[postgres], project="postgres", version="18.1.0")
+
+
+@pytest.fixture(scope="session")
+def artifact_reference() -> ArtifactReference:
+    return ArtifactReference(project_name="simple", artifact_name="api", version="1")
 
 
 @pytest.fixture(scope="session")

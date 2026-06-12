@@ -7,6 +7,7 @@ authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 license = "MIT"
 requires-python = ">=3.12"
 dependencies = [
+    "aiohttp>=3.13.5",
     "kubernetes>=32.0",
     "openapi-pydantic>=0.5.1",
     "pydantic>=2",
@@ -17,6 +18,9 @@ dependencies = [
     "urllib3>=1.25,<3.0.0",
 ]
 
+[project.optional-dependencies]
+fastapi = ["fastapi"]
+
 [dependency-groups]
 dev = [
     "ruff>=0.9",
@@ -24,6 +28,9 @@ dev = [
     "coverage>=7.7",
     "ty>=0.0.1a21",
     "kubernetes-typed[client]>=18.20.2",
+    "pyrefly>=1.0.0",
+    "fastapi",
+    "pytest-asyncio>=1.3.0",
 ]
 
 [build-system]
@@ -33,7 +40,8 @@ build-backend = "hatchling.build"
 [tool.coverage.run]
 source = ["src"]
 
-[tool.pytest.ini_options]
+[tool.pytest]
+asyncio_mode = "auto"
 markers = [
     "unit: Tests with no other dependent systems",
     "integration: Tests requiring dependent systems"

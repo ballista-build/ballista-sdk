@@ -383,11 +383,15 @@ def _generate_deployment(
     [adapter.add_artifact_setting(container, artifact_reference, s) for s in execution.configs + execution.secrets]
 
     # Resources
-    for resource_requirement in execution.resources:
-        resource, resource_project, _, _ = adapter.resolve_resource_requirement(resource_requirement, environment)
+    for resource_requirement_project in execution.resources:
+        resource, resource_project, _, _ = adapter.resolve_resource_requirement(
+            resource_requirement_project, environment
+        )
         resource_reference = ResourceReference(resource_project, resource.name)
-        requirement_prefix = resource_requirement.prefix or resource.prefix
-        requirement_instance = [getattr(resource_requirement.requirement, f) for f in resource.instance_id_fields]
+        requirement_prefix = resource_requirement_project.prefix or resource.prefix
+        requirement_instance = [
+            getattr(resource_requirement_project.resource_requirement, f) for f in resource.instance_id_fields
+        ]
 
         [
             adapter.add_resource_setting(

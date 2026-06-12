@@ -5,11 +5,11 @@ from pydantic import Field, create_model
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.api.v1 import (
     Artifact,
+    BaseProjectResourceRequirementName,
     Bolt,
     Environment,
     ExecutionRequirements,
-    ProjectResourceRequirement,
-    ResourceRequirement,
+    ResourceRequirementProject,
 )
 
 
@@ -27,35 +27,36 @@ class BoltV1Factory:
 
     def generate_bolt_class(self) -> type[Bolt]:
         # Gather all resources and arrange them under their projects
-        project_resource_requirement_fields = {}
+        resource_name_requirement_fields = {}
 
-        for resource, project, _, _ in self.adapter.list_resources(self.environment):
-            if project not in project_resource_requirement_fields:
-                project_resource_requirement_fields[project] = {}
-
-            requirements_model = resource.get_requirements_model(project)
+        # Create the requirements/configuration model for the resource
+        for resource, project_name, _, _ in self.adapter.list_resources(self.environment):
+            requirements_model = resource.get_requirements_model(project_name)
             field = (
                 requirements_model | None,
                 Field(default=None, description=resource.description),
             )
-            project_resource_requirement_fields[project][resource.name] = field
+            resource_name_requirement_fields.setdefault(project_name, {})
+            resource_name_requirement_fields[project_name][resource.name] = field
 
         # TODO: Add service connector resources
-
+        # Create a container for each Project's provided resources
         project_resource_needs_fields = {}
         for (
             project,
             resource_requirement_fields,
-        ) in project_resource_requirement_fields.items():
+        ) in resource_name_requirement_fields.items():
             resource_fields = {
                 resource_name: resource_field for resource_name, resource_field in resource_requirement_fields.items()
             }
 
             model = create_model(
-                f"{project}ResourceRequirement",
+                f"{project}ResourceRequirementName",
                 **resource_fields,
-                __base__=ResourceRequirement,
+                __base__=BaseProjectResourceRequirementName,
             )
+
+            # Store this project to add to the system's provided resources
             project_resource_needs_fields[project] = (
                 model | None,
                 Field(
@@ -64,13 +65,14 @@ class BoltV1Factory:
                 ),
             )
 
+        # Create top-level resource container, holding the project name
         dynamic_project_resource_requirement = create_model(
-            ProjectResourceRequirement.__name__,
+            ResourceRequirementProject.__name__,
             **{
                 project: project_resource_need_field
                 for project, project_resource_need_field in project_resource_needs_fields.items()
             },
-            __base__=ProjectResourceRequirement,
+            __base__=ResourceRequirementProject,
         )
 
         dynamic_execution_requirements = create_model(

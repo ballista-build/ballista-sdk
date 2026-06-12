@@ -1,9 +1,11 @@
-from typing import Annotated
+from enum import StrEnum, auto
+from typing import Annotated, NamedTuple
 
 from openapi_pydantic import DataType, Schema
 from pydantic import BaseModel, Field, create_model
 
-from .common import BaseNamedModel
+from . import actions
+from .common import BaseNamedModel, BaseOneOfModel
 from .settings import Config, Secret
 
 
@@ -22,8 +24,29 @@ class ResourceSecret(BaseResourceSetting, Secret):
 ResourceSetting = ResourceConfig | ResourceSecret
 
 
-class ResourceRequirementParameters(Schema, frozen=True):
+class ResourceRequirementSchema(Schema, frozen=True):
+    """Schema defining a ResourceRequirement."""
+
     pass
+
+
+class ResourceRequirement(BaseModel):
+    """Requirement data for a Resource."""
+
+    model_config = {"extra": "forbid"}
+
+
+class RESTResourceTransport(actions.HTTPGETAction):
+    """Resource provider communication via REST."""
+
+    pass
+
+
+class ResourceTransport(BaseOneOfModel):
+    # exec: Annotated[actions.ExecAction | None, Field()] = None
+    # grpc: Annotated[GRPCHealthCheckAction | None, Field()] = None
+    rest: Annotated[RESTResourceTransport | None, Field()] = None
+    # tcp: Annotated[actions.TCPAction | None, Field()] = None
 
 
 class Resource(BaseNamedModel):
@@ -37,25 +60,37 @@ class Resource(BaseNamedModel):
             title="instance_id Fields",
         ),
     ] = []
-    prefix: Annotated[str, Field(description="Default prefix of injected values.")]
+    prefix: Annotated[str, Field(description="Default prefix of values received by Artifact.")]
     requirements: Annotated[
-        ResourceRequirementParameters,
+        ResourceRequirementSchema,
         Field(
             alias="requirements",
-            default_factory=ResourceRequirementParameters,
+            default_factory=ResourceRequirementSchema,
             description="OpenAPI Schema representing requirements for a resource.",
         ),
     ]
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
+    transport: Annotated[
+        ResourceTransport | None,
+        Field(
+            description="Transport method for communication with Resource Provider. If not specified, resource lifecycle is managed externally."
+        ),
+    ] = None
 
-    def get_requirements_model(self, project_title: str) -> type[BaseModel]:
+    def get_requirements_model(self, project_title: str) -> type[ResourceRequirement]:
         return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
 
 
-DATATYPE_MAP = {DataType.BOOLEAN: bool, DataType.INTEGER: int, DataType.NUMBER: float, DataType.STRING: str}
+DATATYPE_MAP = {
+    DataType.BOOLEAN: bool,
+    DataType.INTEGER: int,
+    DataType.NUMBER: float,
+    DataType.NULL: None,
+    DataType.STRING: str,
+}
 
 
-def _schema_to_model(schema: Schema, model_name: str) -> type[BaseModel]:
+def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequirement]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
         raise ValueError()
@@ -71,6 +106,9 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[BaseModel]:
             if prop.type == DataType.OBJECT:
                 raise ValueError("NYI")
                 # pt = _schema_to_model(prop, "")
+            elif isinstance(prop.type, list):
+                # No idea what to do here
+                pt = None
             else:
                 pt = DATATYPE_MAP.get(prop.type)
 
@@ -81,7 +119,49 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[BaseModel]:
 
             fields[prop_name] = Annotated[pt, field]
 
-        return create_model(model_name, **fields, __base__=BaseModel)
+        return create_model(model_name, **fields, __base__=ResourceRequirement)
 
     else:
         raise ValueError("NYI")
+
+
+class ResourceReference(NamedTuple):
+    """Reference to a Resource by its name and the Project's name its in."""
+
+    project_name: str
+    resource_name: str
+
+
+class ResourceStatus(StrEnum):
+    UNKNOWN = auto()
+    """Resource status is unknown."""
+    NOT_FOUND = auto()
+    """Resource not found."""
+    PROVISIONING = auto()
+    """Resource is being created."""
+    AVAILABLE = auto()
+    """Resource is ready to be used."""
+    UNHEALTHY = auto()
+    """Resource exists but is not healthy."""
+    DESTROYING = auto()
+    """Resource is being destroyed."""
+
+
+class ResourceProviderStatus(StrEnum):
+    UNKNOWN = auto()
+    """Resource Provider status is unknown."""
+    STARTING = auto()
+    """Resource Provider is starting and not yet able to process requests."""
+    AVAILABLE = auto()
+    """Resource Provider is available to process requests."""
+    TERMINATING = auto()
+    """Resource Provider is not longer processing requests and terminating."""
+
+
+class ResourceAccess(StrEnum):
+    READ = auto()
+    """Resource can only be read from."""
+    READ_WRITE = auto()
+    """Resource can be read from and written to."""
+    OWNER = auto()
+    """Resource can be read from, written to, and modified."""

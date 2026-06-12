@@ -2,8 +2,9 @@ from typing import Annotated, Literal, NamedTuple, Sequence, cast
 
 from pydantic import BaseModel, Field
 
-from .artifacts import Artifact, BuildableArtifact, ExecutableArtifact, Resource
+from .artifacts import Artifact, ArtifactReference, BuildableArtifact, ExecutableArtifact
 from .common import BaseNamedModel
+from .resources import Resource, ResourceReference
 from .settings import Setting
 
 
@@ -32,21 +33,6 @@ class Project(BaseNamedModel, frozen=True):
     pass
 
 
-class ArtifactReference(NamedTuple):
-    """Reference to an Artifact by its name, a version number, and the Project's name its in."""
-
-    project_name: str
-    artifact_name: str
-    version: str
-
-
-class ResourceReference(NamedTuple):
-    """Reference to a Resource by its anme and the Project's name its in."""
-
-    project_name: str
-    resource_name: str
-
-
 class ResourceProviderReference(NamedTuple):
     """Resource with reference to the providing Project and Artifact, if present."""
 
@@ -61,6 +47,10 @@ class ResourceProviderReference(NamedTuple):
             return ArtifactReference(
                 project_name=self.project_name, artifact_name=self.artifact_name, version=self.version
             )
+
+    @property
+    def resource_reference(self) -> ResourceReference:
+        return ResourceReference(project_name=self.project_name, resource_name=self.resource.name)
 
 
 class BoundSetting(NamedTuple):
