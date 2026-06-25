@@ -36,7 +36,7 @@ class InfrastructureAdapter(Protocol):
         """Settings adapter specifically to manage Secrets."""
         ...
 
-    def deploy(
+    async def deploy(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
@@ -78,7 +78,7 @@ class InfrastructureAdapter(Protocol):
         """Resolves a requirement for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
-    def teardown(
+    async def teardown(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],

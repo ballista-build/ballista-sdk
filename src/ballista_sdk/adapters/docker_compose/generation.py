@@ -279,6 +279,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
         # Services
         services_added = {}
+        compose_service.ports = ports = []
         for service in execution.services:
             port_service = service.grpc or service.http or service.tcp
             if port_service is None:
@@ -303,7 +304,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 if network_name not in compose_service.networks:
                     compose_service.networks[network_name] = {"aliases": [host]}
 
-                compose_service.ports.append(
+                ports.append(
                     {
                         "name": service.name,
                         "published": str(external_service_parameters.port or port_service),

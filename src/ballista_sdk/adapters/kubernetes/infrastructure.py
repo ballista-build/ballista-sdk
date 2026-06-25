@@ -50,7 +50,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     def secrets_adapter(self) -> KubernetesAPISecretsAdapter:
         return self._secrets_adapter
 
-    def deploy(
+    async def deploy(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
@@ -235,7 +235,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             ResourceReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
         )
 
-    def teardown(
+    async def teardown(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],

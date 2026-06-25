@@ -10,6 +10,10 @@ from typing import Literal
 import yaml
 
 from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResource
+from ballista_sdk.adapters.resources.transports import (
+    ResourceProviderTransport,
+    RESTResourceProviderTransport,
+)
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactReference,
@@ -21,7 +25,9 @@ from ballista_sdk.api.v1 import (
     Project,
     ResourceProviderReference,
     ResourceReference,
+    ResourceRequirement,
     ResourceRequirementProject,
+    ResourceStatus,
 )
 
 from .generation import BaseDockerComposeInfrastructureAdapter, DockerComposeProject
@@ -55,7 +61,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
             subprocess.run(args)
 
-    def deploy(
+    async def deploy(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
@@ -79,7 +85,16 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                 artifact_resources.extend([(artifact_reference, r, environment) for r in artifact.execution.resources])
 
         if artifact_resources:
-            pass
+            for artifact, project_resource_requirement, environment in artifact_resources:
+                resource_provider_reference = self.resolve_resource_requirement(
+                    project_resource_requirement, environment
+                )
+                await self._create_or_update_resource(
+                    artifact,
+                    resource_provider_reference,
+                    project_resource_requirement.resource_requirement,
+                    environment,
+                )
 
         if True:
             commands = ["up", "--build", "--watch", "--remove-orphans"]
@@ -87,6 +102,44 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             commands = ["up", "--remove-orphans"]
         print(docker_compose_project.model_dump_json(indent=4, exclude_none=True, exclude_unset=True))
         self._call_compose(docker_compose_project, commands)
+
+    def _get_resource_provider_transport(
+        self, resource_provider: ResourceProviderReference
+    ) -> ResourceProviderTransport | None:
+        resource = resource_provider.resource
+
+        if resource.transport:
+            if rest_transport := resource.transport.rest:
+                port = rest_transport.port
+                if rest_transport.service:
+                    # Lookup port
+                    pass
+
+                ref_name = f"{resource_provider.project_name}-{resource_provider.artifact_name}"
+
+                return RESTResourceProviderTransport(
+                    resource_provider.project_name, resource.name, f"{ref_name}:{port}{rest_transport.path}"
+                )
+
+    def _destroy_resources(self, artifact: ArtifactReference, environment: Environment):
+        pass
+
+    async def _create_or_update_resource(
+        self,
+        artifact: ArtifactReference,
+        resource_provider: ResourceProviderReference,
+        resource_requirement: ResourceRequirement,
+        environment: Environment,
+    ):
+        transport = self._get_resource_provider_transport(resource_provider)
+        if transport is None:
+            return
+
+        resource_status = await transport.get_resource_status(artifact, resource_requirement, environment)
+        if resource_status == ResourceStatus.NOT_FOUND:
+            await transport.provision_resource(artifact, resource_requirement, environment)
+        else:
+            await transport.update_resource(artifact, resource_requirement, environment)
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
@@ -154,7 +207,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             ResourceReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
         )
 
-    def teardown(
+    async def teardown(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],

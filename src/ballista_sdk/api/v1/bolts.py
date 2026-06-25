@@ -38,8 +38,11 @@ class ResourceProviderReference(NamedTuple):
 
     resource: Resource
     project_name: str
+    """Project name of Resource Provider."""
     artifact_name: str | None
+    """Artifact name of Resource Provider, if being provided by an Artifact."""
     version: str | None
+    """Artifact version of Resource provider, if being provided by an Artifact."""
 
     @property
     def artifact_reference(self) -> ArtifactReference | None:

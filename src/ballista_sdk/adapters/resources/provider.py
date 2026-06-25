@@ -1,3 +1,4 @@
+from collections.abc import Iterable
 from typing import Protocol
 
 from ballista_sdk.api.v1 import (
@@ -17,6 +18,10 @@ class ResourceProvider(Protocol):
 
     async def get_status(self, environment: Environment) -> ResourceProviderStatus:
         """Get the status of the ResourceProvider itself."""
+        ...
+
+    async def list_resources(self, artifact: ArtifactReference, environment: Environment) -> Iterable:
+        """List the Resources for an artifact."""
         ...
 
     async def get_resource_status(

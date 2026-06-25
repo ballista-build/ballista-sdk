@@ -94,6 +94,8 @@ class ArtifactExecutionParameters(BaseModel, frozen=True):
 class DefaultExecutionParameters(BaseModel, frozen=True):
     """Default parameters for executing any ExecutableArtifact in an environment."""
 
+    # TODO: Something for artifact types so they can be configured.
+    # Example: Docker Images are all pulled from a specific registry (ECR, etc.)
     compute: ComputeExecutionParameters = Field(default_factory=ComputeExecutionParameters)
     external_service: ExternalizedServiceParameters = Field(default_factory=ExternalizedServiceParameters)
     scaling: ScalingExecutionParameters = Field(default_factory=ScalingExecutionParameters)

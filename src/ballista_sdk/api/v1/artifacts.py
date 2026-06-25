@@ -20,6 +20,7 @@ class BuildParameters(BaseModel):
             description="Name of Dockerfile, relative to project root, to find the indicated `dockerfile_target`.",
         ),
     ] = None
+    dockerfile_context: Annotated[str | None, Field()] = None
     dockerfile_target: Annotated[
         str | None,
         Field(
