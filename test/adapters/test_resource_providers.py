@@ -19,6 +19,9 @@ pytestmark = pytest.mark.unit
 
 @dataclass
 class MockResourceProvider(ResourceProvider):
+    project_name: str
+    resource_name: str
+
     _resources: dict[tuple[str, str, str], ResourceStatus] = field(default_factory=dict, init=False)
 
     def _get_key(self, artifact: ArtifactReference, environment: Environment) -> tuple[str, str, str]:
@@ -40,7 +43,9 @@ class MockResourceProvider(ResourceProvider):
         key = self._get_key(artifact, environment)
 
         if key in self._resources:
-            raise ResourceAlreadyExists()
+            raise ResourceAlreadyExists(
+                self.project_name, self.resource_name, artifact.project_name, artifact.artifact_name, artifact.version
+            )
 
         self._resources[key] = ResourceStatus.PROVISIONING
 
@@ -50,7 +55,9 @@ class MockResourceProvider(ResourceProvider):
         key = self._get_key(artifact, environment)
 
         if key not in self._resources:
-            raise ResourceNotFound()
+            raise ResourceNotFound(
+                self.project_name, self.resource_name, artifact.project_name, artifact.artifact_name, artifact.version
+            )
 
     async def triggers_reprovision(
         self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
@@ -68,7 +75,9 @@ class MockResourceProvider(ResourceProvider):
         key = self._get_key(artifact, environment)
 
         if key not in self._resources:
-            raise ResourceNotFound()
+            raise ResourceNotFound(
+                self.project_name, self.resource_name, artifact.project_name, artifact.artifact_name, artifact.version
+            )
 
         self._resources[key] = ResourceStatus.DESTROYING
 
@@ -85,13 +94,15 @@ class MockResourceProvider(ResourceProvider):
 
         if key not in self._resources:
             raise ResourceNotFound(
-                artifact,
+                self.project_name, self.resource_name, artifact.project_name, artifact.artifact_name, artifact.version
             )
 
         new_key = self._get_key(artifact, dest_environment)
 
         if new_key in self._resources and not overwrite:
-            raise ResourceAlreadyExists()
+            raise ResourceAlreadyExists(
+                self.project_name, self.resource_name, artifact.project_name, artifact.artifact_name, artifact.version
+            )
 
         self._resources[new_key] = ResourceStatus.PROVISIONING
 
@@ -135,7 +146,7 @@ def resource_requirement() -> ResourceRequirement:
 
 @pytest.fixture
 def test_resource_provider() -> ResourceProvider:
-    return MockResourceProvider()
+    return MockResourceProvider("mock", "resource")
 
 
 async def test_resource_provision(
