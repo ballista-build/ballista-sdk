@@ -15,8 +15,13 @@ from .provider import (
     ResourceProviderStatus,
     ResourceRequirement,
     ResourceStatus,
+    SettingValue,
 )
-from .pydantic import ResourceProviderStatusResponse, ResourceStatusResponse
+from .pydantic import (
+    ResourceProviderStatusResponse,
+    ResourceStatusResponse,
+    WriteResourceResponse,
+)
 
 
 @dataclass
@@ -179,12 +184,26 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
 
     async def provision_resource(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ):
+    ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
+        async with self._aiohttp_session.post(
+            **self._artifact_request(environment, artifact, resource_requirement)
+        ) as aiohttp_response:
+            response = WriteResourceResponse.model_validate_json(await aiohttp_response.read())
+
+            return response.configs, response.secrets
+
         raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
     async def update_resource(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ):
+    ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
+        async with self._aiohttp_session.put(
+            **self._artifact_request(environment, artifact, resource_requirement)
+        ) as aiohttp_response:
+            response = WriteResourceResponse.model_validate_json(await aiohttp_response.read())
+
+            return response.configs, response.secrets
+
         raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
     # Resource Access

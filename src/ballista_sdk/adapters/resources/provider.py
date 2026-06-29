@@ -8,6 +8,7 @@ from ballista_sdk.api.v1 import (
     ResourceProviderStatus,
     ResourceRequirement,
     ResourceStatus,
+    SettingValue,
 )
 
 
@@ -38,8 +39,10 @@ class ResourceProvider[ResourceProviderResourceRequirement: ResourceRequirement]
         environment: Environment,
         artifact: ArtifactReference,
         resource_requirement: ResourceProviderResourceRequirement,
-    ):
+    ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
         """Provisions a new resource. Grants ownership access to the referenced Artifact + Environment.
+
+        Data returned is saved as Configs and Secrets.
 
         :raises ArtifactResourceAlreadyExists: Resource already exists and can't be provisioned.
         :raises ResourceProviderException: Resource could not be provisioned.
@@ -51,7 +54,7 @@ class ResourceProvider[ResourceProviderResourceRequirement: ResourceRequirement]
         environment: Environment,
         artifact: ArtifactReference,
         resource_requirement: ResourceProviderResourceRequirement,
-    ):
+    ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
         """Updates an existing resource. If the requirement changes are substantial, triggers a re-provisioning.
 
         Resource can be updated while it is `PROVISIONING`, `AVAILABLE`, or `UNHEALTHY`.

@@ -19,6 +19,7 @@ from ballista_sdk.api.v1 import (
     ArtifactReference,
     ArtifactType,
     Bolt,
+    BoundSetting,
     Environment,
     ExecutableArtifact,
     ExecutionParameters,
@@ -137,11 +138,32 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         if transport is None:
             return
 
+        # TODO: This should be universal
         resource_status = await transport.get_resource_status(environment, artifact, resource_requirement)
         if resource_status == ResourceStatus.NOT_FOUND:
-            await transport.provision_resource(environment, artifact, resource_requirement)
+            configs, secrets = await transport.provision_resource(environment, artifact, resource_requirement)
+
         else:
-            await transport.update_resource(environment, artifact, resource_requirement)
+            configs, secrets = await transport.update_resource(environment, artifact, resource_requirement)
+
+        provided_resource = provided_resource_with_artifact.provided_resource
+        for config in provided_resource.configs:
+            if config.name not in configs:
+                raise Exception("WEEOOO")
+
+            value = configs[config.name]
+            bound_setting = BoundSetting(config, artifact=artifact)
+
+            self.configs_adapter.write(environment, bound_setting, value)
+
+        for secret in provided_resource.secrets:
+            if secret.name not in secrets:
+                raise Exception("BAD SECRET")
+
+            value = secrets[secret.name]
+            bound_setting = BoundSetting(secret, artifact=artifact)
+
+            self.secrets_adapter.write(environment, bound_setting, value)
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
