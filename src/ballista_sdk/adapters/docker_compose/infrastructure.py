@@ -9,7 +9,7 @@ from typing import Literal
 
 import yaml
 
-from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResource
+from ballista_sdk.adapters.exceptions import ArtifactNotFound, ResourceProviderNotFound
 from ballista_sdk.adapters.resources.transports import (
     ResourceProviderTransport,
     RESTResourceProviderTransport,
@@ -23,8 +23,8 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     Project,
+    ProvidedResourceWithArtifactReference,
     ResourceProviderReference,
-    ResourceReference,
     ResourceRequirement,
     ResourceRequirementProject,
     ResourceStatus,
@@ -90,10 +90,10 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                     project_resource_requirement, environment
                 )
                 await self._create_or_update_resource(
+                    environment,
                     artifact,
                     resource_provider_reference,
                     project_resource_requirement.resource_requirement,
-                    environment,
                 )
 
         if True:
@@ -104,21 +104,23 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         self._call_compose(docker_compose_project, commands)
 
     def _get_resource_provider_transport(
-        self, resource_provider: ResourceProviderReference
+        self, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
     ) -> ResourceProviderTransport | None:
-        resource = resource_provider.resource
+        resource = provided_resource_with_artifact.provided_resource
 
         if resource.transport:
+            artifact_reference = provided_resource_with_artifact.artifact_reference
+
             if rest_transport := resource.transport.rest:
                 port = rest_transport.port
                 if rest_transport.service:
                     # Lookup port
                     pass
 
-                ref_name = f"{resource_provider.project_name}-{resource_provider.artifact_name}"
+                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
 
                 return RESTResourceProviderTransport(
-                    resource_provider.project_name, resource.name, f"{ref_name}:{port}{rest_transport.path}"
+                    artifact_reference.project_name, resource.name, f"{ref_name}:{port}{rest_transport.path}"
                 )
 
     def _destroy_resources(self, artifact: ArtifactReference, environment: Environment):
@@ -126,20 +128,20 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
 
     async def _create_or_update_resource(
         self,
-        artifact: ArtifactReference,
-        resource_provider: ResourceProviderReference,
-        resource_requirement: ResourceRequirement,
         environment: Environment,
+        artifact: ArtifactReference,
+        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+        resource_requirement: ResourceRequirement,
     ):
-        transport = self._get_resource_provider_transport(resource_provider)
+        transport = self._get_resource_provider_transport(provided_resource_with_artifact)
         if transport is None:
             return
 
-        resource_status = await transport.get_resource_status(artifact, resource_requirement, environment)
+        resource_status = await transport.get_resource_status(environment, artifact, resource_requirement)
         if resource_status == ResourceStatus.NOT_FOUND:
-            await transport.provision_resource(artifact, resource_requirement, environment)
+            await transport.provision_resource(environment, artifact, resource_requirement)
         else:
-            await transport.update_resource(artifact, resource_requirement, environment)
+            await transport.update_resource(environment, artifact, resource_requirement)
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
@@ -160,14 +162,14 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
     def list_project_bolts(self, project: Project, environments: Sequence[Environment]) -> list[Bolt]:
         return []
 
-    def list_resources(self, environment: Environment) -> list[ResourceProviderReference]:
+    def list_resources(self, environment: Environment) -> list[ProvidedResourceWithArtifactReference]:
         """List available Resources with a providing ArtifactReference in the specified Environment."""
 
         references = []
         for bolt in self._bolts:
             references.extend(
                 [
-                    ResourceProviderReference(resource, bolt.project, artifact.name, bolt.version)
+                    ProvidedResourceWithArtifactReference(resource, bolt.project, artifact.name, bolt.version)
                     for artifact in bolt.executable_artifacts
                     for resource in artifact.provides
                 ]
@@ -176,7 +178,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         return references
 
     def resolve_artifact_reference(
-        self, artifact_reference: ArtifactReference, environment: Environment
+        self, environment: Environment, artifact_reference: ArtifactReference
     ) -> tuple[Bolt, Artifact]:
         for bolt in self._bolts:
             for artifact in bolt.artifacts:
@@ -187,11 +189,11 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                 ):
                     return bolt, artifact
 
-        raise UnknownArtifact(artifact_reference)
+        raise ArtifactNotFound(artifact_reference)
 
     def resolve_resource_requirement(
-        self, resource_requirement: ResourceRequirementProject, environment: Environment
-    ) -> ResourceProviderReference:
+        self, environment: Environment, resource_requirement: ResourceRequirementProject
+    ) -> ProvidedResourceWithArtifactReference:
         # Get the project_name of the requirement points to and compare our resources
         requirement_project_name = resource_requirement.which()
         requirement_resource_name = resource_requirement.resource_name
@@ -199,12 +201,13 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         for resource_provider_artifact_reference in self.list_resources(environment=environment):
             if (
                 resource_provider_artifact_reference.project_name == requirement_project_name
-                and resource_provider_artifact_reference.resource.name == requirement_resource_name
+                and resource_provider_artifact_reference.resource_provider_reference.resource_name
+                == requirement_resource_name
             ):
                 return resource_provider_artifact_reference
 
-        raise UnknownResource(
-            ResourceReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
+        raise ResourceProviderNotFound(
+            ResourceProviderReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
         )
 
     async def teardown(

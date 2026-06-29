@@ -14,7 +14,7 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
-    ResourceReference,
+    ResourceProviderReference,
     ResourceSetting,
     ServiceRequirement,
     Setting,
@@ -106,7 +106,7 @@ def generate_artifact_settings_refname(artifact_reference: ArtifactReference) ->
     return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
 
 
-def generate_resource_settings_refname(resource_reference: ResourceReference) -> str:
+def generate_resource_settings_refname(resource_reference: ResourceProviderReference) -> str:
     return f"{resource_reference.project_name}.resources.{resource_reference.resource_name}"
 
 
@@ -183,7 +183,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         self,
         container_spec: dict,
         artifact_reference: ArtifactReference,
-        resource_reference: ResourceReference,
+        resource_reference: ResourceProviderReference,
         resource_setting: ResourceSetting,
         prefix: str,
         instance: list[str],
@@ -385,9 +385,9 @@ def _generate_deployment(
     # Resources
     for resource_requirement_project in execution.resources:
         resource, resource_project, _, _ = adapter.resolve_resource_requirement(
-            resource_requirement_project, environment
+            environment, resource_requirement_project
         )
-        resource_reference = ResourceReference(resource_project, resource.name)
+        resource_reference = ResourceProviderReference(resource_project, resource.name)
         requirement_prefix = resource_requirement_project.prefix or resource.prefix
         requirement_instance = [
             getattr(resource_requirement_project.resource_requirement, f) for f in resource.instance_id_fields

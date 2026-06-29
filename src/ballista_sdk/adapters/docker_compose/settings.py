@@ -35,8 +35,10 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
     def _get_bound_setting_env_filename(self, environment: Environment, bound_setting: BoundSetting) -> str:
         if bound_setting.artifact:
             return generate_artifact_setting_envfile_filename(bound_setting.artifact, bound_setting.setting.sensitive)
-        elif bound_setting.resource:
-            return generate_resource_setting_envfile_filename(bound_setting.resource, bound_setting.setting.sensitive)
+        elif bound_setting.resource_provider:
+            return generate_resource_setting_envfile_filename(
+                bound_setting.resource_provider, bound_setting.setting.sensitive
+            )
         else:
             raise ValueError("BoundSetting needs an artifact or resource reference.")
 

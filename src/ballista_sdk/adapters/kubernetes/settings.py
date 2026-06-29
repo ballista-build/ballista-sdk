@@ -9,7 +9,7 @@ from ballista_sdk.api.v1 import (
     ArtifactReference,
     BoundSetting,
     Environment,
-    ResourceReference,
+    ResourceProviderReference,
     Setting,
     SettingDataType,
     SettingValue,
@@ -53,9 +53,11 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
             name = generate_artifact_settings_refname(bound_setting.artifact)
 
             return {"labels": {}, "name": name, "namespace": namespace}
-        elif bound_setting.resource:
-            namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.resource)
-            name = generate_resource_settings_refname(bound_setting.resource)
+        elif bound_setting.resource_provider:
+            namespace = _get_reference_kubernetes_namespace(
+                environment, environment_config, bound_setting.resource_provider
+            )
+            name = generate_resource_settings_refname(bound_setting.resource_provider)
 
             return {"labels": {}, "name": name, "namespace": namespace}
         else:
@@ -68,10 +70,10 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
             return _get_reference_kubernetes_namespace(
                 environment, environment_config, bound_setting.artifact
             ), generate_artifact_settings_refname(bound_setting.artifact)
-        elif bound_setting.resource:
+        elif bound_setting.resource_provider:
             return _get_reference_kubernetes_namespace(
-                environment, environment_config, bound_setting.resource
-            ), generate_resource_settings_refname(bound_setting.resource)
+                environment, environment_config, bound_setting.resource_provider
+            ), generate_resource_settings_refname(bound_setting.resource_provider)
         else:
             raise ValueError()
 
@@ -332,7 +334,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
 def _get_reference_kubernetes_namespace(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
-    reference: ArtifactReference | ResourceReference,
+    reference: ArtifactReference | ResourceProviderReference,
 ) -> str:
     if environment_config.project_namespaces:
         return f"{reference.project_name}-{environment.name}"

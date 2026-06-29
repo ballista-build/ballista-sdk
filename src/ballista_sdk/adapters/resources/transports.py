@@ -3,8 +3,8 @@ from typing import Protocol
 
 import aiohttp
 
-from ballista_sdk.adapters.exceptions import ResourceException
-from ballista_sdk.api.v1.resources import Resource, ResourceReference
+from ballista_sdk.adapters.exceptions import ResourceProviderException
+from ballista_sdk.api.v1.resources import ProvidedResource, ResourceProviderReference
 
 from .exceptions import ResourceAlreadyExists, ResourceNotFound
 from .provider import (
@@ -16,6 +16,7 @@ from .provider import (
     ResourceRequirement,
     ResourceStatus,
 )
+from .pydantic import ResourceProviderStatusResponse, ResourceStatusResponse
 
 
 @dataclass
@@ -41,23 +42,23 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
         default_factory=dict, init=False
     )
 
-    async def get_status(self, environment: Environment) -> ResourceProviderStatus:
-        return ResourceProviderStatus.AVAILABLE
+    async def get_status(self, environment: Environment) -> tuple[ResourceProviderStatus, str | None]:
+        return ResourceProviderStatus.AVAILABLE, None
 
     # Resource
-    async def list_resources(self, artifact: ArtifactReference, environment: Environment) -> list:
+    async def list_resources(self, environment: Environment, artifact: ArtifactReference) -> list:
         return self._resources.get(environment, {}).get(artifact, [])
 
     async def get_resource_status(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
-    ) -> ResourceStatus:
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
+    ) -> tuple[ResourceStatus, str | None]:
         if resource_requirement in self._resources.get(environment, {}).get(artifact, []):
-            return ResourceStatus.AVAILABLE
+            return ResourceStatus.AVAILABLE, None
         else:
-            return ResourceStatus.NOT_FOUND
+            return ResourceStatus.NOT_FOUND, None
 
     async def provision_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         if resource_requirement in self._resources.get(environment, {}).get(artifact, []):
             raise ResourceAlreadyExists(
@@ -71,7 +72,7 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
         self._resources.setdefault(environment, {}).setdefault(artifact, []).append(resource_requirement)
 
     async def update_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         if resource_requirement not in self._resources.get(environment, {}).get(artifact, []):
             raise ResourceNotFound(
@@ -84,17 +85,20 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
 
     # Resource Access
     async def get_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ) -> ResourceAccess | None:
         pass
 
     async def grant_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceRequirement,
     ):
         pass
 
     async def revoke_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         pass
 
@@ -113,50 +117,91 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
         # TODO: Auth and more
         pass
 
+    def _request(
+        self,
+        method: str,
+        environment: Environment,
+        artifact: ArtifactReference | None = None,
+        resource_requirement: ResourceRequirement | None = None,
+    ):
+        if artifact:
+            json = resource_requirement.model_dump(mode="json") if resource_requirement else None
+
+            return self._aiohttp_session.request(
+                method,
+                f"{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
+                json=json,
+            )
+
+        else:
+            return self._aiohttp_session.request(method, f"{environment.tier}/{environment.name}/")
+
+    def _environment_request(self, environment: Environment) -> dict:
+        return {"url": f"{environment.tier}/{environment.name}/"}
+
+    def _artifact_request(
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
+    ) -> dict:
+        json = resource_requirement.model_dump(mode="json") or None
+
+        return {
+            "url": f"{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
+            "json": json,
+        }
+
     # Provider
-    async def get_status(self, environment: Environment) -> ResourceProviderStatus:
-        async with self._aiohttp_session.get(f"{environment.tier}/{environment.name}/") as response:
-            return ResourceProviderStatus(response.json())
+    async def get_status(self, environment: Environment) -> tuple[ResourceProviderStatus, str | None]:
+        try:
+            async with self._aiohttp_session.get(**self._environment_request(environment)) as aiohttp_response:
+                response = ResourceProviderStatusResponse.model_validate_json(await aiohttp_response.read())
+
+                return response.status, response.detail
+
+        except aiohttp.ClientError as e:
+            return ResourceProviderStatus.UNAVAILABLE, None
 
     # Resource
-    async def list_resources(self, artifact: ArtifactReference, environment: Environment) -> list:
+    async def list_resources(self, environment: Environment, artifact: ArtifactReference) -> list:
         async with self._aiohttp_session.get("") as response:
             pass
+
         return []
 
     async def get_resource_status(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
-    ) -> ResourceStatus:
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
+    ) -> tuple[ResourceStatus, str | None]:
         async with self._aiohttp_session.get(
-            f"{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/"
-        ) as response:
-            return ResourceStatus(response.json())
+            **self._artifact_request(environment, artifact, resource_requirement)
+        ) as aiohttp_response:
+            response = ResourceStatusResponse.model_validate_json(await aiohttp_response.read())
+
+            return response.status, response.detail
 
     async def provision_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceException(ResourceReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
     async def update_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceException(ResourceReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
     # Resource Access
     async def get_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ) -> ResourceAccess | None:
-        raise ResourceException(ResourceReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
     async def grant_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceException(ResourceReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
     async def revoke_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceException(ResourceReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
 
 
 class GRPCResourceProviderTransport(ResourceProviderTransport):
@@ -177,15 +222,15 @@ class QueueResourceProviderTransport(ResourceProviderTransport):
     pass
 
 
-def transport_resource_provider(project_name: str, resource: Resource) -> ResourceProviderTransport:
+def transport_resource_provider(project_name: str, provided_resource: ProvidedResource) -> ResourceProviderTransport:
     """Transport a Resource's provider via the designated method."""
-    if resource.transport.rest:
+    if provided_resource.transport.rest:
         # TODO: Get artifact service URL
         service_url = ""
         return RESTResourceProviderTransport(
             resource_project_name=project_name,
-            resource_name=resource.name,
-            api_url=f"{service_url}/{resource.transport.rest.path}",
+            resource_name=provided_resource.name,
+            api_url=f"{service_url}/{provided_resource.transport.rest.path}",
         )
 
-    raise ResourceException("BLAH")
+    raise ResourceProviderException("BLAH")

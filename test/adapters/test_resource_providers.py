@@ -27,18 +27,18 @@ class MockResourceProvider(ResourceProvider):
     def _get_key(self, artifact: ArtifactReference, environment: Environment) -> tuple[str, str, str]:
         return environment.name, artifact.project_name, artifact.artifact_name
 
-    async def get_status(self, environment: Environment) -> ResourceProviderStatus:
-        return ResourceProviderStatus.AVAILABLE
+    async def get_status(self, environment: Environment) -> tuple[ResourceProviderStatus, str | None]:
+        return ResourceProviderStatus.AVAILABLE, None
 
     async def get_resource_status(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
-    ) -> ResourceStatus:
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
+    ) -> tuple[ResourceStatus, str | None]:
         key = self._get_key(artifact, environment)
 
-        return self._resources.get(key, ResourceStatus.NOT_FOUND)
+        return self._resources.get(key, ResourceStatus.NOT_FOUND), None
 
     async def provision_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         key = self._get_key(artifact, environment)
 
@@ -50,7 +50,7 @@ class MockResourceProvider(ResourceProvider):
         self._resources[key] = ResourceStatus.PROVISIONING
 
     async def update_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         key = self._get_key(artifact, environment)
 
@@ -60,15 +60,15 @@ class MockResourceProvider(ResourceProvider):
             )
 
     async def triggers_reprovision(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ) -> bool:
         return False
 
     async def destroy_resource(
         self,
+        environment: Environment,
         artifact: ArtifactReference,
         resource_requirement: ResourceRequirement,
-        environment: Environment,
         *,
         force: bool = False,
     ):
@@ -83,9 +83,9 @@ class MockResourceProvider(ResourceProvider):
 
     async def copy_resource(
         self,
+        environment: Environment,
         artifact: ArtifactReference,
         resource_requirement: ResourceRequirement,
-        environment: Environment,
         dest_environment: Environment,
         *,
         overwrite: bool = False,
@@ -108,22 +108,22 @@ class MockResourceProvider(ResourceProvider):
 
     # Resource Access
     async def get_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ) -> ResourceAccess | None:
         pass
 
     async def grant_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         pass
 
     async def revoke_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         pass
 
     def _shim_finish_provision(
-        self, artifact_reference: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact_reference: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         key = self._get_key(artifact_reference, environment)
 
@@ -131,7 +131,7 @@ class MockResourceProvider(ResourceProvider):
             self._resources[key] = ResourceStatus.AVAILABLE
 
     def _shim_finish_destroy(
-        self, artifact_reference: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self, environment: Environment, artifact_reference: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         key = self._get_key(artifact_reference, environment)
 
@@ -156,26 +156,32 @@ async def test_resource_provision(
     test_resource_provider: MockResourceProvider,
 ):
     # Doesn't exist yet; should return NOT_FOUND.
-    status = await test_resource_provider.get_resource_status(artifact_reference, resource_requirement, environment)
+    status, message = await test_resource_provider.get_resource_status(
+        environment, artifact_reference, resource_requirement
+    )
     assert status == ResourceStatus.NOT_FOUND
 
     # Provision resource and wait for status changes
-    await test_resource_provider.provision_resource(artifact_reference, resource_requirement, environment)
+    await test_resource_provider.provision_resource(environment, artifact_reference, resource_requirement)
 
     # Resource should report as PROVISIONING immediately
-    status = await test_resource_provider.get_resource_status(artifact_reference, resource_requirement, environment)
+    status, message = await test_resource_provider.get_resource_status(
+        environment, artifact_reference, resource_requirement
+    )
     assert status == ResourceStatus.PROVISIONING
 
     # sneaky; finish provisioning
     # TODO: This shouldn't be needed because this test should properly async calls to check statuses
-    test_resource_provider._shim_finish_provision(artifact_reference, resource_requirement, environment)
+    test_resource_provider._shim_finish_provision(environment, artifact_reference, resource_requirement)
 
-    status = await test_resource_provider.get_resource_status(artifact_reference, resource_requirement, environment)
+    status, message = await test_resource_provider.get_resource_status(
+        environment, artifact_reference, resource_requirement
+    )
     assert status == ResourceStatus.AVAILABLE
 
     # Attempting to provision again errors
     with pytest.raises(ResourceAlreadyExists):
-        await test_resource_provider.provision_resource(artifact_reference, resource_requirement, environment)
+        await test_resource_provider.provision_resource(environment, artifact_reference, resource_requirement)
 
 
 async def test_resource_update(
@@ -186,12 +192,12 @@ async def test_resource_update(
 ):
     # Doesn't exist, can't update
     with pytest.raises(ResourceNotFound):
-        await test_resource_provider.update_resource(artifact_reference, resource_requirement, environment)
+        await test_resource_provider.update_resource(environment, artifact_reference, resource_requirement)
 
-    await test_resource_provider.provision_resource(artifact_reference, resource_requirement, environment)
-    test_resource_provider._shim_finish_provision(artifact_reference, resource_requirement, environment)
+    await test_resource_provider.provision_resource(environment, artifact_reference, resource_requirement)
+    test_resource_provider._shim_finish_provision(environment, artifact_reference, resource_requirement)
 
-    await test_resource_provider.update_resource(artifact_reference, resource_requirement, environment)
+    await test_resource_provider.update_resource(environment, artifact_reference, resource_requirement)
 
 
 async def test_resource_copy(
@@ -200,26 +206,26 @@ async def test_resource_copy(
     environment: Environment,
     test_resource_provider: MockResourceProvider,
 ):
-    provisioned_resource = artifact_reference, resource_requirement, environment
+    provisioned_resource = environment, artifact_reference, resource_requirement
 
     dest_environment = Environment(name="other", title="Other Environment", tier=EnvironmentTier.DEVELOPMENT)
-    copied_resource = artifact_reference, resource_requirement, dest_environment
+    copied_resource = dest_environment, artifact_reference, resource_requirement
 
     # Doesn't exist, can't copy
     with pytest.raises(ResourceNotFound):
         await test_resource_provider.copy_resource(
-            artifact_reference, resource_requirement, environment, dest_environment
+            environment, artifact_reference, resource_requirement, dest_environment
         )
 
     await test_resource_provider.provision_resource(*provisioned_resource)
     test_resource_provider._shim_finish_provision(*provisioned_resource)
 
     await test_resource_provider.copy_resource(*provisioned_resource, dest_environment)
-    status = await test_resource_provider.get_resource_status(*copied_resource)
+    status, message = await test_resource_provider.get_resource_status(*copied_resource)
     assert status == ResourceStatus.PROVISIONING
 
     test_resource_provider._shim_finish_provision(*copied_resource)
-    status = await test_resource_provider.get_resource_status(*copied_resource)
+    status, message = await test_resource_provider.get_resource_status(*copied_resource)
     assert status == ResourceStatus.AVAILABLE
 
     # Copying again without overwrite
@@ -228,7 +234,7 @@ async def test_resource_copy(
 
     # Copying again WITH overwrite
     await test_resource_provider.copy_resource(*provisioned_resource, dest_environment, overwrite=True)
-    status = await test_resource_provider.get_resource_status(*copied_resource)
+    status, message = await test_resource_provider.get_resource_status(*copied_resource)
     assert status == ResourceStatus.PROVISIONING
 
 
@@ -239,19 +245,23 @@ async def test_resource_destroy(
     test_resource_provider: MockResourceProvider,
 ):
     with pytest.raises(ResourceNotFound):
-        await test_resource_provider.destroy_resource(artifact_reference, resource_requirement, environment)
+        await test_resource_provider.destroy_resource(environment, artifact_reference, resource_requirement)
 
-    await test_resource_provider.provision_resource(artifact_reference, resource_requirement, environment)
+    await test_resource_provider.provision_resource(environment, artifact_reference, resource_requirement)
 
-    await test_resource_provider.destroy_resource(artifact_reference, resource_requirement, environment)
+    await test_resource_provider.destroy_resource(environment, artifact_reference, resource_requirement)
 
-    status = await test_resource_provider.get_resource_status(artifact_reference, resource_requirement, environment)
+    status, message = await test_resource_provider.get_resource_status(
+        environment, artifact_reference, resource_requirement
+    )
     assert status == ResourceStatus.DESTROYING
 
     # sneaky; finish destroying
-    test_resource_provider._shim_finish_destroy(artifact_reference, resource_requirement, environment)
+    test_resource_provider._shim_finish_destroy(environment, artifact_reference, resource_requirement)
 
-    status = await test_resource_provider.get_resource_status(artifact_reference, resource_requirement, environment)
+    status, message = await test_resource_provider.get_resource_status(
+        environment, artifact_reference, resource_requirement
+    )
     assert status == ResourceStatus.NOT_FOUND
 
 

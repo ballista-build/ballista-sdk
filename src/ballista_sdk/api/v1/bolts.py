@@ -4,7 +4,7 @@ from pydantic import BaseModel, Field
 
 from .artifacts import Artifact, ArtifactReference, BuildableArtifact, ExecutableArtifact
 from .common import BaseNamedModel
-from .resources import Resource, ResourceReference
+from .resources import ProvidedResource, ResourceProviderReference
 from .settings import Setting
 
 
@@ -33,27 +33,24 @@ class Project(BaseNamedModel, frozen=True):
     pass
 
 
-class ResourceProviderReference(NamedTuple):
-    """Resource with reference to the providing Project and Artifact, if present."""
+class ProvidedResourceWithArtifactReference(NamedTuple):
+    """Provided Resource with reference to the providing Artifact."""
 
-    resource: Resource
+    provided_resource: ProvidedResource
     project_name: str
     """Project name of Resource Provider."""
-    artifact_name: str | None
-    """Artifact name of Resource Provider, if being provided by an Artifact."""
-    version: str | None
-    """Artifact version of Resource provider, if being provided by an Artifact."""
+    artifact_name: str
+    """Artifact name of Resource Provider."""
+    version: str
+    """Version of Artifact for the Resource Provider."""
 
     @property
-    def artifact_reference(self) -> ArtifactReference | None:
-        if self.artifact_name and self.version:
-            return ArtifactReference(
-                project_name=self.project_name, artifact_name=self.artifact_name, version=self.version
-            )
+    def artifact_reference(self) -> ArtifactReference:
+        return ArtifactReference(project_name=self.project_name, artifact_name=self.artifact_name, version=self.version)
 
     @property
-    def resource_reference(self) -> ResourceReference:
-        return ResourceReference(project_name=self.project_name, resource_name=self.resource.name)
+    def resource_provider_reference(self) -> ResourceProviderReference:
+        return ResourceProviderReference(project_name=self.project_name, resource_name=self.provided_resource.name)
 
 
 class BoundSetting(NamedTuple):
@@ -62,6 +59,6 @@ class BoundSetting(NamedTuple):
     setting: Setting
     artifact: ArtifactReference | None = None
     """Artifact setting exists in."""
-    resource: ResourceReference | None = None
+    resource_provider: ResourceProviderReference | None = None
     """Resource setting exists in."""
     resource_instance: Sequence[str] | None = None

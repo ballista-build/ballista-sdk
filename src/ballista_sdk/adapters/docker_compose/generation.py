@@ -14,7 +14,7 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
-    ResourceReference,
+    ResourceProviderReference,
     ResourceSetting,
     ServiceRequirement,
     Setting,
@@ -71,9 +71,11 @@ def generate_artifact_setting_envfile_filename(artifact_reference: ArtifactRefer
     )
 
 
-def generate_resource_setting_envfile_filename(resource_reference: ResourceReference, sensitive: bool) -> str:
+def generate_resource_setting_envfile_filename(
+    resource_provider_reference: ResourceProviderReference, sensitive: bool
+) -> str:
     return _generate_envfile_filename(
-        f"{resource_reference.project_name}-resources-{resource_reference.resource_name}", sensitive
+        f"{resource_provider_reference.project_name}-resources-{resource_provider_reference.resource_name}", sensitive
     )
 
 
@@ -100,7 +102,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         self,
         service: DockerComposeService,
         artifact_reference: ArtifactReference,
-        resource_reference: ResourceReference,
+        resource_provider_reference: ResourceProviderReference,
         resource_setting: ResourceSetting,
         prefix: str,
         instance: list[str],
@@ -108,7 +110,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         if resource_setting.shared:
             self._add_envfile(
                 service,
-                generate_resource_setting_envfile_filename(resource_reference, resource_setting.sensitive),
+                generate_resource_setting_envfile_filename(resource_provider_reference, resource_setting.sensitive),
                 True,
             )
 
@@ -144,13 +146,13 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 for resource_requirement in artifact.execution.resources:
                     if resource_requirement.resource_name not in resource_service_names:
                         resource_with_provider_artifact = self.resolve_resource_requirement(
-                            resource_requirement, environment
+                            environment, resource_requirement
                         )
 
                         if artifact_reference := resource_with_provider_artifact.artifact_reference:
                             # Resource is provided by an artifact that is executable
                             provider_artifact_bolt, provider_artifact = self.resolve_artifact_reference(
-                                artifact_reference, environment
+                                environment, artifact_reference
                             )
 
                             requeue = True
@@ -257,9 +259,9 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         # Resources
         for resource_requirement_project in execution.resources:
             resource, resource_project, _, _ = self.resolve_resource_requirement(
-                resource_requirement_project, environment
+                environment, resource_requirement_project
             )
-            resource_reference = ResourceReference(resource_project, resource.name)
+            resource_provider_reference = ResourceProviderReference(resource_project, resource.name)
             requirement_prefix = resource_requirement_project.prefix or resource.prefix
             requirement_instance = [
                 getattr(resource_requirement_project.resource_requirement, f) for f in resource.instance_id_fields
@@ -269,7 +271,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 self.add_resource_setting(
                     compose_service,
                     artifact_reference,
-                    resource_reference,
+                    resource_provider_reference,
                     setting,
                     requirement_prefix,
                     requirement_instance,

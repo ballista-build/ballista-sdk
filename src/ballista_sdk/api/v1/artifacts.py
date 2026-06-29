@@ -4,7 +4,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
-from .resources import Resource, ResourceRequirement
+from .resources import ProvidedResource, ResourceRequirement
 from .settings import Config, Secret
 
 
@@ -217,7 +217,7 @@ class BaseArtifactProtocol(Protocol):
     def name(self) -> str: ...
 
     @property
-    def provides(self) -> list[Resource]: ...
+    def provides(self) -> list[ProvidedResource]: ...
 
     @property
     def title(self) -> str | None: ...
@@ -240,7 +240,7 @@ class Artifact(BaseNamedModel):
     annotations: Annotated[dict[str, str], Field(description="Annotations describing artifact.")] = {}
     build: Annotated[BuildParameters | None, Field(description="Parameters for building artifact.")] = None
     execution: Annotated[ExecutionRequirements | None, Field(description="Requirements for artifact execution.")] = None
-    provides: Annotated[list[Resource], Field(description="Resources provided by the artifact.")] = []
+    provides: Annotated[list[ProvidedResource], Field(description="Provided Resources from the artifact.")] = []
     type: Annotated[ArtifactTypeRequirement, Field(description="Type of artifact.")]
 
 

@@ -17,12 +17,12 @@ from ballista_sdk.api.v1 import (
     HealthcheckProbe,
     HealthcheckRequirements,
     Project,
-    Resource,
+    ProvidedResource,
+    ProvidedResourceTransportMethod,
     ResourceConfig,
     ResourceRequirementSchema,
     ResourceSecret,
-    ResourceTransport,
-    RESTResourceTransport,
+    RESTProvidedResourceTransport,
     ScalingExecutionParameters,
     SecretRequirement,
     ServiceRequirement,
@@ -177,7 +177,7 @@ def postgres_bolt() -> Bolt:
         ),
         name="server",
         provides=[
-            Resource(
+            ProvidedResource(
                 name="database",
                 configs=[
                     ResourceConfig(
@@ -225,7 +225,7 @@ def postgres_bolt() -> Bolt:
                     ),
                 ],
                 title="Postgres Database",
-                transport=ResourceTransport(rest=RESTResourceTransport(path="/resources")),
+                transport=ProvidedResourceTransportMethod(rest=RESTProvidedResourceTransport(path="/resources")),
             )
         ],
         type=ArtifactTypeRequirement.model_validate({"docker_image": {"image": "postgres:18.1"}}),

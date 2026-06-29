@@ -15,7 +15,7 @@ from ballista_sdk.api.v1 import (
     ConfigRequirement,
     Environment,
     ResourceConfig,
-    ResourceReference,
+    ResourceProviderReference,
     ResourceSecret,
     SecretRequirement,
     SettingDataType,
@@ -169,7 +169,7 @@ def test_configs(
     subtests: pytest.Subtests,
 ):
     artifact = ArtifactReference("ephemeral", "agasi", "1.2.3")
-    resource = ResourceReference("ephemeral", "resource")
+    resource_provider = ResourceProviderReference("ephemeral", "resource")
 
     for name, data_type, value in sample_settings:
         artifact_config = BoundSetting(
@@ -188,13 +188,14 @@ def test_configs(
             _test_setting(configs_adapters, environment, artifact_config, value, known_artifact_config)
 
         resource_config = BoundSetting(
-            resource=resource,
+            resource_provider=resource_provider,
             setting=ResourceConfig(
                 name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type, shared=True
             ),
         )
         known_resource_config = BoundSetting(
-            resource=resource, setting=ResourceConfig(name="known", data_type=SettingDataType.STRING, shared=True)
+            resource_provider=resource_provider,
+            setting=ResourceConfig(name="known", data_type=SettingDataType.STRING, shared=True),
         )
         with subtests.test(type="resource", name=name):
             with configs_adapters as ca:
@@ -209,7 +210,7 @@ def test_secrets(
     subtests: pytest.Subtests,
 ):
     artifact = ArtifactReference("ephemeral", "agasi", "1.2.3")
-    resource = ResourceReference("ephemeral", "resource")
+    resource_provider = ResourceProviderReference("ephemeral", "resource")
 
     for name, data_type, value in sample_settings:
         artifact_secret = BoundSetting(
@@ -228,13 +229,14 @@ def test_secrets(
             _test_setting(secrets_adapters, environment, artifact_secret, value, known_artifact_secret)
 
         resource_secret = BoundSetting(
-            resource=resource,
+            resource_provider=resource_provider,
             setting=ResourceSecret(
                 name=name, description=f"{name} description", title=f"{name} Title", data_type=data_type, shared=True
             ),
         )
         known_resource_secret = BoundSetting(
-            resource=resource, setting=ResourceSecret(name="known", data_type=SettingDataType.STRING, shared=True)
+            resource_provider=resource_provider,
+            setting=ResourceSecret(name="known", data_type=SettingDataType.STRING, shared=True),
         )
         with subtests.test(type="resource", name=name):
             with secrets_adapters as sa:

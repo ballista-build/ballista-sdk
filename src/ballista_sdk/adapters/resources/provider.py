@@ -11,48 +11,60 @@ from ballista_sdk.api.v1 import (
 )
 
 
-class ResourceProvider(Protocol):
+class ResourceProvider[ResourceProviderResourceRequirement: ResourceRequirement](Protocol):
     """ResourceProvider interface.
 
     Resources provided by Python code should use this. A ResourceProviderTransport will communicate with it."""
 
-    async def get_status(self, environment: Environment) -> ResourceProviderStatus:
-        """Get the status of the ResourceProvider itself."""
+    async def get_status(self, environment: Environment) -> tuple[ResourceProviderStatus, str | None]:
+        """Get the status and optional explanation of the ResourceProvider itself."""
         ...
 
-    async def list_resources(self, artifact: ArtifactReference, environment: Environment) -> Iterable:
+    async def list_resources(self, environment: Environment, artifact: ArtifactReference) -> Iterable:
         """List the Resources for an artifact."""
         ...
 
     async def get_resource_status(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
-    ) -> ResourceStatus:
-        """Get the status of a specific Resource."""
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
+    ) -> tuple[ResourceStatus, str | None]:
+        """Get the status and optional explanation of a specific Resource."""
         ...
 
     async def provision_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
     ):
         """Provisions a new resource. Grants ownership access to the referenced Artifact + Environment.
 
-        :raises ResourceAlreadyExists: Resource already exists and can't be provisioned.
+        :raises ArtifactResourceAlreadyExists: Resource already exists and can't be provisioned.
         :raises ResourceProviderException: Resource could not be provisioned.
         """
         ...
 
     async def update_resource(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
     ):
         """Updates an existing resource. If the requirement changes are substantial, triggers a re-provisioning.
 
         Resource can be updated while it is `PROVISIONING`, `AVAILABLE`, or `UNHEALTHY`.
 
-        :raises ResourceNotFound: Resource could not be found to update.
+        :raises ArtifactResourceNotFound: Resource could not be found to update.
         :raises ResourceProviderException: Resource could not be updated."""
         ...
 
     async def triggers_reprovision(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
     ) -> bool:
         """Returns if a resource requirement update would trigger a reprovision."""
         ...
@@ -65,9 +77,9 @@ class ResourceProvider(Protocol):
 
     async def copy_resource(
         self,
-        artifact: ArtifactReference,
-        resource_requirement: ResourceRequirement,
         environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
         dest_environment: Environment,
         *,
         overwrite: bool = False,
@@ -76,17 +88,17 @@ class ResourceProvider(Protocol):
 
         If resource exists in destination environment, `overwrite` determines if the resource copy should be overwritten or raise an exception.
 
-        :raises ResourceNotFound: Resource could not be found to copy.
-        :raises ResourceAlreadyExists: Resource already exists in destination environment.
+        :raises ArtifactResourceNotFound: Resource could not be found to copy.
+        :raises ArtifactResourceAlreadyExists: Resource already exists in destination environment.
         :raises ResourceProviderException: Resource could not be copied.
         """
         ...
 
     async def destroy_resource(
         self,
-        artifact: ArtifactReference,
-        resource_requirement: ResourceRequirement,
         environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
         *,
         force: bool = False,
     ):
@@ -94,12 +106,15 @@ class ResourceProvider(Protocol):
 
         Resource can be destroyed while it is `PROVISIONING`, `AVAILABLE`, or `UNHEALTHY`.
 
-        :raises ResourceNotFound: Resource could not be found to destroy.
+        :raises ArtifactResourceNotFound: Resource could not be found to destroy.
         :raises ResourceHasDependencies: Resource has dependencies and can not be destroyed."""
         ...
 
     async def get_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
     ) -> ResourceAccess | None:
         """Get artifact's access level to resource. If no access, returns `None`.
 
@@ -108,7 +123,10 @@ class ResourceProvider(Protocol):
         ...
 
     async def grant_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
     ):
         """Grant artifact access to resource.
 
@@ -116,7 +134,10 @@ class ResourceProvider(Protocol):
         ...
 
     async def revoke_resource_access(
-        self, artifact: ArtifactReference, resource_requirement: ResourceRequirement, environment: Environment
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource_requirement: ResourceProviderResourceRequirement,
     ):
         """Revoke artifact access to resource.
 

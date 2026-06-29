@@ -36,23 +36,27 @@ class ResourceRequirement(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class RESTResourceTransport(actions.HTTPGETAction):
+class RESTProvidedResourceTransport(actions.HTTPGETAction):
     """Resource provider communication via REST."""
 
     pass
 
 
-class ResourceTransport(BaseOneOfModel):
+class ProvidedResourceTransportMethod(BaseOneOfModel):
     # exec: Annotated[actions.ExecAction | None, Field()] = None
     # grpc: Annotated[GRPCHealthCheckAction | None, Field()] = None
-    rest: Annotated[RESTResourceTransport | None, Field()] = None
+    rest: Annotated[RESTProvidedResourceTransport | None, Field()] = None
     # tcp: Annotated[actions.TCPAction | None, Field()] = None
 
 
-class Resource(BaseNamedModel):
-    """Resource available to use as an artifact requirement."""
+class ProvidedResource(BaseNamedModel):
+    """Resource available to use as an Artifact requirement."""
 
-    configs: Annotated[list[ResourceConfig], Field(description="Configs that are received by Artifact.")] = []
+    configs: Annotated[
+        list[ResourceConfig],
+        Field(description="Configs that are received by Artifact."),
+    ] = []
+    # TODO: Is this still needed?
     instance_id_fields: Annotated[
         list[str],
         Field(
@@ -71,7 +75,7 @@ class Resource(BaseNamedModel):
     ]
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
     transport: Annotated[
-        ResourceTransport | None,
+        ProvidedResourceTransportMethod | None,
         Field(
             description="Transport method for communication with Resource Provider. If not specified, resource lifecycle is managed externally."
         ),
@@ -125,11 +129,26 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequiremen
         raise ValueError("NYI")
 
 
-class ResourceReference(NamedTuple):
-    """Reference to a Resource by its name and the Project's name its in."""
+class ResourceProviderReference(NamedTuple):
+    """Reference to a Resource Provider by its name and the Project's name its in."""
 
     project_name: str
     resource_name: str
+
+
+class ResourceProviderStatus(StrEnum):
+    """Statuses for a Resource Provider."""
+
+    UNKNOWN = auto()
+    """Resource Provider status is unknown."""
+    UNAVAILABLE = auto()
+    """Resource Provider is unavailable."""
+    STARTING = auto()
+    """Resource Provider is starting and not yet able to process requests."""
+    AVAILABLE = auto()
+    """Resource Provider is available to process requests."""
+    TERMINATING = auto()
+    """Resource Provider is not longer processing requests and terminating."""
 
 
 class ResourceStatus(StrEnum):
@@ -145,17 +164,6 @@ class ResourceStatus(StrEnum):
     """Resource exists but is not healthy."""
     DESTROYING = auto()
     """Resource is being destroyed."""
-
-
-class ResourceProviderStatus(StrEnum):
-    UNKNOWN = auto()
-    """Resource Provider status is unknown."""
-    STARTING = auto()
-    """Resource Provider is starting and not yet able to process requests."""
-    AVAILABLE = auto()
-    """Resource Provider is available to process requests."""
-    TERMINATING = auto()
-    """Resource Provider is not longer processing requests and terminating."""
 
 
 class ResourceAccess(StrEnum):
