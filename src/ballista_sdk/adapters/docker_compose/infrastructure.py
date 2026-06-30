@@ -138,32 +138,46 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         if transport is None:
             return
 
+        provided_resource = provided_resource_with_artifact.provided_resource
+
         # TODO: This should be universal
         resource_status = await transport.get_resource_status(environment, artifact, resource_requirement)
+        pending_configs = []
+        pending_secrets = []
         if resource_status == ResourceStatus.NOT_FOUND:
             configs, secrets = await transport.provision_resource(environment, artifact, resource_requirement)
+
+            # All configs and secrets need to be accounted for.
+            for config in provided_resource.configs:
+                if config.name not in configs:
+                    raise Exception("NEEDED")
+
+                pending_configs.append((BoundSetting(config, artifact=artifact), configs[config.name]))
+
+            for secret in provided_resource.secrets:
+                if secret.name not in secrets:
+                    raise Exception("NEEDED")
+
+                pending_secrets.append((BoundSetting(secret, artifact=artifact), secrets[secret.name]))
 
         else:
             configs, secrets = await transport.update_resource(environment, artifact, resource_requirement)
 
-        provided_resource = provided_resource_with_artifact.provided_resource
-        for config in provided_resource.configs:
-            if config.name not in configs:
-                raise Exception("WEEOOO")
+            # Only configs and secrets returned from the update need be processed.
+            for config in provided_resource.configs:
+                if config.name not in configs:
+                    continue
 
-            value = configs[config.name]
-            bound_setting = BoundSetting(config, artifact=artifact)
+                pending_configs.append((BoundSetting(config, artifact=artifact), configs[config.name]))
 
-            self.configs_adapter.write(environment, bound_setting, value)
+            for secret in provided_resource.secrets:
+                if secret.name not in secrets:
+                    continue
 
-        for secret in provided_resource.secrets:
-            if secret.name not in secrets:
-                raise Exception("BAD SECRET")
+                pending_secrets.append((BoundSetting(secret, artifact=artifact), secrets[secret.name]))
 
-            value = secrets[secret.name]
-            bound_setting = BoundSetting(secret, artifact=artifact)
-
-            self.secrets_adapter.write(environment, bound_setting, value)
+        [self.configs_adapter.write(environment, config, value) for config, value in pending_configs]
+        [self.secrets_adapter.write(environment, secret, value) for secret, value in pending_secrets]
 
     def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
