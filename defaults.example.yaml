@@ -2,64 +2,56 @@
 api_version: v1
 artifacts:
   - name: server
-    build: {}
     execution:
-      healthchecks:
-        alive: &probe
-          exec:
-            commands: ["pg_isready -U $POSTGRES_USER"]
-            shell: True
-        ready: *probe
-        started: *probe
-      secrets:
-        - name: root_username
-          alias: POSTGRES_USER
-          description: Root username.
-          title: Root Username
-          type: string
-        - name: root_password
-          alias: POSTGRES_PASSWORD
-          description: Root password.
-          title: Root Password
-          type: string
-      services:
-        - name: postgres
-          tcp: 5432
-      volumes:
-        - name: data
-          capacity: 1
-          title: PostgreSQL Data
-          path: /var/lib/postgresql/data
-    provides:
-      - name: database
-        configs:
-          - name: host
-            shared: true
-            type: string
-          - name: port
-            shared: true
-            type: integer
-        title: Postgres Database
-        prefix: POSTGRES
-        requirements:
-          properties:
-            - name: name
-              description: Database name.
-              title: Database
-              type: string
-          required: [name]
+      provides:
+        healthchecks:
+          alive: &probe
+            exec:
+              commands: ["pg_isready -U $POSTGRES_USER"]
+              shell: True
+          ready: *probe
+          started: *probe
+        services:
+          - name: postgres
+            tcp: 5432
+      requires:
         secrets:
-          - name: database
-            shared: false
+          - name: root_username
+            alias: POSTGRES_USER
+            description: Root username.
+            title: Root Username
             type: string
-          - name: username
-            shared: false
+          - name: root_password
+            alias: POSTGRES_PASSWORD
+            description: Root password.
+            title: Root Password
             type: string
-          - name: password
-            shared: false
-            type: string
+        volumes:
+          - name: data
+            capacity: 1
+            title: PostgreSQL Data
+            path: /var/lib/postgresql/data
     type:
       docker_image:
         image: postgres:18.1
+  - name: resource-providers
+    execution:
+      provides:
+        healthchecks:
+          alive:
+            rest:
+              service: health
+              path: /health
+        resources:
+          - name: database
+        services:
+          - name: health
+            http: 5566
+          - name: resource-providers
+            http: 345
+      requires:
+        services:
+          - postgres: # project
+              server: postgres # artifact: service
 project: postgres
 version: "18.1"

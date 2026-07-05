@@ -28,7 +28,7 @@ def simple_docker_compose_project():
         services={
             "simple-api": DockerComposeService(
                 container_name="simple-api",
-                depends_on={"postgres-server": {"condition": "service_healthy"}},
+                depends_on={"postgres-resource-providers": {"condition": "service_healthy"}},
                 deploy={
                     "resources": {
                         "limits": {"memory": "1.0g"},
@@ -97,6 +97,28 @@ def simple_docker_compose_project():
                     )
                 ],
             ),
+            "postgres-resource-providers": DockerComposeService(
+                container_name="postgres-resource-providers",
+                depends_on={"postgres-server": {"condition": "service_healthy"}},
+                deploy={
+                    "resources": {
+                        "limits": {"memory": "1.0g"},
+                        "reservations": {"cpus": "0.25", "memory": "0.1g"},
+                    }
+                },
+                environment={
+                    "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
+                    "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
+                    "RESOURCE_PROVIDERS_SERVICE_PORT": "345",
+                },
+                image="resource-providers",
+                networks={
+                    "project-postgres": {},
+                    "env-test": {},
+                    "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
+                },
+                ports=[{"name": "resource-providers", "published": "345", "target": 345}],
+            ),
         },
         volumes={
             "simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A"),
@@ -106,27 +128,35 @@ def simple_docker_compose_project():
 
 
 @pytest.fixture
-def resource_provider_docker_compose_project():
+def project_docker_compose_project():
     return DockerComposeProject(
-        name="resource_provider",
+        name="project",
         networks={
-            "project-resource_provider": {"internal": True, "name": "project-resource_provider"},
+            "project-project": {"internal": True, "name": "project-project"},
             "env-test": {"internal": True, "name": "env-test"},
+            "external-test.ballista.build": {"name": "external-test.ballista.build"},
         },
         services={
-            "resource_provider-server": DockerComposeService(
-                container_name="resource_provider-server",
+            "project-resource-providers": DockerComposeService(
+                container_name="project-resource-providers",
                 deploy={
                     "resources": {
                         "limits": {"memory": "1.0g"},
                         "reservations": {"cpus": "0.25", "memory": "0.1g"},
                     }
                 },
+                environment={
+                    "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
+                    "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
+                    "RESOURCE_PROVIDERS_SERVICE_PORT": "80",
+                },
                 image="hello-world:latest",
                 networks={
-                    "project-resource_provider": {},
+                    "project-project": {},
                     "env-test": {},
+                    "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
+                ports=[{"name": "resource-providers", "published": "80", "target": 80}],
             )
         },
         volumes={},

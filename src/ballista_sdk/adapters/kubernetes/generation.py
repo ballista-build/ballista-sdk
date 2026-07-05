@@ -14,9 +14,9 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
+    ProvidedService,
     ResourceProviderReference,
     ResourceSetting,
-    ServiceRequirement,
     Setting,
     VolumeExecutionParameters,
     VolumeRequirement,
@@ -310,7 +310,7 @@ def _generate_secrets_kubernetes_resources(
     return []
 
 
-def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict[str, dict] | None:
+def _generate_probe(probe: HealthcheckProbe, services: dict[str, ProvidedService]) -> dict[str, dict] | None:
     if probe.exec:
         commands = ["sh", "-c"] if probe.exec.shell else []
 
@@ -321,23 +321,28 @@ def _generate_probe(probe: HealthcheckProbe, services: dict[str, ServiceRequirem
     if port_probe is None:
         return None
 
-    port = port_probe.port
-    service = services.get(port_probe.service) if port_probe.service else None
+    service = services.get(port_probe.service)
+    if service is None:
+        raise ValueError("No matching service")
 
     if probe.grpc:
-        # GRPC cannot use a named port
-        return {"grpc": {"port": service.grpc if service and service.grpc else port}}
+        if service.grpc is None:
+            raise ValueError("GRPC probe must reference a GRPC service.")
+
+        # GRPC must use the port number
+        return {"grpc": {"port": service.grpc}}
 
     if probe.http:
-        return {
-            "httpGet": {
-                "path": probe.http.path or "/healthz",
-                "port": service.name if service and service.http else port,
-            }
-        }
+        if service.http is None:
+            raise ValueError("HTTP probe must reference a HTTP service.")
+
+        return {"httpGet": {"path": probe.http.path or "/healthz", "port": service.name}}
 
     if probe.tcp:
-        return {"tcpSocket": {"port": service.name if service and service.tcp else port}}
+        if service.tcp is None:
+            raise ValueError("TCP probe must reference a TCP service.")
+
+        return {"tcpSocket": {"port": service.name}}
 
 
 @KubernetesInfrastructureAdapter.add_generator
@@ -380,10 +385,13 @@ def _generate_deployment(
         container["resources"] = pod_resources
 
     # Artifact configs and secrets
-    [adapter.add_artifact_setting(container, artifact_reference, s) for s in execution.configs + execution.secrets]
+    [
+        adapter.add_artifact_setting(container, artifact_reference, s)
+        for s in execution.requires.configs + execution.requires.secrets
+    ]
 
     # Resources
-    for resource_requirement_project in execution.resources:
+    for resource_requirement_project in execution.requires.resources:
         resource, resource_project, _, _ = adapter.resolve_resource_requirement(
             environment, resource_requirement_project
         )
@@ -402,7 +410,7 @@ def _generate_deployment(
 
     # Services
     services_added = {}
-    for service in execution.services:
+    for service in execution.provides.services:
         service_port = service.grpc or service.http or service.tcp
         if service_port is None:
             # TODO: WTF is it, then? Probably need a better abstraction haha
@@ -410,7 +418,7 @@ def _generate_deployment(
 
         services_added[service.name] = service
 
-        key = f"{service.name.upper()}_SERVICE"
+        key = service.name.upper().replace("-", "_") + "_SERVICE"
         host = "localhost"
         path = "/"
         container["ports"] = container.get("ports", []) + [{"containerPort": service_port, "name": service.name}]
@@ -427,7 +435,7 @@ def _generate_deployment(
             env.append({"name": f"{key}_PATH", "value": path})
 
     # Healthchecks; processed after Services since they can refer to them
-    if healthchecks := execution.healthchecks:
+    if healthchecks := execution.provides.healthchecks:
         if healthchecks.alive and (liveness_probe := _generate_probe(healthchecks.alive, services_added)):
             container["livenessProbe"] = liveness_probe
         if healthchecks.ready and (readiness_probe := _generate_probe(healthchecks.ready, services_added)):
@@ -446,7 +454,7 @@ def _generate_deployment(
     # Volumes
     volumes: list[dict] = []
     volume_mounts: list[dict] = []
-    for volume in execution.volumes:
+    for volume in execution.requires.volumes:
         # Mount Path
         volume_mount = {"mountPath": volume.path, "name": volume.name}
         volume_mounts.append(volume_mount)
@@ -494,7 +502,7 @@ def _generate_deployment(
     }
 
     deployment_metadata = metadata
-    for provided_resource in artifact.provides:
+    for provided_resource in artifact.execution.provides.resources:
         metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = provided_resource.name
 
         deployment_metadata = metadata.copy()
@@ -531,7 +539,7 @@ def _generate_services(
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     ports = []
-    for service in artifact.execution.services:
+    for service in artifact.execution.provides.services:
         if http_port := (service.grpc or service.http):
             ports.append({"port": http_port, "name": service.name, "targetPort": service.name})
         elif service.tcp:
@@ -585,7 +593,7 @@ def _generate_persistent_volume_claims(
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     resources: list[KubernetesResource] = []
-    for volume in artifact.execution.volumes:
+    for volume in artifact.execution.requires.volumes:
         if volume.persistent is False:
             continue
 
@@ -613,7 +621,7 @@ def _generate_ingresses(
     artifact_execution_parameters: ArtifactExecutionParameters,
 ) -> list[KubernetesResource]:
     hosts: dict[str, dict] = {}
-    for service in artifact.execution.services:
+    for service in artifact.execution.provides.services:
         http_service_port = service.http or service.grpc
         if not http_service_port:
             # Only do HTTP/GRPC service right now

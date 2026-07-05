@@ -5,11 +5,15 @@ from pydantic import BaseModel, ConfigDict, Field
 
 
 class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minProperties": 1}):
-    def which(self) -> str | None:
+    def which(self) -> str:
         for f in self.model_fields_set:
             return f
 
-        return None
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__:
+                return f
+
+        raise Exception("BAD")
 
 
 # TODO: Make a "OneOfField"???

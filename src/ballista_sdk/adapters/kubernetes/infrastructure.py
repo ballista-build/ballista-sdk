@@ -7,6 +7,10 @@ from typing import Literal, cast
 from kubernetes import client, config, utils
 
 from ballista_sdk.adapters.exceptions import ArtifactNotFound, ResourceProviderNotFound
+from ballista_sdk.adapters.resources.transports import (
+    ResourceProviderTransport,
+    RESTResourceProviderTransport,
+)
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactReference,
@@ -20,7 +24,7 @@ from ballista_sdk.api.v1 import (
     ProvidedResource,
     ProvidedResourceWithArtifactReference,
     ResourceProviderReference,
-    ResourceRequirementProject,
+    ResourceRequirement,
 )
 
 from . import primitives
@@ -178,7 +182,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                     [
                         ProvidedResourceWithArtifactReference(resource, bolt.project, artifact.name, bolt.version)
                         for artifact in bolt.executable_artifacts
-                        for resource in artifact.provides
+                        if artifact.execution.provides
+                        for resource in artifact.execution.provides.resources
                     ]
                 )
 
@@ -214,13 +219,52 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     def resolve_artifact_reference(
         self, environment: Environment, artifact_reference: ArtifactReference
     ) -> tuple[Bolt, Artifact]:
+        if self._bolts:
+            for bolt in self._bolts:
+                if bolt.project != artifact_reference.project_name or bolt.version != artifact_reference.version:
+                    continue
+
+                for artifact in bolt.artifacts:
+                    if artifact.name == artifact_reference.artifact_name:
+                        return bolt, artifact
+
         # TODO: Do this when the bolts are stored
         raise ArtifactNotFound(artifact_reference)
 
+    def resolve_resource_provider_transport(
+        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+    ) -> ResourceProviderTransport:
+        resource = provided_resource_with_artifact.provided_resource
+
+        if resource.transport:
+            artifact_reference = provided_resource_with_artifact.artifact_reference
+            bolt, artifact = self.resolve_artifact_reference(environment, artifact_reference)
+
+            if rest_transport := resource.transport.rest:
+                port = None
+
+                if artifact.execution and artifact.execution.provides:
+                    for service in artifact.execution.provides.services:
+                        if service.name == rest_transport.service and service.http:
+                            port = service.http
+                            break
+
+                if port is None:
+                    raise ValueError("BAD SERVICE REFERENCE")
+
+                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
+
+                return RESTResourceProviderTransport(
+                    ResourceProviderReference(artifact_reference.project_name, resource.name),
+                    f"{ref_name}:{port}{rest_transport.path}",
+                )
+
+        raise ValueError()
+
     def resolve_resource_requirement(
-        self, environment: Environment, resource_requirement: ResourceRequirementProject
+        self, environment: Environment, resource_requirement: ResourceRequirement
     ) -> ProvidedResourceWithArtifactReference:
-        requirement_project_name = resource_requirement.which()
+        requirement_project_name = resource_requirement.project_name
         requirement_resource_name = resource_requirement.resource_name
 
         # TODO: Do a smarter lookup via K8s API

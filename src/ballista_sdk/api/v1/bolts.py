@@ -2,9 +2,10 @@ from typing import Annotated, Literal, NamedTuple, Sequence, cast
 
 from pydantic import BaseModel, Field
 
-from .artifacts import Artifact, ArtifactReference, BuildableArtifact, ExecutableArtifact
+from .artifacts import Artifact, ArtifactReference, BuildableArtifact, ExecutableArtifact, ProvidedService
 from .common import BaseNamedModel
 from .resources import ProvidedResource, ResourceProviderReference
+from .services import ServiceProviderReference
 from .settings import Setting
 
 
@@ -51,6 +52,28 @@ class ProvidedResourceWithArtifactReference(NamedTuple):
     @property
     def resource_provider_reference(self) -> ResourceProviderReference:
         return ResourceProviderReference(project_name=self.project_name, resource_name=self.provided_resource.name)
+
+
+class ProvidedServiceWithArtifactReference(NamedTuple):
+    """Provided Service with reference to the providing Artifact."""
+
+    provided_service: ProvidedService
+    project_name: str
+    """Project name of Service Provider."""
+    artifact_name: str
+    """Artifact name of Service Provider."""
+    version: str
+    """Version of Artifact for the Service Provider."""
+
+    @property
+    def artifact_reference(self) -> ArtifactReference:
+        return ArtifactReference(project_name=self.project_name, artifact_name=self.artifact_name, version=self.version)
+
+    @property
+    def service_provider_reference(self) -> ServiceProviderReference:
+        return ServiceProviderReference(
+            project_name=self.project_name, artifact_name=self.artifact_name, service_name=self.provided_service.name
+        )
 
 
 class BoundSetting(NamedTuple):

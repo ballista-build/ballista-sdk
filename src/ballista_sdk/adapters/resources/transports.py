@@ -4,9 +4,9 @@ from typing import Protocol
 import aiohttp
 
 from ballista_sdk.adapters.exceptions import ResourceProviderException
-from ballista_sdk.api.v1.resources import ProvidedResource, ResourceProviderReference
+from ballista_sdk.api.v1.resources import ResourceProviderReference
 
-from .exceptions import ResourceAlreadyExists, ResourceNotFound
+from ..exceptions import ArtifactResourceAlreadyExists, ArtifactResourceNotFound
 from .provider import (
     ArtifactReference,
     Environment,
@@ -26,12 +26,11 @@ from .pydantic import (
 
 @dataclass
 class ResourceProviderTransport(ResourceProvider, Protocol):
-    """Message transport to a ResourceProvider implementation."""
+    """Message transport to a remote `ResourceProvider` implementation.
 
-    resource_project_name: str
-    """Project name of ResourceProvider."""
-    resource_name: str
-    """Name of Resource."""
+    Translates the `ResourceProvider` interface into remote calls, allowing an `InfrastructureAdapter` to communicate with a `ResourceProvider` elsewhere."""
+
+    resource_provider: ResourceProviderReference
 
 
 @dataclass
@@ -66,13 +65,7 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         if resource_requirement in self._resources.get(environment, {}).get(artifact, []):
-            raise ResourceAlreadyExists(
-                resource_project_name=self.resource_project_name,
-                resource_name=self.resource_name,
-                artifact_project_name=artifact.project_name,
-                artifact_name=artifact.artifact_name,
-                artifact_version=artifact.version,
-            )
+            raise ArtifactResourceAlreadyExists(resource_provider=self.resource_provider, artifact=artifact)
 
         self._resources.setdefault(environment, {}).setdefault(artifact, []).append(resource_requirement)
 
@@ -80,13 +73,7 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         if resource_requirement not in self._resources.get(environment, {}).get(artifact, []):
-            raise ResourceNotFound(
-                resource_project_name=self.resource_project_name,
-                resource_name=self.resource_name,
-                artifact_project_name=artifact.project_name,
-                artifact_name=artifact.artifact_name,
-                artifact_version=artifact.version,
-            )
+            raise ArtifactResourceNotFound(resource_provider=self.resource_provider, artifact=artifact)
 
     # Resource Access
     async def get_resource_access(
@@ -116,11 +103,15 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
     """URL to implementation of REST API."""
 
     # TODO: It will probably make sense to have a shared instance of this for maximum pooling.
-    _aiohttp_session: aiohttp.ClientSession = field(default_factory=aiohttp.ClientSession)
+    # _aiohttp_session: aiohttp.ClientSession = field(default_factory=aiohttp.ClientSession)
 
     def _request_headers(self):
         # TODO: Auth and more
         pass
+
+    @property
+    def _aiohttp_session(self) -> aiohttp.ClientSession:
+        return aiohttp.ClientSession()
 
     def _request(
         self,
@@ -210,17 +201,17 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
     async def get_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ) -> ResourceAccess | None:
-        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(self.resource_provider)
 
     async def grant_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(self.resource_provider)
 
     async def revoke_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
+        raise ResourceProviderException(self.resource_provider)
 
 
 class GRPCResourceProviderTransport(ResourceProviderTransport):
@@ -239,17 +230,3 @@ class QueueResourceProviderTransport(ResourceProviderTransport):
     """Control resource lifecycle via message queue."""
 
     pass
-
-
-def transport_resource_provider(project_name: str, provided_resource: ProvidedResource) -> ResourceProviderTransport:
-    """Transport a Resource's provider via the designated method."""
-    if provided_resource.transport.rest:
-        # TODO: Get artifact service URL
-        service_url = ""
-        return RESTResourceProviderTransport(
-            resource_project_name=project_name,
-            resource_name=provided_resource.name,
-            api_url=f"{service_url}/{provided_resource.transport.rest.path}",
-        )
-
-    raise ResourceProviderException("BLAH")

@@ -14,9 +14,9 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
+    ProvidedService,
     ResourceProviderReference,
     ResourceSetting,
-    ServiceRequirement,
     Setting,
 )
 
@@ -132,7 +132,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         networks = {f"env-{environment.name}": {"internal": True, "name": f"env-{environment.name}"}}
         compose_project = DockerComposeProject(name=bolt.project, networks=networks, services={}, volumes={})
 
-        resource_service_names: dict[str, str] = {}
+        resource_service_names: dict[tuple[str, str], str] = {}
 
         artifact_deque = deque([(bolt, artifact) for artifact in artifacts])
 
@@ -141,10 +141,13 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
             artifact_bolt, artifact = artifact_deque.popleft()
             artifact_ref_name = _get_artifact_ref_name(artifact_bolt, artifact)
 
-            if artifact.execution.resources:
-                requeue = False
-                for resource_requirement in artifact.execution.resources:
-                    if resource_requirement.resource_name not in resource_service_names:
+            requeue = False
+            if artifact.execution.requires.resources:
+                for resource_requirement in artifact.execution.requires.resources:
+                    if (
+                        resource_requirement.project_name,
+                        resource_requirement.resource_name,
+                    ) not in resource_service_names:
                         resource_with_provider_artifact = self.resolve_resource_requirement(
                             environment, resource_requirement
                         )
@@ -155,9 +158,8 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                                 environment, artifact_reference
                             )
 
-                            requeue = True
-
                             if provider_artifact not in artifact_deque:
+                                requeue = True
                                 artifact_deque.appendleft(
                                     (provider_artifact_bolt, cast(ExecutableArtifact, provider_artifact))
                                 )
@@ -166,9 +168,30 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                             # TODO: Virtual service stuff!
                             pass
 
-                if requeue:
-                    artifact_deque.append((artifact_bolt, artifact))
-                    continue
+            if artifact.execution.requires.services:
+                for service_requirement in artifact.execution.requires.services:
+                    if (
+                        service_requirement.project_name,
+                        service_requirement.service_name,
+                    ) not in resource_service_names:
+                        service_with_provider_artifact = self.resolve_service_requirement(
+                            environment, service_requirement
+                        )
+
+                        if artifact_reference := service_with_provider_artifact.artifact_reference:
+                            provider_artifact_bolt, provider_artifact = self.resolve_artifact_reference(
+                                environment, artifact_reference
+                            )
+
+                            if provider_artifact not in artifact_deque:
+                                requeue = True
+                                artifact_deque.appendleft(
+                                    (provider_artifact_bolt, cast(ExecutableArtifact, provider_artifact))
+                                )
+
+            if requeue:
+                artifact_deque.append((artifact_bolt, artifact))
+                continue
 
             project_network_name = f"project-{artifact_bolt.project}"
             if project_network_name not in networks:
@@ -185,14 +208,28 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 execution_parameters=artifact_execution_parameters,
             )
 
-            if artifact.execution.resources:
-                compose_service.depends_on = {
-                    resource_service_names[resource_requirement.resource_name]: {"condition": "service_healthy"}
-                    for resource_requirement in artifact.execution.resources
-                }
+            if artifact.execution.requires.resources:
+                compose_service.depends_on.update(
+                    {
+                        resource_service_names[
+                            (resource_requirement.project_name, resource_requirement.resource_name)
+                        ]: {"condition": "service_healthy"}
+                        for resource_requirement in artifact.execution.requires.resources
+                    }
+                )
 
-            if artifact.execution.services:
-                for service in artifact.execution.services:
+            if artifact.execution.requires.services:
+                compose_service.depends_on.update(
+                    {
+                        resource_service_names[(service_requirement.project_name, service_requirement.service_name)]: {
+                            "condition": "service_healthy"
+                        }
+                        for service_requirement in artifact.execution.requires.services
+                    }
+                )
+
+            if artifact.execution.provides.services:
+                for service in artifact.execution.provides.services:
                     external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
                     if external_service_parameters and external_service_parameters.host is not None:
                         network_name = f"external-{external_service_parameters.host}"
@@ -207,12 +244,24 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                     driver="local",
                     name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
                 )
-                for volume in artifact.execution.volumes
+                for volume in artifact.execution.requires.volumes
                 if volume.persistent
             }
 
-            if artifact.provides:
-                resource_service_names.update({resource.name: artifact_ref_name for resource in artifact.provides})
+            if artifact.execution.provides.resources:
+                resource_service_names.update(
+                    {
+                        (artifact_bolt.project, resource.name): artifact_ref_name
+                        for resource in artifact.execution.provides.resources
+                    }
+                )
+            if artifact.execution.provides.services:
+                resource_service_names.update(
+                    {
+                        (artifact_bolt.project, service.name): artifact_ref_name
+                        for service in artifact.execution.provides.services
+                    }
+                )
 
         return compose_project
 
@@ -251,21 +300,20 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         env = {}
 
         # Artifact configs
-        [
-            self.add_artifact_setting(compose_service, artifact_reference, setting)
-            for setting in execution.configs + execution.secrets
-        ]
+        settings = execution.requires.configs + execution.requires.secrets
+
+        [self.add_artifact_setting(compose_service, artifact_reference, setting) for setting in settings]
 
         # Resources
-        for resource_requirement_project in execution.resources:
-            resource, resource_project, _, _ = self.resolve_resource_requirement(
+        for resource_requirement_project in execution.requires.resources:
+            provided_resource, resource_project, _, _ = self.resolve_resource_requirement(
                 environment, resource_requirement_project
             )
-            resource_provider_reference = ResourceProviderReference(resource_project, resource.name)
-            requirement_prefix = resource_requirement_project.prefix or resource.prefix
-            requirement_instance = [
-                getattr(resource_requirement_project.resource_requirement, f) for f in resource.instance_id_fields
-            ]
+
+            resource_requirement = resource_requirement_project.resource_requirement
+            resource_provider_reference = ResourceProviderReference(resource_project, provided_resource.name)
+            requirement_prefix = resource_requirement_project.prefix or provided_resource.prefix
+            requirement_instance = [getattr(resource_requirement, f) for f in provided_resource.instance_id_fields]
 
             [
                 self.add_resource_setting(
@@ -276,13 +324,13 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                     requirement_prefix,
                     requirement_instance,
                 )
-                for setting in resource.configs + resource.secrets
+                for setting in provided_resource.configs + provided_resource.secrets
             ]
 
         # Services
         services_added = {}
         compose_service.ports = ports = []
-        for service in execution.services:
+        for service in execution.provides.services:
             port_service = service.grpc or service.http or service.tcp
             if port_service is None:
                 # WTF is it, then? Needs a better abstraction.
@@ -290,7 +338,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
             services_added[service.name] = service
 
-            key = f"{service.name.upper()}_SERVICE"
+            key = service.name.upper().replace("-", "_") + "_SERVICE"
             host = "localhost"
             path = "/"
             env[f"{key}_PORT"] = str(port_service)
@@ -319,7 +367,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 env[f"{key}_PATH"] = path
 
         # Healthchecks; processed after services as they can depend on them.
-        if healthchecks := execution.healthchecks:
+        if healthchecks := execution.provides.healthchecks:
             # Docker Compose only supports a single healthcheck
             if probe := (healthchecks.ready or healthchecks.alive or healthchecks.started):
                 compose_service.healthcheck = _generate_healthcheck(probe, services_added)
@@ -339,7 +387,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
             compose_service.image = artifact.type.docker_image.image or artifact.name
 
         # Volumes
-        for volume in execution.volumes:
+        for volume in execution.requires.volumes:
             execution_volume_parameters = execution_parameters.volumes.get(volume.name)
 
             if volume.persistent:
@@ -372,7 +420,7 @@ def _get_artifact_ref_name(bolt: Bolt, artifact: ExecutableArtifact) -> str:
     return f"{bolt.project}-{artifact.name}"
 
 
-def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRequirement]) -> dict:
+def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ProvidedService]) -> dict:
     options = {
         "start_interval": "1s",
         "start_period": "60s",
@@ -388,47 +436,34 @@ def _generate_healthcheck(probe: HealthcheckProbe, services: dict[str, ServiceRe
         return {}
 
     # Retrieve services referenced by port-based probes.
-    service = None
-    if port_probe.service:
-        service = services.get(port_probe.service)
-        if service is None:
-            raise ValueError(f'Unknown referenced service "{port_probe.service}".')
+    service = services.get(port_probe.service)
+    if service is None:
+        raise ValueError(f'Unknown referenced service "{port_probe.service}".')
 
     if probe.grpc:
-        port = probe.grpc.port or 50051
+        if service.grpc is None:
+            raise ValueError("Must reference a grpc service for a grpc probe.")
 
-        if service:
-            if service.grpc is None:
-                raise ValueError("Must reference a grpc service for a grpc probe.")
-
-            port = service.grpc
+        port = service.grpc
 
         # TODO: GRPC probe
         return options | {}
 
     if probe.http:
         path = probe.http.path or "/healthz"
-        port = probe.http.port or 80
 
-        if service:
-            if service.http is None:
-                raise ValueError("Must reference an http service for an http probe.")
+        if service.http is None:
+            raise ValueError("Must reference an http service for an http probe.")
 
-            port = service.http
+        port = service.http
 
         return options | {"test": ["CMD-SHELL", f"curl -f http://localhost:{port}{path}"]}
 
     if probe.tcp:
-        port = probe.tcp.port
+        if service.tcp is None:
+            raise ValueError("Must reference a tcp service for a tcp probe.")
 
-        if service:
-            if service.tcp is None:
-                raise ValueError("Must reference a tcp service for a tcp probe.")
-
-            port = service.tcp
-
-        if not port:
-            raise ValueError("TCP probe needs a port.")
+        port = service.tcp
 
         # TODO: TCP probe
         return options | {}

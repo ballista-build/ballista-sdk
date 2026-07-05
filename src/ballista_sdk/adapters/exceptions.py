@@ -1,6 +1,6 @@
 from dataclasses import dataclass
 
-from ballista_sdk.api.v1 import ArtifactReference, ResourceProviderReference
+from ballista_sdk.api.v1 import ArtifactReference, ResourceProviderReference, ServiceProviderReference
 
 
 @dataclass
@@ -21,6 +21,17 @@ class ResourceProviderException(Exception):
 
 class ResourceProviderNotFound(ResourceProviderException):
     """Resource referenced is unknown."""
+
+    pass
+
+
+@dataclass
+class ServiceProviderException(Exception):
+    service_provider: ServiceProviderReference
+
+
+class ServiceProviderNotFound(ServiceProviderException):
+    """Service referenced is not found."""
 
     pass
 

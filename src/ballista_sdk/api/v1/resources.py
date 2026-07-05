@@ -24,16 +24,16 @@ class ResourceSecret(BaseResourceSetting, Secret):
 ResourceSetting = ResourceConfig | ResourceSecret
 
 
-class ResourceRequirementSchema(Schema, frozen=True):
+class ProvidedResourceRequirementSchema(Schema, frozen=True):
     """Schema defining a ResourceRequirement."""
 
     pass
 
 
-class ResourceRequirement(BaseModel):
-    """Requirement data for a Resource."""
+class ResourceRequirementRequirement(BaseModel):
+    """Requirement data for a ResourceRequirement."""
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "allow"}
 
 
 class RESTProvidedResourceTransport(actions.HTTPGETAction):
@@ -66,10 +66,10 @@ class ProvidedResource(BaseNamedModel):
     ] = []
     prefix: Annotated[str, Field(description="Default prefix of values received by Artifact.")]
     requirements: Annotated[
-        ResourceRequirementSchema,
+        ProvidedResourceRequirementSchema,
         Field(
             alias="requirements",
-            default_factory=ResourceRequirementSchema,
+            default_factory=ProvidedResourceRequirementSchema,
             description="OpenAPI Schema representing requirements for a resource.",
         ),
     ]
@@ -81,8 +81,13 @@ class ProvidedResource(BaseNamedModel):
         ),
     ] = None
 
-    def get_requirements_model(self, project_title: str) -> type[ResourceRequirement]:
-        return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
+    def get_requirements_model(self, project_title: str) -> type[ResourceRequirementRequirement]:
+        return _schema_to_model(
+            self.prefix,
+            self.requirements,
+            self.configs + self.secrets,
+            f"{project_title}{self.name}ResourceRequirement",
+        )
 
 
 DATATYPE_MAP = {
@@ -94,7 +99,9 @@ DATATYPE_MAP = {
 }
 
 
-def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequirement]:
+def _schema_to_model(
+    prefix: str, schema: Schema, settings: list[ResourceSetting], model_name: str
+) -> type[ResourceRequirementRequirement]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
         raise ValueError()
@@ -123,7 +130,12 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequiremen
 
             fields[prop_name] = Annotated[pt, field]
 
-        return create_model(model_name, **fields, __base__=ResourceRequirement)
+        for setting in settings:
+            # Create alias field
+            alias_name = setting.name + "_alias"
+            fields[alias_name] = Annotated[str, Field(description=f'Alias the "{setting.name}" envvar.')]
+
+        return create_model(model_name, **fields, __base__=ResourceRequirementRequirement)
 
     else:
         raise ValueError("NYI")
