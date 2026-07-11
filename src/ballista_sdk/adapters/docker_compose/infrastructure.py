@@ -81,15 +81,19 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         # Do some resource shit
         artifact_resources: list[tuple[ArtifactReference, ResourceRequirement, Environment]] = []
         for artifact in artifacts:
+            artifact_reference = ArtifactReference(
+                project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
+            )
+
             if artifact.execution and artifact.execution.requires.resources:
-                artifact_reference = ArtifactReference(
-                    project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
-                )
                 artifact_resources.extend(
                     [(artifact_reference, r, environment) for r in artifact.execution.requires.resources]
                 )
 
         if artifact_resources:
+            # We need to start the docker compose with only the "depends" profile so we can check resources
+            self._call_compose(docker_compose_project, ["--profile", "depend", "up", "--build"])
+
             for artifact, project_resource_requirement, environment in artifact_resources:
                 provided_resource_with_artifact = self.resolve_resource_requirement(
                     environment, project_resource_requirement
@@ -97,7 +101,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                 requirement_model = provided_resource_with_artifact.provided_resource.get_requirements_model(
                     provided_resource_with_artifact.project_name
                 )
-                resource_requirement_data = project_resource_requirement.resource_requirement
+                resource_requirement_data = project_resource_requirement.resource_requirement.model_dump()
 
                 resource_requirement = requirement_model.model_validate(resource_requirement_data)
 
@@ -109,7 +113,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             commands = ["up", "--build", "--watch", "--remove-orphans"]
         else:
             commands = ["up", "--remove-orphans"]
-        print(docker_compose_project.model_dump_json(indent=4, exclude_none=True, exclude_unset=True))
+
         self._call_compose(docker_compose_project, commands)
 
     def _destroy_resources(self, artifact: ArtifactReference, environment: Environment):
@@ -122,9 +126,10 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
         provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
         resource_requirement,
     ):
-        transport = self.resolve_resource_provider_transport(environment, provided_resource_with_artifact)
-        if transport is None:
-            return
+        try:
+            transport = self.resolve_resource_provider_transport(environment, provided_resource_with_artifact)
+        except Exception:
+            raise
 
         provided_resource = provided_resource_with_artifact.provided_resource
         resource_provider = provided_resource_with_artifact.resource_provider_reference
@@ -194,7 +199,6 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                 [
                     ProvidedResourceWithArtifactReference(resource, bolt.project, artifact.name, bolt.version)
                     for artifact in bolt.executable_artifacts
-                    if artifact.execution.provides
                     for resource in artifact.execution.provides.resources
                 ]
             )
@@ -210,7 +214,6 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                 [
                     ProvidedServiceWithArtifactReference(service, bolt.project, artifact.name, bolt.version)
                     for artifact in bolt.executable_artifacts
-                    if artifact.execution.provides
                     for service in artifact.execution.provides.services
                 ]
             )
@@ -256,7 +259,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
 
                 return RESTResourceProviderTransport(
                     ResourceProviderReference(artifact_reference.project_name, resource.name),
-                    f"{ref_name}:{port}{rest_transport.path}",
+                    f"http://{ref_name}:{port}{rest_transport.path}",
                 )
 
         raise ValueError()

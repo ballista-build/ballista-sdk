@@ -131,9 +131,11 @@ def _schema_to_model(
             fields[prop_name] = Annotated[pt, field]
 
         for setting in settings:
-            # Create alias field
-            alias_name = setting.name + "_alias"
-            fields[alias_name] = Annotated[str, Field(description=f'Alias the "{setting.name}" envvar.')]
+            # Create alias field for each setting to change its injected name.
+            alias_name = setting.name + "-alias"
+            fields[alias_name] = Annotated[
+                str | None, Field(description=f'Alias the "{setting.name}" envvar.', default=None)
+            ]
 
         return create_model(model_name, **fields, __base__=ResourceRequirementRequirement)
 

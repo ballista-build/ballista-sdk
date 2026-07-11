@@ -125,7 +125,7 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
 
             return self._aiohttp_session.request(
                 method,
-                f"{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
+                f"{self.api_url}{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
                 json=json,
             )
 
@@ -141,7 +141,7 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
         json = resource_requirement.model_dump(mode="json") or None
 
         return {
-            "url": f"{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
+            "url": f"{self.api_url}{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
             "json": json,
         }
 

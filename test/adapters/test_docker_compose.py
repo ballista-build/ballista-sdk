@@ -57,6 +57,7 @@ def simple_docker_compose_project():
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
                 ports=[{"name": "http", "published": "80", "target": 80}],
+                profiles=["top"],
                 volumes=[
                     DockerComposeServiceVolume(
                         source="simple-api-volume_a",
@@ -88,6 +89,7 @@ def simple_docker_compose_project():
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
                 ports=[{"name": "postgres", "published": "5432", "target": 5432}],
+                profiles=["depend", "service"],
                 volumes=[
                     DockerComposeServiceVolume(
                         source="postgres-server-data",
@@ -118,6 +120,7 @@ def simple_docker_compose_project():
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
                 ports=[{"name": "resource-providers", "published": "345", "target": 345}],
+                profiles=["depend", "resource"]
             ),
         },
         volumes={
@@ -157,6 +160,7 @@ def project_docker_compose_project():
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
                 ports=[{"name": "resource-providers", "published": "80", "target": 80}],
+                profiles=["top"]
             )
         },
         volumes={},

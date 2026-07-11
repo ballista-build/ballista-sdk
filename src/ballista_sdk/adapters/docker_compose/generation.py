@@ -42,6 +42,7 @@ class DockerComposeService(BaseModel):
     image: str | None = None
     networks: dict[str, dict] = {}
     ports: list[dict[str, Any]] = []
+    profiles: list[str] = []
     secrets: list[str] = []
     volumes: list[DockerComposeServiceVolume] = []
 
@@ -134,14 +135,16 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
         resource_service_names: dict[tuple[str, str], str] = {}
 
-        artifact_deque = deque([(bolt, artifact) for artifact in artifacts])
+        artifact_deque = deque([(bolt, artifact, ["top"]) for artifact in artifacts])
 
         # Translate our artifacts into docker compose services
         while artifact_deque:
-            artifact_bolt, artifact = artifact_deque.popleft()
+            artifact_bolt, artifact, profiles = artifact_deque.popleft()
             artifact_ref_name = _get_artifact_ref_name(artifact_bolt, artifact)
 
             requeue = False
+            # TODO: This loop and process needs to be rethought.
+            # Because artifacts may have resource dependencies on providers in this chain, they need to initialize in a specific order.
             if artifact.execution.requires.resources:
                 for resource_requirement in artifact.execution.requires.resources:
                     if (
@@ -161,12 +164,12 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                             if provider_artifact not in artifact_deque:
                                 requeue = True
                                 artifact_deque.appendleft(
-                                    (provider_artifact_bolt, cast(ExecutableArtifact, provider_artifact))
+                                    (
+                                        provider_artifact_bolt,
+                                        cast(ExecutableArtifact, provider_artifact),
+                                        ["depend", "resource"],
+                                    )
                                 )
-
-                        else:
-                            # TODO: Virtual service stuff!
-                            pass
 
             if artifact.execution.requires.services:
                 for service_requirement in artifact.execution.requires.services:
@@ -186,11 +189,15 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                             if provider_artifact not in artifact_deque:
                                 requeue = True
                                 artifact_deque.appendleft(
-                                    (provider_artifact_bolt, cast(ExecutableArtifact, provider_artifact))
+                                    (
+                                        provider_artifact_bolt,
+                                        cast(ExecutableArtifact, provider_artifact),
+                                        ["depend", "service"],
+                                    )
                                 )
 
             if requeue:
-                artifact_deque.append((artifact_bolt, artifact))
+                artifact_deque.append((artifact_bolt, artifact, profiles))
                 continue
 
             project_network_name = f"project-{artifact_bolt.project}"
@@ -206,6 +213,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 bolt=artifact_bolt,
                 artifact=artifact,
                 execution_parameters=artifact_execution_parameters,
+                profiles=profiles,
             )
 
             if artifact.execution.requires.resources:
@@ -271,6 +279,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         bolt: Bolt,
         artifact: ExecutableArtifact,
         execution_parameters: ArtifactExecutionParameters,
+        profiles: list[str],
     ) -> DockerComposeService:
         """Generate a docker compose Service definition for an ExecutableArtifact."""
 
@@ -279,7 +288,9 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
         artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
         compose_service = DockerComposeService(
-            container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
+            container_name=artifact_ref_name,
+            networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}},
+            profiles=profiles,
         )
 
         if compute_parameters := execution_parameters.compute:
