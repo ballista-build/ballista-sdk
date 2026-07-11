@@ -3,7 +3,6 @@ from __future__ import annotations
 from collections.abc import Sequence
 from typing import Protocol
 
-from ballista_sdk.adapters.settings import SettingsAdapter
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactReference,
@@ -13,9 +12,14 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     Project,
-    ResourceProviderReference,
-    ResourceRequirementProject,
+    ProvidedResourceWithArtifactReference,
+    ProvidedServiceWithArtifactReference,
+    ResourceRequirement,
+    ServiceRequirement,
 )
+
+from .resources.transports import ResourceProviderTransport
+from .settings import SettingsAdapter
 
 
 class InfrastructureAdapter(Protocol):
@@ -36,7 +40,7 @@ class InfrastructureAdapter(Protocol):
         """Settings adapter specifically to manage Secrets."""
         ...
 
-    def deploy(
+    async def deploy(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
@@ -62,23 +66,39 @@ class InfrastructureAdapter(Protocol):
         """List Bolts associated with a Project."""
         ...
 
-    def list_resources(self, environment: Environment) -> Sequence[ResourceProviderReference]:
+    def list_resources(self, environment: Environment) -> Sequence[ProvidedResourceWithArtifactReference]:
         """List available Resources with the providing ArtifactReference in the specified Environment."""
         ...
 
+    def list_services(self, environment: Environment) -> Sequence[ProvidedServiceWithArtifactReference]:
+        """List Services in the specified Environment."""
+        ...
+
     def resolve_artifact_reference(
-        self, artifact_reference: ArtifactReference, environment: Environment
+        self, environment: Environment, artifact_reference: ArtifactReference
     ) -> tuple[Bolt, Artifact]:
         """Resolves a reference to an Artifact in the specified Environment, returning the Artifact and the Bolt it was from. Raises UnknownArtifact if it cannot be found."""
         ...
 
-    def resolve_resource_requirement(
-        self, resource_requirement: ResourceRequirementProject, environment: Environment
-    ) -> ResourceProviderReference:
-        """Resolves a requirement for a resource in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
+    def resolve_resource_provider_transport(
+        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+    ) -> ResourceProviderTransport:
+        """Resolves a Resource Provider into a ResourceProviderTransport that is accessible to the adapter."""
         ...
 
-    def teardown(
+    def resolve_resource_requirement(
+        self, environment: Environment, resource_requirement: ResourceRequirement
+    ) -> ProvidedResourceWithArtifactReference:
+        """Resolves a `ResourceRequirement` in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
+        ...
+
+    def resolve_service_requirement(
+        self, environment: Environment, service_requirement: ServiceRequirement
+    ) -> ProvidedServiceWithArtifactReference:
+        """Resolves a `ServiceRequirement` in the specified `Environment`, returning a Service with the providing ArtifactReference. Raises UnknownService if dependency cannot be met."""
+        ...
+
+    async def teardown(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],

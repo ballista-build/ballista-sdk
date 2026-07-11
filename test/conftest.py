@@ -10,25 +10,12 @@ from ballista_sdk.api.v1 import (
     DefaultExecutionParameters,
     Environment,
     EnvironmentTier,
-    ExecAction,
     ExecutionParameters,
-    ExecutionRequirements,
     ExternalizedServiceParameters,
-    HealthcheckProbe,
-    HealthcheckRequirements,
     Project,
-    Resource,
-    ResourceConfig,
-    ResourceRequirementSchema,
-    ResourceSecret,
-    ResourceTransport,
-    RESTResourceTransport,
+    ProvidedResourceWithArtifactReference,
     ScalingExecutionParameters,
-    SecretRequirement,
-    ServiceRequirement,
-    SettingDataType,
     VolumeExecutionParameters,
-    VolumeRequirement,
 )
 
 
@@ -42,36 +29,40 @@ def docker_image_artifact_type_need() -> ArtifactTypeRequirement:
     return ArtifactTypeRequirement.model_validate({"docker_image": {"image": "hello-world:latest"}})
 
 
+# yaml
 TEST_BOLTS: dict[str, str] = {
     "simple": """
 api_version: "v1"
 artifacts:
       - name: api
         execution:
-            configs:
-              - name: "option_a"
-                data_type: "string"
-            healthchecks:
-                ready:
-                    http:
-                        path: "/healthz"
-                        service: "http"
-            resources:
-              - postgres:
-                    database:
-                        name: "testdatabase"
-            secrets:
-              - name: "secret_a"
-                data_type: "string"
-            services:
-              - name: http
-                http: 80
-            volumes:
-              - name: "volume_a"
-                capacity: 0.01
-                path: "/var/volume_a"
-                persistent: True
-                title: "Volume A"
+            provides:
+                healthchecks:
+                    ready:
+                        http:
+                            path: "/healthz"
+                            service: "http"
+                services:
+                  - name: http
+                    http: 80
+            requires:
+                configs:
+                    - name: "option_a"
+                      data_type: "string"
+                resources:
+                    - postgres:
+                        database:
+                            name: "testdatabase"
+                            name_alias: "BUG_DATABASE"
+                secrets:
+                    - name: "secret_a"
+                      data_type: "string"
+                volumes:
+                    - name: "volume_a"
+                      capacity: 0.01
+                      path: "/var/volume_a"
+                      persistent: True
+                      title: "Volume A"
         type:
             docker_image:
                 image: "hello-world:latest"
@@ -81,62 +72,67 @@ version: "1"
     #     "typical": """
     # YAML
     # """,
-    "resource_provider": """
+    "project": """
 api_version: "v1"
 artifacts:
-      - name: "server"
-        execution: {}
-        provides:
-          - configs:
-              - data_type: "string"
-                description: "Host of Database server."
-                name: "host"
-                shared: True
-                title: "Host"
-              - data_type: "uint32"
-                description: "Port Database server listens on."
-                name: "port"
-                shared: True
-                title: "Port"
-            description: "Resource Description"
-            name: "resource_provider-resource1"
-            instance_id_fields: ["name"]
-            prefix: "RESOURCE1"
-            requirements:
-                properties:
-                    name:
-                        type: string
-                required: ["name"]
-            secrets:
-              - data_type: "string"
-                description: "Name of database"
-                name: "name"
-                shared: False
-                title: "Database"
-              - data_type: "string"
-                description: "Login username to access database"
-                name: "username"
-                shared: False
-                title: "Username"
-              - data_type: "string"
-                description: "Login password to access database"
-                name: "password"
-                shared: False
-                title: "Password"
-            title: "Resource Provider Resource"
-            transport:
-                rest:
-                    path: "/resources"
+      - name: "resource-providers"
+        execution:
+            provides:
+                resources:
+                  - configs:
+                      - data_type: "string"
+                        description: "Host of Database server."
+                        name: "host"
+                        shared: True
+                        title: "Host"
+                      - data_type: "uint32"
+                        description: "Port Database server listens on."
+                        name: "port"
+                        shared: True
+                        title: "Port"
+                    description: "Resource Description"
+                    name: "project-resource1"
+                    instance_id_fields: ["name"]
+                    prefix: "RESOURCE1"
+                    requirements:
+                        properties:
+                            name:
+                                type: string
+                        required: ["name"]
+                    secrets:
+                      - data_type: "string"
+                        description: "Name of database"
+                        name: "name"
+                        shared: False
+                        title: "Database"
+                      - data_type: "string"
+                        description: "Login username to access database"
+                        name: "username"
+                        shared: False
+                        title: "Username"
+                      - data_type: "string"
+                        description: "Login password to access database"
+                        name: "password"
+                        shared: False
+                        title: "Password"
+                    title: "Resource Provider Resource"
+                    transport:
+                        rest:
+                            path: "/resources"
+                            service: "resource-providers"
+                services:
+                  - name: "resource-providers"
+                    http: 80
         type:
             docker_image:
                 image: "hello-world:latest"
-project: "resource_provider"
+project: "project"
 version: "1"
     """,
 }
 
 
-@pytest.fixture(scope="session", params=["simple", "resource_provider"])
+@pytest.fixture(scope="session", params=["simple", "project"])
 def bolt_yaml(request) -> dict[str, str | dict]:
     return yaml.safe_load(TEST_BOLTS[request.param])
 
@@ -144,99 +140,127 @@ def bolt_yaml(request) -> dict[str, str | dict]:
 @pytest.fixture(scope="session")
 def postgres_bolt() -> Bolt:
     # Fake Postgres
-    postgres_probe = HealthcheckProbe(exec=ExecAction(commands=["pg_isready -U $POSTGRES_USER"], shell=True))
-    postgres = Artifact(
-        execution=ExecutionRequirements(
-            healthchecks=HealthcheckRequirements(alive=postgres_probe, ready=postgres_probe, started=postgres_probe),
-            secrets=[
-                SecretRequirement(
-                    # alias="POSTGRES_USER",
-                    description="Username for the default/root login.",
-                    name="root_username",
-                    title="Root username",
-                    data_type=SettingDataType.STRING,
-                ),
-                SecretRequirement(
-                    # alias="POSTGRES_PASSWORD",
-                    description="Password for the default/root login",
-                    name="root_password",
-                    title="Root Password",
-                    data_type=SettingDataType.STRING,
-                ),
-            ],
-            services=[ServiceRequirement(name="postgres", tcp=5432)],
-            volumes=[
-                VolumeRequirement(
-                    capacity=0.1,
-                    name="data",
-                    path="/var/lib/postgresql/data",
-                    persistent=True,
-                    title="PostgreSQL Data",
-                )
-            ],
-        ),
-        name="server",
-        provides=[
-            Resource(
-                name="database",
-                configs=[
-                    ResourceConfig(
-                        description="Host of Postgres server.",
-                        name="host",
-                        shared=True,
-                        title="Host",
-                        data_type=SettingDataType.STRING,
-                    ),
-                    ResourceConfig(
-                        description="Port Postgres server listens on.",
-                        name="port",
-                        shared=True,
-                        title="Port",
-                        data_type=SettingDataType.INT32,
-                    ),
-                ],
-                description="Postgres Database",
-                instance_id_fields=["name"],
-                prefix="POSTGRES",
-                requirements=ResourceRequirementSchema.model_validate(
-                    {"properties": {"name": {"type": "string"}}, "required": ["name"]}
-                ),
-                secrets=[
-                    ResourceSecret(
-                        data_type=SettingDataType.STRING,
-                        description="Name of postgres database",
-                        name="name",
-                        shared=False,
-                        title="Database Name",
-                    ),
-                    ResourceSecret(
-                        data_type=SettingDataType.STRING,
-                        description="Login username to access database",
-                        name="username",
-                        shared=False,
-                        title="Username",
-                    ),
-                    ResourceSecret(
-                        data_type=SettingDataType.STRING,
-                        description="Login password to access database",
-                        name="password",
-                        shared=False,
-                        title="Password",
-                    ),
-                ],
-                title="Postgres Database",
-                transport=ResourceTransport(rest=RESTResourceTransport(path="/resources")),
-            )
-        ],
-        type=ArtifactTypeRequirement.model_validate({"docker_image": {"image": "postgres:18.1"}}),
+    postgres_probe = {"exec": {"commands": ["pg_isready -U $POSTGRES_USER"], "shell": True}}
+    server_artifact = Artifact.model_validate(
+        {
+            "execution": {
+                "provides": {
+                    "healthchecks": {"alive": postgres_probe, "ready": postgres_probe, "started": postgres_probe},
+                    "services": [{"name": "postgres", "tcp": 5432}],
+                },
+                "requires": {
+                    "secrets": [
+                        {
+                            "description": "Username for the default/root login.",
+                            "name": "root_username",
+                            "title": "Root Username",
+                            "data_type": "string",
+                        },
+                        {
+                            "description": "Password for the default/root login.",
+                            "name": "root_password",
+                            "title": "Root Password",
+                            "data_type": "string",
+                        },
+                    ],
+                    "volumes": [
+                        {
+                            "capacity": 0.1,
+                            "name": "data",
+                            "path": "/var/lib/postgresql/data",
+                            "persistent": True,
+                            "title": "PostgreSQL Data",
+                        }
+                    ],
+                },
+            },
+            "name": "server",
+            "type": {"docker_image": {"image": "postgres:18.1"}},
+        }
+    )
+    resource_providers_artifact = Artifact.model_validate(
+        {
+            "name": "resource-providers",
+            "execution": {
+                "provides": {
+                    "resources": [
+                        {
+                            "name": "database",
+                            "configs": [
+                                {
+                                    "description": "Host of Postgres server.",
+                                    "name": "host",
+                                    "shared": True,
+                                    "title": "Host",
+                                    "data_type": "string",
+                                },
+                                {
+                                    "description": "Port Postgres server listens on.",
+                                    "name": "port",
+                                    "shared": True,
+                                    "title": "Port",
+                                    "data_type": "uint32",
+                                },
+                            ],
+                            "description": "Postgres Database",
+                            "instance_id_fields": ["name"],
+                            "prefix": "POSTGRES",
+                            "requirements": {"properties": {"name": {"type": "string"}}, "required": ["name"]},
+                            "secrets": [
+                                {
+                                    "data_type": "string",
+                                    "description": "Name of Postgres database.",
+                                    "name": "name",
+                                    "shared": False,
+                                    "title": "Database Name",
+                                },
+                                {
+                                    "data_type": "string",
+                                    "description": "Login username to access database.",
+                                    "name": "username",
+                                    "shared": False,
+                                    "title": "Username",
+                                },
+                                {
+                                    "data_type": "string",
+                                    "description": "Login password to access database.",
+                                    "name": "password",
+                                    "shared": False,
+                                    "title": "Password",
+                                },
+                            ],
+                            "title": "Postgres Database",
+                            "transport": {"rest": {"path": "/resources", "service": "resource-providers"}},
+                        },
+                    ],
+                    "services": [{"name": "resource-providers", "http": 345}],
+                },
+                "requires": {"services": [{"postgres": {"server": "postgres"}}]},
+            },
+            "type": {"docker_image": {"image": ""}},
+        }
     )
 
-    return Bolt(api_version="v1", artifacts=[postgres], project="postgres", version="18.1.0")
+    return Bolt(
+        api_version="v1", artifacts=[server_artifact, resource_providers_artifact], project="postgres", version="18.1.0"
+    )
 
 
 @pytest.fixture(scope="session")
 def artifact_reference() -> ArtifactReference:
     return ArtifactReference(project_name="simple", artifact_name="api", version="1")
+
+
+@pytest.fixture(scope="session")
+def provided_resource_with_artifact(postgres_bolt: Bolt) -> ProvidedResourceWithArtifactReference:
+    artifact = postgres_bolt.artifacts[1]
+
+    return ProvidedResourceWithArtifactReference(
+        artifact.execution.provides.resources[0],
+        postgres_bolt.project,
+        artifact.name,
+        postgres_bolt.version,
+    )
 
 
 @pytest.fixture(scope="session")

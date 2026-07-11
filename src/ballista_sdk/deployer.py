@@ -1,3 +1,5 @@
+from dataclasses import dataclass
+
 from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.api.v1 import (
     ArtifactReference,
@@ -5,17 +7,19 @@ from ballista_sdk.api.v1 import (
     BoundSetting,
     Environment,
     ExecutableArtifact,
-    ResourceReference,
+    ResourceProviderReference,
 )
 
 
+@dataclass
 class Deployer:
+    infrastructure: InfrastructureAdapter
+
     def get_settings(
         self,
         bolt: Bolt,
         artifact: ExecutableArtifact,
         environment: Environment,
-        adapter: InfrastructureAdapter,
         sensitive: bool | None = None,
     ) -> list[BoundSetting]:
         """Get Settings used by artifacts in Bolt.
@@ -24,19 +28,22 @@ class Deployer:
         artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
         if sensitive is True:
-            artifact_settings = artifact.execution.secrets
+            artifact_settings = artifact.execution.requires.secrets
         elif sensitive is False:
-            artifact_settings = artifact.execution.configs
+            artifact_settings = artifact.execution.requires.configs
         else:
-            artifact_settings = artifact.execution.configs + artifact.execution.secrets
+            artifact_settings = artifact.execution.requires.configs + artifact.execution.requires.secrets
 
         settings = [BoundSetting(artifact=artifact_reference, setting=s) for s in artifact_settings]
 
         # Get all the settings from Resource requirements
-        for resource_requirement in artifact.execution.resources:
-            resource, resource_project, _, _ = adapter.resolve_resource_requirement(resource_requirement, environment)
+        infrastructure = self.infrastructure
+        for resource_requirement in artifact.execution.requires.resources:
+            resource, resource_project, _, _ = infrastructure.resolve_resource_requirement(
+                environment, resource_requirement
+            )
             requirement_instance = []
-            resource_reference = ResourceReference(resource_project, resource.name)
+            resource_reference = ResourceProviderReference(resource_project, resource.name)
 
             if sensitive is True:
                 resource_settings = resource.secrets
@@ -50,7 +57,7 @@ class Deployer:
                 [
                     BoundSetting(
                         artifact=artifact_reference,
-                        resource=resource_reference,
+                        resource_provider=resource_reference,
                         setting=s,
                         resource_instance=requirement_instance,
                     )
@@ -59,3 +66,6 @@ class Deployer:
             )
 
         return settings
+
+    async def provision_resources(self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact):
+        pass

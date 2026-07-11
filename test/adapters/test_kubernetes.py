@@ -218,34 +218,34 @@ def simple_bolt_resources():
 
 
 @pytest.fixture(scope="session")
-def resource_provider_bolt_resources():
+def project_bolt_resources():
     return [], {
-        "server": [
+        "resource-providers": [
             {
                 "apiVersion": "apps/v1",
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/resource-json": '{"name":"resource_provider-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","data_type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","data_type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","data_type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","data_type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","data_type":"string","shared":false}],"transport":{"rest":{"path":"/resources"}}}'
+                        "ballista.build/resource-json": '{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","data_type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","data_type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","data_type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","data_type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","data_type":"string","shared":false}],"transport":{"rest":{"service":"resource-providers","path":"/resources"}}}'
                     },
                     "labels": {
-                        "app.kubernetes.io/instance": "server-1",
+                        "app.kubernetes.io/instance": "resource-providers-1",
                         "app.kubernetes.io/managed-by": "Ballista",
-                        "app.kubernetes.io/name": "server",
-                        "app.kubernetes.io/part-of": "resource_provider",
+                        "app.kubernetes.io/name": "resource-providers",
+                        "app.kubernetes.io/part-of": "project",
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
-                        "ballista.build/resource": "resource_provider-resource1",
+                        "ballista.build/resource": "project-resource1",
                     },
-                    "name": "resource_provider-server",
+                    "name": "project-resource-providers",
                     "namespace": "test",
                 },
                 "spec": {
                     "selector": {
                         "matchLabels": {
-                            "app.kubernetes.io/name": "server",
-                            "app.kubernetes.io/part-of": "resource_provider",
+                            "app.kubernetes.io/name": "resource-providers",
+                            "app.kubernetes.io/part-of": "project",
                             "ballista.build/environment": "test",
                         }
                     },
@@ -256,23 +256,32 @@ def resource_provider_bolt_resources():
                     "template": {
                         "metadata": {
                             "labels": {
-                                "app.kubernetes.io/instance": "server-1",
+                                "app.kubernetes.io/instance": "resource-providers-1",
                                 "app.kubernetes.io/managed-by": "Ballista",
-                                "app.kubernetes.io/name": "server",
-                                "app.kubernetes.io/part-of": "resource_provider",
+                                "app.kubernetes.io/name": "resource-providers",
+                                "app.kubernetes.io/part-of": "project",
                                 "app.kubernetes.io/version": "1",
                                 "ballista.build/environment": "test",
                                 "ballista.build/environment-tier": "development",
-                                "ballista.build/resource": "resource_provider-resource1",
+                                "ballista.build/resource": "project-resource1",
                             },
-                            "name": "resource_provider-server",
+                            "name": "project-resource-providers",
                             "namespace": "test",
                         },
                         "spec": {
                             "containers": [
                                 {
+                                    "env": [
+                                        {"name": "RESOURCE_PROVIDERS_SERVICE_PORT", "value": "80"},
+                                        {
+                                            "name": "RESOURCE_PROVIDERS_SERVICE_HOST",
+                                            "value": "test.ballista.build",
+                                        },
+                                        {"name": "RESOURCE_PROVIDERS_SERVICE_PATH", "value": "/"},
+                                    ],
                                     "image": "hello-world:latest",
-                                    "name": "server",
+                                    "name": "resource-providers",
+                                    "ports": [{"containerPort": 80, "name": "resource-providers"}],
                                     "resources": {
                                         "limits": {
                                             "memory": "1.0Gi",
@@ -284,7 +293,67 @@ def resource_provider_bolt_resources():
                         },
                     },
                 },
-            }
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/instance": "resource-providers-1",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "resource-providers",
+                        "app.kubernetes.io/part-of": "project",
+                        "app.kubernetes.io/version": "1",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                    },
+                    "name": "project-resource-providers",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "selector": {
+                        "app.kubernetes.io/name": "resource-providers",
+                        "app.kubernetes.io/part-of": "project",
+                        "ballista.build/environment": "test",
+                    },
+                    "ports": [{"port": 80, "name": "resource-providers", "targetPort": "resource-providers"}],
+                },
+            },
+            {
+                "apiVersion": "networking.k8s.io/v1",
+                "kind": "Ingress",
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/instance": "resource-providers-1",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "resource-providers",
+                        "app.kubernetes.io/part-of": "project",
+                        "app.kubernetes.io/version": "1",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                    },
+                    "name": "project-resource-providers",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "rules": [
+                        {
+                            "host": "test.ballista.build",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "backend": {
+                                            "service": {"name": "project-resource-providers", "port": {"number": 80}}
+                                        },
+                                        "path": "/",
+                                        "pathType": "Prefix",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            },
         ]
     }
 

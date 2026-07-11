@@ -4,7 +4,8 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
-from .resources import Resource, ResourceRequirement
+from .resources import ProvidedResource, ResourceRequirementRequirement
+from .services import ProvidedService
 from .settings import Config, Secret
 
 
@@ -20,6 +21,7 @@ class BuildParameters(BaseModel):
             description="Name of Dockerfile, relative to project root, to find the indicated `dockerfile_target`.",
         ),
     ] = None
+    dockerfile_context: Annotated[str | None, Field()] = None
     dockerfile_target: Annotated[
         str | None,
         Field(
@@ -57,7 +59,9 @@ class HealthcheckProbe(BaseOneOfModel):
     tcp: Annotated[actions.TCPAction | None, Field()] = None
 
 
-class HealthcheckRequirements(BaseModel):
+class ProvidedHealthchecks(BaseModel):
+    """Healthchecks that are provided by an Artifact."""
+
     alive: HealthcheckProbe | None = None
     ready: HealthcheckProbe | None = None
     started: HealthcheckProbe | None = None
@@ -66,69 +70,36 @@ class HealthcheckRequirements(BaseModel):
 ##
 ## Resources
 ##
+class ResourceRequirement(BaseOneOfModel):
+    model_config = ConfigDict(extra="allow")
 
-
-class BaseProjectResourceRequirementName(BaseModel):
-    """Resource requirement in a specific Project."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    prefix: Annotated[
-        str | None, Field(description="Prefix for injected Resource values. Defaults to Resource's prefix if not set.")
-    ] = None
-    alias: Annotated[str | None, Field(description="Alias for injected Resource values.")] = None
-    # service: Annotated[str | None, Field(description="Connect to referenced service by name.")] = None
+    __pydantic_extra__: dict[str, dict[str, ResourceRequirementRequirement]]
 
     @property
-    def resource_requirement(self) -> ResourceRequirement:
-        for f in self.model_fields_set:
-            if f != "prefix" and f != "alias":
-                return getattr(self, f)
+    def prefix(self) -> None:
+        return None
 
-        raise Exception("WTF")
+    @property
+    def project_name(self) -> str:
+        return self.which()
 
     @property
     def resource_name(self) -> str:
-        for f in self.model_fields_set:
-            if f != "prefix" and f != "alias":
-                return f
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__.values():
+                for v in f:
+                    return v
+
+        raise Exception(self.__pydantic_extra__)
+
+    @property
+    def resource_requirement(self) -> ResourceRequirementRequirement:
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__.values():
+                for v in f.values():
+                    return v
 
         raise Exception("WTF")
-
-
-class ResourceRequirementProject(BaseOneOfModel):
-    """Project name for a ResourceRequirement."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    def which(self) -> str:
-        which = super().which()
-        if which:
-            return which
-
-        # Check extra data
-        raise Exception(self.__pydantic_extra__)
-
-    @property
-    def _resource_requirement_resource_name(self) -> BaseProjectResourceRequirementName:
-        if which := self.which():
-            return getattr(self, which)
-
-        # Check extra data for an unregistered requirement
-        raise Exception(self.__pydantic_extra__)
-
-    @property
-    def prefix(self) -> str | None:
-        return self._resource_requirement_resource_name.prefix
-
-    @property
-    def resource_requirement(self) -> BaseModel:
-        return self._resource_requirement_resource_name.resource_requirement
-
-    @property
-    def resource_name(self) -> str:
-        """Unique identifier for Resource."""
-        return self._resource_requirement_resource_name.resource_name
 
 
 ##
@@ -141,12 +112,33 @@ class SecretRequirement(Secret):
 ##
 ## Services
 ##
-class ServiceRequirement(BaseNamedModel):
-    """A network-connected port with unique identifier."""
+class ServiceRequirement(BaseOneOfModel):
+    model_config = ConfigDict(extra="allow")
 
-    grpc: Annotated[int | None, Field(description="GRPC service available on specified port.")] = None
-    http: Annotated[int | None, Field()] = None
-    tcp: Annotated[int | None, Field()] = None
+    __pydantic_extra__: dict[str, dict[str, str]]
+    """Project Name -> Artifact Name -> Service Name"""
+
+    @property
+    def project_name(self) -> str:
+        return self.which()
+
+    @property
+    def artifact_name(self) -> str:
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__.values():
+                for v in f:
+                    return v
+
+        raise Exception(self.__pydantic_extra__)
+
+    @property
+    def service_name(self) -> str:
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__.values():
+                for v in f.values():
+                    return v
+
+        raise Exception(self.__pydantic_extra__)
 
 
 ##
@@ -160,25 +152,39 @@ class VolumeRequirement(BaseNamedModel):
     ] = True
 
 
-class ExecutionRequirements(BaseModel):
-    configs: Annotated[
-        list[ConfigRequirement], Field(description="List of non-sensitive settings optional for execution.")
-    ] = []
+class ArtifactExecutionProvides(BaseModel):
+    """Provisions from Artifact execution."""
+
     healthchecks: Annotated[
-        HealthcheckRequirements | None,
+        ProvidedHealthchecks | None,
         Field(description="Healthchecks to ensure monitor execution lifecycle."),
     ] = None
     resources: Annotated[
-        list[ResourceRequirementProject], Field(description="List of Resources required for execution.")
+        list[ProvidedResource], Field(description="List of Resources provided when executing the artifact.")
     ] = []
+    services: Annotated[
+        list[ProvidedService],
+        Field(description="List of Services provided when executing the Artifact."),
+    ] = []
+
+
+class ArtifactExecutionRequires(BaseModel):
+    """Requirements for Artifact execution."""
+
+    configs: Annotated[
+        list[ConfigRequirement], Field(description="List of non-sensitive settings optional for execution.")
+    ] = []
+    resources: Annotated[list[ResourceRequirement], Field(description="List of Resources required for execution.")] = []
     secrets: Annotated[
         list[SecretRequirement], Field(description="List of sensitive settings required for execution.")
     ] = []
-    services: Annotated[
-        list[ServiceRequirement],
-        Field(description="List of Services required for execution to process."),
-    ] = []
+    services: Annotated[list[ServiceRequirement], Field(description="List of Services required for execution.")] = []
     volumes: Annotated[list[VolumeRequirement], Field(description="List of Volumes required for execution.")] = []
+
+
+class ArtifactExecution(BaseModel):
+    provides: Annotated[ArtifactExecutionProvides, Field(default_factory=ArtifactExecutionProvides)]
+    requires: Annotated[ArtifactExecutionRequires, Field(default_factory=ArtifactExecutionRequires)]
 
 
 #
@@ -210,13 +216,10 @@ class BaseArtifactProtocol(Protocol):
     def description(self) -> str | None: ...
 
     @property
-    def execution(self) -> ExecutionRequirements | None: ...
+    def execution(self) -> ArtifactExecution | None: ...
 
     @property
     def name(self) -> str: ...
-
-    @property
-    def provides(self) -> list[Resource]: ...
 
     @property
     def title(self) -> str | None: ...
@@ -232,14 +235,13 @@ class BuildableArtifact(BaseArtifactProtocol, Protocol):
 
 class ExecutableArtifact(BaseArtifactProtocol, Protocol):
     @property
-    def execution(self) -> ExecutionRequirements: ...
+    def execution(self) -> ArtifactExecution: ...
 
 
 class Artifact(BaseNamedModel):
     annotations: Annotated[dict[str, str], Field(description="Annotations describing artifact.")] = {}
     build: Annotated[BuildParameters | None, Field(description="Parameters for building artifact.")] = None
-    execution: Annotated[ExecutionRequirements | None, Field(description="Requirements for artifact execution.")] = None
-    provides: Annotated[list[Resource], Field(description="Resources provided by the artifact.")] = []
+    execution: Annotated[ArtifactExecution | None, Field()] = None
     type: Annotated[ArtifactTypeRequirement, Field(description="Type of artifact.")]
 
 

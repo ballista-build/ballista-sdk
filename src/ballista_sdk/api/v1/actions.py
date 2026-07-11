@@ -12,10 +12,9 @@ class ExecAction(BaseModel, frozen=True):
 
 
 class BasePortAction(BaseModel, ABC, frozen=True):
-    port: Annotated[int | None, Field(description="Port number to communicate with.")] = None
     service: Annotated[
-        str | None, Field(description="Unique identifier of service instead of a numbered port.", title="Service Name")
-    ] = None
+        str, Field(description="Unique identifier of service instead of a numbered port.", title="Service Name")
+    ]
 
 
 class GRPCAction(BasePortAction):

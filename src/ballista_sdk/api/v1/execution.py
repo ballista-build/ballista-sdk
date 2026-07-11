@@ -94,6 +94,8 @@ class ArtifactExecutionParameters(BaseModel, frozen=True):
 class DefaultExecutionParameters(BaseModel, frozen=True):
     """Default parameters for executing any ExecutableArtifact in an environment."""
 
+    # TODO: Something for artifact types so they can be configured.
+    # Example: Docker Images are all pulled from a specific registry (ECR, etc.)
     compute: ComputeExecutionParameters = Field(default_factory=ComputeExecutionParameters)
     external_service: ExternalizedServiceParameters = Field(default_factory=ExternalizedServiceParameters)
     scaling: ScalingExecutionParameters = Field(default_factory=ScalingExecutionParameters)
@@ -117,11 +119,15 @@ class ExecutionParameters(BaseModel, frozen=True):
 
         default_service = defaults.external_service.model_dump()
         external_services = {
-            s.name: ExternalizedServiceParameters(**default_service) for s in artifact.execution.services
+            s.name: ExternalizedServiceParameters(**default_service)
+            for s in (artifact.execution.provides.services if artifact.execution.provides else [])
         }
 
         default_volume = defaults.volume.model_dump()
-        volumes = {v.name: VolumeExecutionParameters(**default_volume) for v in artifact.execution.volumes}
+        volumes = {
+            v.name: VolumeExecutionParameters(**default_volume)
+            for v in (artifact.execution.requires.volumes if artifact.execution.requires else [])
+        }
 
         return ArtifactExecutionParameters(
             compute=defaults.compute,

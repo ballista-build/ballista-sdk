@@ -6,7 +6,11 @@ from typing import Literal, cast
 
 from kubernetes import client, config, utils
 
-from ballista_sdk.adapters.exceptions import UnknownArtifact, UnknownResource
+from ballista_sdk.adapters.exceptions import ArtifactNotFound, ResourceProviderNotFound
+from ballista_sdk.adapters.resources.transports import (
+    ResourceProviderTransport,
+    RESTResourceProviderTransport,
+)
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactReference,
@@ -17,10 +21,10 @@ from ballista_sdk.api.v1 import (
     ExecutableArtifact,
     ExecutionParameters,
     Project,
-    Resource,
+    ProvidedResource,
+    ProvidedResourceWithArtifactReference,
     ResourceProviderReference,
-    ResourceReference,
-    ResourceRequirementProject,
+    ResourceRequirement,
 )
 
 from . import primitives
@@ -50,7 +54,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     def secrets_adapter(self) -> KubernetesAPISecretsAdapter:
         return self._secrets_adapter
 
-    def deploy(
+    async def deploy(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],
@@ -169,16 +173,17 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     def list_project_bolts(self, project: Project, environments: Sequence[Environment]) -> list[Bolt]:
         return []
 
-    def list_resources(self, environment: Environment) -> list[ResourceProviderReference]:
+    def list_resources(self, environment: Environment) -> list[ProvidedResourceWithArtifactReference]:
         """List available Resources and the providing ArtifactIDReference in the specified Environment."""
         if self._bolts:
             executable_artifacts = []
             for bolt in self._bolts:
                 executable_artifacts.extend(
                     [
-                        ResourceProviderReference(resource, bolt.project, artifact.name, bolt.version)
+                        ProvidedResourceWithArtifactReference(resource, bolt.project, artifact.name, bolt.version)
                         for artifact in bolt.executable_artifacts
-                        for resource in artifact.provides
+                        if artifact.execution.provides
+                        for resource in artifact.execution.provides.resources
                     ]
                 )
 
@@ -197,8 +202,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             resource_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_RESOURCE)
             if resource_json is not None:
                 try:
-                    resource = Resource.model_validate_json(resource_json)
-                    ref = ResourceProviderReference(
+                    resource = ProvidedResource.model_validate_json(resource_json)
+                    ref = ProvidedResourceWithArtifactReference(
                         resource,
                         labels["app.kubernetes.io/part-of"],
                         labels["app.kubernetes.io/name"],
@@ -212,30 +217,69 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         return resources
 
     def resolve_artifact_reference(
-        self, artifact_reference: ArtifactReference, environment: Environment
+        self, environment: Environment, artifact_reference: ArtifactReference
     ) -> tuple[Bolt, Artifact]:
+        if self._bolts:
+            for bolt in self._bolts:
+                if bolt.project != artifact_reference.project_name or bolt.version != artifact_reference.version:
+                    continue
+
+                for artifact in bolt.artifacts:
+                    if artifact.name == artifact_reference.artifact_name:
+                        return bolt, artifact
+
         # TODO: Do this when the bolts are stored
-        raise UnknownArtifact(artifact_reference)
+        raise ArtifactNotFound(artifact_reference)
+
+    def resolve_resource_provider_transport(
+        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+    ) -> ResourceProviderTransport:
+        resource = provided_resource_with_artifact.provided_resource
+
+        if resource.transport:
+            artifact_reference = provided_resource_with_artifact.artifact_reference
+            bolt, artifact = self.resolve_artifact_reference(environment, artifact_reference)
+
+            if rest_transport := resource.transport.rest:
+                port = None
+
+                if artifact.execution and artifact.execution.provides:
+                    for service in artifact.execution.provides.services:
+                        if service.name == rest_transport.service and service.http:
+                            port = service.http
+                            break
+
+                if port is None:
+                    raise ValueError("BAD SERVICE REFERENCE")
+
+                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
+
+                return RESTResourceProviderTransport(
+                    ResourceProviderReference(artifact_reference.project_name, resource.name),
+                    f"{ref_name}:{port}{rest_transport.path}",
+                )
+
+        raise ValueError()
 
     def resolve_resource_requirement(
-        self, resource_requirement: ResourceRequirementProject, environment: Environment
-    ) -> ResourceProviderReference:
-        requirement_project_name = resource_requirement.which()
+        self, environment: Environment, resource_requirement: ResourceRequirement
+    ) -> ProvidedResourceWithArtifactReference:
+        requirement_project_name = resource_requirement.project_name
         requirement_resource_name = resource_requirement.resource_name
 
         # TODO: Do a smarter lookup via K8s API
-        for resource_with_provider_artifact in self.list_resources(environment):
+        for provided_resource_with_provider_artifact in self.list_resources(environment):
             if (
-                resource_with_provider_artifact.project_name == requirement_project_name
-                and resource_with_provider_artifact.resource.name == requirement_resource_name
+                provided_resource_with_provider_artifact.project_name == requirement_project_name
+                and provided_resource_with_provider_artifact.provided_resource.name == requirement_resource_name
             ):
-                return resource_with_provider_artifact
+                return provided_resource_with_provider_artifact
 
-        raise UnknownResource(
-            ResourceReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
+        raise ResourceProviderNotFound(
+            ResourceProviderReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
         )
 
-    def teardown(
+    async def teardown(
         self,
         bolt: Bolt,
         artifacts: Sequence[ExecutableArtifact],

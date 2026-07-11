@@ -24,35 +24,39 @@ class ResourceSecret(BaseResourceSetting, Secret):
 ResourceSetting = ResourceConfig | ResourceSecret
 
 
-class ResourceRequirementSchema(Schema, frozen=True):
+class ProvidedResourceRequirementSchema(Schema, frozen=True):
     """Schema defining a ResourceRequirement."""
 
     pass
 
 
-class ResourceRequirement(BaseModel):
-    """Requirement data for a Resource."""
+class ResourceRequirementRequirement(BaseModel):
+    """Requirement data for a ResourceRequirement."""
 
-    model_config = {"extra": "forbid"}
+    model_config = {"extra": "allow"}
 
 
-class RESTResourceTransport(actions.HTTPGETAction):
+class RESTProvidedResourceTransport(actions.HTTPGETAction):
     """Resource provider communication via REST."""
 
     pass
 
 
-class ResourceTransport(BaseOneOfModel):
+class ProvidedResourceTransportMethod(BaseOneOfModel):
     # exec: Annotated[actions.ExecAction | None, Field()] = None
     # grpc: Annotated[GRPCHealthCheckAction | None, Field()] = None
-    rest: Annotated[RESTResourceTransport | None, Field()] = None
+    rest: Annotated[RESTProvidedResourceTransport | None, Field()] = None
     # tcp: Annotated[actions.TCPAction | None, Field()] = None
 
 
-class Resource(BaseNamedModel):
-    """Resource available to use as an artifact requirement."""
+class ProvidedResource(BaseNamedModel):
+    """Resource available to use as an Artifact requirement."""
 
-    configs: Annotated[list[ResourceConfig], Field(description="Configs that are received by Artifact.")] = []
+    configs: Annotated[
+        list[ResourceConfig],
+        Field(description="Configs that are received by Artifact."),
+    ] = []
+    # TODO: Is this still needed?
     instance_id_fields: Annotated[
         list[str],
         Field(
@@ -62,23 +66,28 @@ class Resource(BaseNamedModel):
     ] = []
     prefix: Annotated[str, Field(description="Default prefix of values received by Artifact.")]
     requirements: Annotated[
-        ResourceRequirementSchema,
+        ProvidedResourceRequirementSchema,
         Field(
             alias="requirements",
-            default_factory=ResourceRequirementSchema,
+            default_factory=ProvidedResourceRequirementSchema,
             description="OpenAPI Schema representing requirements for a resource.",
         ),
     ]
     secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
     transport: Annotated[
-        ResourceTransport | None,
+        ProvidedResourceTransportMethod | None,
         Field(
             description="Transport method for communication with Resource Provider. If not specified, resource lifecycle is managed externally."
         ),
     ] = None
 
-    def get_requirements_model(self, project_title: str) -> type[ResourceRequirement]:
-        return _schema_to_model(self.requirements, f"{project_title}{self.name}ResourceRequirement")
+    def get_requirements_model(self, project_title: str) -> type[ResourceRequirementRequirement]:
+        return _schema_to_model(
+            self.prefix,
+            self.requirements,
+            self.configs + self.secrets,
+            f"{project_title}{self.name}ResourceRequirement",
+        )
 
 
 DATATYPE_MAP = {
@@ -90,7 +99,9 @@ DATATYPE_MAP = {
 }
 
 
-def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequirement]:
+def _schema_to_model(
+    prefix: str, schema: Schema, settings: list[ResourceSetting], model_name: str
+) -> type[ResourceRequirementRequirement]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
         raise ValueError()
@@ -119,17 +130,39 @@ def _schema_to_model(schema: Schema, model_name: str) -> type[ResourceRequiremen
 
             fields[prop_name] = Annotated[pt, field]
 
-        return create_model(model_name, **fields, __base__=ResourceRequirement)
+        for setting in settings:
+            # Create alias field for each setting to change its injected name.
+            alias_name = setting.name + "-alias"
+            fields[alias_name] = Annotated[
+                str | None, Field(description=f'Alias the "{setting.name}" envvar.', default=None)
+            ]
+
+        return create_model(model_name, **fields, __base__=ResourceRequirementRequirement)
 
     else:
         raise ValueError("NYI")
 
 
-class ResourceReference(NamedTuple):
-    """Reference to a Resource by its name and the Project's name its in."""
+class ResourceProviderReference(NamedTuple):
+    """Reference to a Resource Provider by its name and the Project's name its in."""
 
     project_name: str
     resource_name: str
+
+
+class ResourceProviderStatus(StrEnum):
+    """Statuses for a Resource Provider."""
+
+    UNKNOWN = auto()
+    """Resource Provider status is unknown."""
+    UNAVAILABLE = auto()
+    """Resource Provider is unavailable."""
+    STARTING = auto()
+    """Resource Provider is starting and not yet able to process requests."""
+    AVAILABLE = auto()
+    """Resource Provider is available to process requests."""
+    TERMINATING = auto()
+    """Resource Provider is not longer processing requests and terminating."""
 
 
 class ResourceStatus(StrEnum):
@@ -145,17 +178,6 @@ class ResourceStatus(StrEnum):
     """Resource exists but is not healthy."""
     DESTROYING = auto()
     """Resource is being destroyed."""
-
-
-class ResourceProviderStatus(StrEnum):
-    UNKNOWN = auto()
-    """Resource Provider status is unknown."""
-    STARTING = auto()
-    """Resource Provider is starting and not yet able to process requests."""
-    AVAILABLE = auto()
-    """Resource Provider is available to process requests."""
-    TERMINATING = auto()
-    """Resource Provider is not longer processing requests and terminating."""
 
 
 class ResourceAccess(StrEnum):
