@@ -6,8 +6,8 @@ from typing import Literal, Self, cast
 import dotenv
 
 from ballista_sdk.adapters import SettingsAdapter
+from ballista_sdk.adapters.primitives import BoundSetting
 from ballista_sdk.api.v1 import (
-    BoundSetting,
     Environment,
     SettingDataType,
     SettingValue,
@@ -35,9 +35,9 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
     def _get_bound_setting_env_filename(self, environment: Environment, bound_setting: BoundSetting) -> str:
         if bound_setting.artifact:
             return generate_artifact_setting_envfile_filename(bound_setting.artifact, bound_setting.setting.sensitive)
-        elif bound_setting.resource_provider:
+        elif bound_setting.provided_resource:
             return generate_resource_setting_envfile_filename(
-                bound_setting.resource_provider, bound_setting.setting.sensitive
+                bound_setting.provided_resource, bound_setting.setting.sensitive
             )
         else:
             raise ValueError("BoundSetting needs an artifact or resource reference.")
@@ -83,7 +83,7 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
         if obj is None or (value := obj[bound_setting.setting.name]) is None:
             raise ValueError()
 
-        match bound_setting.setting.data_type:
+        match bound_setting.setting.type:
             case SettingDataType.BYTES:
                 return base64.b64decode(value)
             case SettingDataType.BOOL:
@@ -110,7 +110,7 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
 
         obj = self._pending_writes.get(filename) or self._read_object(filename) or {}
 
-        if bound_setting.setting.data_type == SettingDataType.BYTES:
+        if bound_setting.setting.type == SettingDataType.BYTES:
             encoded_value = base64.b64encode(cast(bytes, value)).decode()
         else:
             encoded_value = str(value)

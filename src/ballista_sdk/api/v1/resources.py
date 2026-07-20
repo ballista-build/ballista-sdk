@@ -1,10 +1,9 @@
 from enum import StrEnum, auto
-from typing import Annotated, NamedTuple
+from typing import Annotated
 
 from openapi_pydantic import DataType, Schema
 from pydantic import BaseModel, Field, create_model
 
-from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
 from .settings import Config, Secret
 
@@ -36,10 +35,14 @@ class ResourceRequirementRequirement(BaseModel):
     model_config = {"extra": "allow"}
 
 
-class RESTProvidedResourceTransport(actions.HTTPGETAction):
-    """Resource provider communication via REST."""
+class _BaseServiceResourceTransport(BaseModel):
+    service: Annotated[str, Field(description="Unique identifier of service.", title="Service Name")]
 
-    pass
+
+class RESTProvidedResourceTransport(_BaseServiceResourceTransport):
+    """Resource Provider communication via REST."""
+
+    path: Annotated[str, Field(description="HTTP path.")]
 
 
 class ProvidedResourceTransportMethod(BaseOneOfModel):
@@ -141,13 +144,6 @@ def _schema_to_model(
 
     else:
         raise ValueError("NYI")
-
-
-class ResourceProviderReference(NamedTuple):
-    """Reference to a Resource Provider by its name and the Project's name its in."""
-
-    project_name: str
-    resource_name: str
 
 
 class ResourceProviderStatus(StrEnum):

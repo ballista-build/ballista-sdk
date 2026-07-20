@@ -5,11 +5,9 @@ from typing import Literal, Self, cast
 
 from kubernetes import client
 
+from ballista_sdk.adapters.primitives import ArtifactReference, BoundSetting, ProvidedResourceReference
 from ballista_sdk.api.v1 import (
-    ArtifactReference,
-    BoundSetting,
     Environment,
-    ResourceProviderReference,
     Setting,
     SettingDataType,
     SettingValue,
@@ -53,11 +51,11 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
             name = generate_artifact_settings_refname(bound_setting.artifact)
 
             return {"labels": {}, "name": name, "namespace": namespace}
-        elif bound_setting.resource_provider:
+        elif bound_setting.provided_resource:
             namespace = _get_reference_kubernetes_namespace(
-                environment, environment_config, bound_setting.resource_provider
+                environment, environment_config, bound_setting.provided_resource
             )
-            name = generate_resource_settings_refname(bound_setting.resource_provider)
+            name = generate_resource_settings_refname(bound_setting.provided_resource)
 
             return {"labels": {}, "name": name, "namespace": namespace}
         else:
@@ -70,10 +68,10 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
             return _get_reference_kubernetes_namespace(
                 environment, environment_config, bound_setting.artifact
             ), generate_artifact_settings_refname(bound_setting.artifact)
-        elif bound_setting.resource_provider:
+        elif bound_setting.provided_resource:
             return _get_reference_kubernetes_namespace(
-                environment, environment_config, bound_setting.resource_provider
-            ), generate_resource_settings_refname(bound_setting.resource_provider)
+                environment, environment_config, bound_setting.provided_resource
+            ), generate_resource_settings_refname(bound_setting.provided_resource)
         else:
             raise ValueError()
 
@@ -215,10 +213,10 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
         self._loaded.pop((environment, namespace, ref_name), None)
 
     def _get_object_value(self, obj: client.V1ConfigMap, setting: Setting) -> SettingValue:
-        source = obj.binary_data if setting.data_type == SettingDataType.BYTES else obj.data
+        source = obj.binary_data if setting.type == SettingDataType.BYTES else obj.data
 
         if source and (value := source.get(setting.name)):
-            match setting.data_type:
+            match setting.type:
                 case SettingDataType.BOOL:
                     return value.lower() == "true"
                 case SettingDataType.BYTES:
@@ -233,7 +231,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
         raise ValueError()
 
     def _set_object_value(self, obj: client.V1ConfigMap, setting: Setting, value: SettingValue):
-        if setting.data_type == SettingDataType.BYTES:
+        if setting.type == SettingDataType.BYTES:
             # Bytes go into binary_data as a base64 encoded string.
             encoded_value = base64.b64encode(cast(bytes, value)).decode()
 
@@ -246,7 +244,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
             obj.data[setting.name] = encoded_value
 
     def _delete_object_value(self, obj: client.V1ConfigMap, setting: Setting):
-        if setting.data_type == SettingDataType.BYTES:
+        if setting.type == SettingDataType.BYTES:
             if obj.binary_data and setting.name in obj.binary_data:
                 obj.binary_data.pop(setting.name)
                 return
@@ -301,11 +299,11 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         if obj.data and (value := obj.data.get(setting.name)):
             bytes_value = base64.b64decode(value)
 
-            if setting.data_type == SettingDataType.BYTES:
+            if setting.type == SettingDataType.BYTES:
                 return bytes_value
 
             decoded_string = bytes_value.decode()
-            match setting.data_type:
+            match setting.type:
                 case SettingDataType.BOOL:
                     return decoded_string.lower() == "true"
                 case SettingDataType.DOUBLE | SettingDataType.FLOAT:
@@ -318,7 +316,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         raise ValueError()
 
     def _set_object_value(self, obj: client.V1Secret, setting: Setting, value: SettingValue):
-        bytes_value = cast(bytes, value) if setting.data_type == SettingDataType.BYTES else str(value).encode()
+        bytes_value = cast(bytes, value) if setting.type == SettingDataType.BYTES else str(value).encode()
 
         obj.data = obj.data or {}
         obj.data[setting.name] = base64.b64encode(bytes_value).decode()
@@ -334,7 +332,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
 def _get_reference_kubernetes_namespace(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
-    reference: ArtifactReference | ResourceProviderReference,
+    reference: ArtifactReference | ProvidedResourceReference,
 ) -> str:
     if environment_config.project_namespaces:
         return f"{reference.project_name}-{environment.name}"

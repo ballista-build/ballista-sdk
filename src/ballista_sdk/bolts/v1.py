@@ -1,17 +1,11 @@
 from dataclasses import dataclass
 
-from pydantic import Field, create_model
-
-from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
-from ballista_sdk.api.v1 import Artifact, Bolt, Environment, ResourceRequirement
+from ballista_sdk.api.v1 import Bolt
 
 
 @dataclass
 class BoltV1Factory:
     """Factory to create v1 Bolts that are valid to execute in specified Environment with specified InfrastructureAdapter."""
-
-    environment: Environment
-    adapter: InfrastructureAdapter
 
     def create_bolt(self, project: str, version: str) -> Bolt:
         return Bolt(artifacts=[], project=project, version=version)

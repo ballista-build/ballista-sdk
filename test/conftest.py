@@ -1,9 +1,9 @@
 import pytest
 import yaml
 
+from ballista_sdk.adapters.infrastructure import ArtifactReference, ProvidedResourceWithArtifactReference
 from ballista_sdk.api.v1 import (
     Artifact,
-    ArtifactReference,
     ArtifactTypeRequirement,
     Bolt,
     ComputeExecutionParameters,
@@ -13,7 +13,6 @@ from ballista_sdk.api.v1 import (
     ExecutionParameters,
     ExternalizedServiceParameters,
     Project,
-    ProvidedResourceWithArtifactReference,
     ScalingExecutionParameters,
     VolumeExecutionParameters,
 )
@@ -48,7 +47,7 @@ artifacts:
             requires:
                 configs:
                     - name: "option_a"
-                      data_type: "string"
+                      type: "string"
                 resources:
                     - postgres:
                         database:
@@ -56,7 +55,7 @@ artifacts:
                             name_alias: "BUG_DATABASE"
                 secrets:
                     - name: "secret_a"
-                      data_type: "string"
+                      type: "string"
                 volumes:
                     - name: "volume_a"
                       capacity: 0.01
@@ -80,12 +79,12 @@ artifacts:
             provides:
                 resources:
                   - configs:
-                      - data_type: "string"
+                      - type: "string"
                         description: "Host of Database server."
                         name: "host"
                         shared: True
                         title: "Host"
-                      - data_type: "uint32"
+                      - type: "uint32"
                         description: "Port Database server listens on."
                         name: "port"
                         shared: True
@@ -100,17 +99,17 @@ artifacts:
                                 type: string
                         required: ["name"]
                     secrets:
-                      - data_type: "string"
+                      - type: "string"
                         description: "Name of database"
                         name: "name"
                         shared: False
                         title: "Database"
-                      - data_type: "string"
+                      - type: "string"
                         description: "Login username to access database"
                         name: "username"
                         shared: False
                         title: "Username"
-                      - data_type: "string"
+                      - type: "string"
                         description: "Login password to access database"
                         name: "password"
                         shared: False
@@ -154,13 +153,13 @@ def postgres_bolt() -> Bolt:
                             "description": "Username for the default/root login.",
                             "name": "root_username",
                             "title": "Root Username",
-                            "data_type": "string",
+                            "type": "string",
                         },
                         {
                             "description": "Password for the default/root login.",
                             "name": "root_password",
                             "title": "Root Password",
-                            "data_type": "string",
+                            "type": "string",
                         },
                     ],
                     "volumes": [
@@ -192,14 +191,14 @@ def postgres_bolt() -> Bolt:
                                     "name": "host",
                                     "shared": True,
                                     "title": "Host",
-                                    "data_type": "string",
+                                    "type": "string",
                                 },
                                 {
                                     "description": "Port Postgres server listens on.",
                                     "name": "port",
                                     "shared": True,
                                     "title": "Port",
-                                    "data_type": "uint32",
+                                    "type": "uint32",
                                 },
                             ],
                             "description": "Postgres Database",
@@ -208,21 +207,21 @@ def postgres_bolt() -> Bolt:
                             "requirements": {"properties": {"name": {"type": "string"}}, "required": ["name"]},
                             "secrets": [
                                 {
-                                    "data_type": "string",
+                                    "type": "string",
                                     "description": "Name of Postgres database.",
                                     "name": "name",
                                     "shared": False,
                                     "title": "Database Name",
                                 },
                                 {
-                                    "data_type": "string",
+                                    "type": "string",
                                     "description": "Login username to access database.",
                                     "name": "username",
                                     "shared": False,
                                     "title": "Username",
                                 },
                                 {
-                                    "data_type": "string",
+                                    "type": "string",
                                     "description": "Login password to access database.",
                                     "name": "password",
                                     "shared": False,
@@ -257,9 +256,9 @@ def provided_resource_with_artifact(postgres_bolt: Bolt) -> ProvidedResourceWith
 
     return ProvidedResourceWithArtifactReference(
         artifact.execution.provides.resources[0],
-        postgres_bolt.project,
-        artifact.name,
-        postgres_bolt.version,
+        ArtifactReference(
+            project_name=postgres_bolt.project, artifact_name=artifact.name, version=postgres_bolt.version
+        ),
     )
 
 

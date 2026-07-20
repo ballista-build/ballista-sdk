@@ -3,9 +3,9 @@ from dataclasses import dataclass, field
 import pytest
 
 from ballista_sdk.adapters import ResourceProvider
+from ballista_sdk.adapters.infrastructure import ArtifactReference
 from ballista_sdk.adapters.resources.exceptions import ResourceAlreadyExists, ResourceNotFound
 from ballista_sdk.api.v1 import (
-    ArtifactReference,
     Environment,
     EnvironmentTier,
     ResourceAccess,
@@ -141,7 +141,7 @@ class MockResourceProvider(ResourceProvider):
 
 @pytest.fixture(scope="session")
 def resource_requirement() -> ResourceRequirement:
-    return ResourceRequirement()
+    return ResourceRequirement.model_validate({})
 
 
 @pytest.fixture

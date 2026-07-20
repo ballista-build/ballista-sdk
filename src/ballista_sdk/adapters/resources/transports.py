@@ -3,8 +3,8 @@ from typing import Protocol
 
 import aiohttp
 
-from ballista_sdk.adapters.exceptions import ResourceProviderException
-from ballista_sdk.api.v1.resources import ResourceProviderReference
+from ballista_sdk.adapters.exceptions import ProvidedResourceException
+from ballista_sdk.adapters.primitives import ProvidedResourceReference
 
 from ..exceptions import ArtifactResourceAlreadyExists, ArtifactResourceNotFound
 from .provider import (
@@ -30,7 +30,7 @@ class ResourceProviderTransport(ResourceProvider, Protocol):
 
     Translates the `ResourceProvider` interface into remote calls, allowing an `InfrastructureAdapter` to communicate with a `ResourceProvider` elsewhere."""
 
-    resource_provider: ResourceProviderReference
+    provided_resource_reference: ProvidedResourceReference
 
 
 @dataclass
@@ -65,7 +65,7 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         if resource_requirement in self._resources.get(environment, {}).get(artifact, []):
-            raise ArtifactResourceAlreadyExists(resource_provider=self.resource_provider, artifact=artifact)
+            raise ArtifactResourceAlreadyExists(provided_resource=self.provided_resource_reference, artifact=artifact)
 
         self._resources.setdefault(environment, {}).setdefault(artifact, []).append(resource_requirement)
 
@@ -73,7 +73,7 @@ class MemoryResourceProviderTransport(ResourceProviderTransport):
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
         if resource_requirement not in self._resources.get(environment, {}).get(artifact, []):
-            raise ArtifactResourceNotFound(resource_provider=self.resource_provider, artifact=artifact)
+            raise ArtifactResourceNotFound(provided_resource=self.provided_resource_reference, artifact=artifact)
 
     # Resource Access
     async def get_resource_access(
@@ -153,7 +153,7 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
 
                 return response.status, response.detail
 
-        except aiohttp.ClientError as e:
+        except aiohttp.ClientError:
             return ResourceProviderStatus.UNAVAILABLE, None
 
     # Resource
@@ -183,7 +183,7 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
 
             return response.configs, response.secrets
 
-        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
+        raise ProvidedResourceException(self.resource_provider.provided_resource_reference)
 
     async def update_resource(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
@@ -195,23 +195,23 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
 
             return response.configs, response.secrets
 
-        raise ResourceProviderException(ResourceProviderReference(self.resource_project_name, self.resource_name))
+        raise ProvidedResourceException(self.resource_provider.provided_resource_reference)
 
     # Resource Access
     async def get_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ) -> ResourceAccess | None:
-        raise ResourceProviderException(self.resource_provider)
+        raise ProvidedResourceException(self.provided_resource_reference)
 
     async def grant_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceProviderException(self.resource_provider)
+        raise ProvidedResourceException(self.provided_resource_reference)
 
     async def revoke_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
     ):
-        raise ResourceProviderException(self.resource_provider)
+        raise ProvidedResourceException(self.provided_resource_reference)
 
 
 class GRPCResourceProviderTransport(ResourceProviderTransport):

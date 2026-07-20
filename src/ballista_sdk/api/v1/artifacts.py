@@ -1,9 +1,9 @@
-from typing import Annotated, ClassVar, NamedTuple, Protocol
+from typing import Annotated, ClassVar, Protocol
 
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import actions
 from .common import BaseNamedModel, BaseOneOfModel
+from .healthchecks import ProvidedHealthchecks
 from .resources import ProvidedResource, ResourceRequirementRequirement
 from .services import ProvidedService
 from .settings import Config, Secret
@@ -41,30 +41,6 @@ class BuildParameters(BaseModel):
 ##
 class ConfigRequirement(Config):
     shared: ClassVar[bool] = False
-
-
-##
-## Healthchecks
-##
-class GRPCHealthCheckAction(actions.GRPCAction):
-    """Action that uses the GPRC Health Checking Protocol."""
-
-    pass
-
-
-class HealthcheckProbe(BaseOneOfModel):
-    exec: Annotated[actions.ExecAction | None, Field()] = None
-    grpc: Annotated[GRPCHealthCheckAction | None, Field()] = None
-    http: Annotated[actions.HTTPGETAction | None, Field()] = None
-    tcp: Annotated[actions.TCPAction | None, Field()] = None
-
-
-class ProvidedHealthchecks(BaseModel):
-    """Healthchecks that are provided by an Artifact."""
-
-    alive: HealthcheckProbe | None = None
-    ready: HealthcheckProbe | None = None
-    started: HealthcheckProbe | None = None
 
 
 ##
@@ -153,11 +129,11 @@ class VolumeRequirement(BaseNamedModel):
 
 
 class ArtifactExecutionProvides(BaseModel):
-    """Provisions from Artifact execution."""
+    """Provides from Artifact execution."""
 
     healthchecks: Annotated[
         ProvidedHealthchecks | None,
-        Field(description="Healthchecks to ensure monitor execution lifecycle."),
+        Field(description="Healthchecks to monitor execution lifecycle."),
     ] = None
     resources: Annotated[
         list[ProvidedResource], Field(description="List of Resources provided when executing the artifact.")
@@ -199,6 +175,12 @@ class ArtifactType(BaseNamedModel):
 # TODO: Update this to be dynamic like the resource requirements have done.
 class DockerImageArtifactTypeRequirement(BaseModel):
     image: Annotated[str | None, Field(description="Existing Docker image name and tag.")] = None
+
+
+class VirtualArtifactTypeRequirement(BaseModel):
+    """Some kind of Virtual/fake artifact that isn't a thing but gives an attachment point."""
+
+    pass
 
 
 class ArtifactTypeRequirement(BaseOneOfModel):
@@ -243,11 +225,3 @@ class Artifact(BaseNamedModel):
     build: Annotated[BuildParameters | None, Field(description="Parameters for building artifact.")] = None
     execution: Annotated[ArtifactExecution | None, Field()] = None
     type: Annotated[ArtifactTypeRequirement, Field(description="Type of artifact.")]
-
-
-class ArtifactReference(NamedTuple):
-    """Reference to an Artifact by its name, a version number, and the Project's name its in."""
-
-    project_name: str
-    artifact_name: str
-    version: str
