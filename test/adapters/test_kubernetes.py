@@ -91,14 +91,14 @@ def simple_bolt_resources():
                                     ],
                                     "envFrom": [
                                         # Service configs are always first
-                                        {"configMapRef": {"name": "simple.api", "optional": True}},
+                                        {"configMapRef": {"name": "simple-api", "optional": True}},
                                         # Service secrets are either first or second
-                                        {"secretRef": {"name": "simple.api", "optional": False}},
+                                        {"secretRef": {"name": "simple-api", "optional": False}},
                                         # Shared configs and secrets are next
                                         {
                                             "prefix": "POSTGRES_",
                                             "configMapRef": {
-                                                "name": "postgres.resources.database",
+                                                "name": "postgres-resources-database",
                                                 "optional": False,
                                             },
                                         },

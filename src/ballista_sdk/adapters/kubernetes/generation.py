@@ -108,11 +108,11 @@ def generate_artifact_kubernetes_name(
 
 
 def generate_artifact_settings_refname(artifact_reference: ArtifactReference) -> str:
-    return f"{artifact_reference.project_name}.{artifact_reference.artifact_name}"
+    return f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
 
 
 def generate_resource_settings_refname(resource_reference: ProvidedResourceReference) -> str:
-    return f"{resource_reference.project_name}.resources.{resource_reference.resource_name}"
+    return f"{resource_reference.project_name}-resources-{resource_reference.resource_name}"
 
 
 def generate_artifact_metadata(
