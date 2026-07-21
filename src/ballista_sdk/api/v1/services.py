@@ -1,4 +1,5 @@
-from typing import Annotated, NamedTuple
+from enum import StrEnum
+from typing import Annotated
 
 from pydantic import Field
 
@@ -13,7 +14,7 @@ class ProvidedService(BaseNamedModel):
     tcp: Annotated[int | None, Field()] = None
 
 
-class ServiceProviderReference(NamedTuple):
-    project_name: str
-    artifact_name: str
-    service_name: str
+class ServiceType(StrEnum):
+    grpc = "grpc"
+    http = "http"
+    tcp = "tcp"

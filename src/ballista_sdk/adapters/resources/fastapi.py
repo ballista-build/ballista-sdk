@@ -9,7 +9,8 @@ except ImportError:
 
 from typing import Annotated
 
-from ballista_sdk.api.v1 import ArtifactReference, Environment, EnvironmentTier
+from ballista_sdk.adapters.primitives import ArtifactReference
+from ballista_sdk.api.v1 import Environment, EnvironmentTier
 
 from ..exceptions import ArtifactResourceAlreadyExists, ArtifactResourceNotFound
 from .provider import (

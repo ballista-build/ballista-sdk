@@ -33,7 +33,7 @@ SettingValue = bool | bytes | float | str
 
 
 class BaseSetting(BaseNamedModel, ABC):
-    data_type: Annotated[SettingDataType, Field(description="Data type of value.")]
+    type: Annotated[SettingDataType, Field(description="Data type of value.")]
 
 
 class Config(BaseSetting):

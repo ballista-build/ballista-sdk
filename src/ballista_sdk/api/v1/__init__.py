@@ -1,4 +1,3 @@
-from .actions import ExecAction, HTTPGETAction, TCPAction
 from .artifacts import (
     Artifact,
     ArtifactExecution,
@@ -6,21 +5,12 @@ from .artifacts import (
     ArtifactTypeRequirement,
     ConfigRequirement,
     ExecutableArtifact,
-    GRPCHealthCheckAction,
-    HealthcheckProbe,
     ResourceRequirement,
     SecretRequirement,
     ServiceRequirement,
     VolumeRequirement,
 )
-from .bolts import (
-    ArtifactReference,
-    Bolt,
-    BoundSetting,
-    Project,
-    ProvidedResourceWithArtifactReference,
-    ProvidedServiceWithArtifactReference,
-)
+from .bolts import Bolt, Project
 from .execution import (
     ArtifactExecutionParameters,
     ComputeExecutionParameters,
@@ -32,56 +22,57 @@ from .execution import (
     ScalingExecutionParameters,
     VolumeExecutionParameters,
 )
+from .healthchecks import (
+    ExecHealthCheckAction,
+    GRPCHealthCheckAction,
+    HealthcheckProbe,
+    HTTPHealthCheckAction,
+    TCPHealthCheckAction,
+)
 from .resources import (
     ProvidedResource,
     ProvidedResourceRequirementSchema,
     ProvidedResourceTransportMethod,
     ResourceAccess,
     ResourceConfig,
-    ResourceProviderReference,
     ResourceProviderStatus,
     ResourceSecret,
     ResourceSetting,
     ResourceStatus,
     RESTProvidedResourceTransport,
 )
-from .services import ProvidedService, ServiceProviderReference
+from .services import ProvidedService, ServiceType
 from .settings import Config, Secret, Setting, SettingDataType, SettingValue
 
 __all__ = [
     "Artifact",
     "ArtifactExecution",
     "ArtifactExecutionParameters",
-    "ArtifactReference",
     "ArtifactType",
     "ArtifactTypeRequirement",
     "BaseProjectResourceRequirementName",
     "Bolt",
-    "BoundSetting",
     "ComputeExecutionParameters",
     "Config",
     "ConfigRequirement",
     "DefaultExecutionParameters",
     "Environment",
     "EnvironmentTier",
-    "ExecAction",
+    "ExecHealthCheckAction",
     "ExecutableArtifact",
     "ExecutionParameters",
     "ExternalizedServiceParameters",
     "GRPCHealthCheckAction",
     "HealthcheckProbe",
     "HealthcheckRequirements",
-    "HTTPGETAction",
+    "HTTPHealthCheckAction",
     "Project",
     "ProvidedResource",
     "ProvidedResourceRequirementSchema",
     "ProvidedResourceTransportMethod",
-    "ProvidedResourceWithArtifactReference",
-    "ProvidedServiceWithArtifactReference",
     "ProvidedService",
     "ResourceAccess",
     "ResourceConfig",
-    "ResourceProviderReference",
     "ResourceProviderStatus",
     "ResourceRequirement",
     "ResourceSecret",
@@ -91,12 +82,12 @@ __all__ = [
     "ScalingExecutionParameters",
     "Secret",
     "SecretRequirement",
-    "ServiceProviderReference",
     "ServiceRequirement",
+    "ServiceType",
     "Setting",
     "SettingDataType",
     "SettingValue",
-    "TCPAction",
+    "TCPHealthCheckAction",
     "VolumeExecutionParameters",
     "VolumeRequirement",
 ]

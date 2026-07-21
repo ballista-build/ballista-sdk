@@ -6,14 +6,21 @@ from typing import Literal, cast
 
 from kubernetes import client, config, utils
 
-from ballista_sdk.adapters.exceptions import ArtifactNotFound, ResourceProviderNotFound
+from ballista_sdk.adapters.exceptions import ArtifactNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
+from ballista_sdk.adapters.infrastructure import BoltInspector, resolve_artifact_requirements
+from ballista_sdk.adapters.primitives import (
+    ArtifactReference,
+    ProvidedResourceReference,
+    ProvidedResourceWithArtifactReference,
+    ProvidedServiceReference,
+    ProvidedServiceWithArtifactReference,
+)
 from ballista_sdk.adapters.resources.transports import (
     ResourceProviderTransport,
     RESTResourceProviderTransport,
 )
 from ballista_sdk.api.v1 import (
     Artifact,
-    ArtifactReference,
     ArtifactType,
     Bolt,
     Environment,
@@ -22,14 +29,20 @@ from ballista_sdk.api.v1 import (
     ExecutionParameters,
     Project,
     ProvidedResource,
-    ProvidedResourceWithArtifactReference,
-    ResourceProviderReference,
+    ProvidedService,
     ResourceRequirement,
+    ResourceStatus,
+    ServiceRequirement,
+    ServiceType,
 )
 
 from . import primitives
 from .environments import get_environment_config, get_kubernetes_client
-from .generation import KubernetesInfrastructureAdapter, generate_bolt_kubernetes_namespace, generate_environment_labels
+from .generation import (
+    KubernetesInfrastructureAdapter,
+    generate_bolt_kubernetes_namespace,
+    generate_environment_labels,
+)
 from .settings import KubernetesAPIConfigsAdapter, KubernetesAPISecretsAdapter
 
 
@@ -41,6 +54,9 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
     _configs_adapter: KubernetesAPIConfigsAdapter = field(default_factory=KubernetesAPIConfigsAdapter, init=False)
     _secrets_adapter: KubernetesAPISecretsAdapter = field(default_factory=KubernetesAPISecretsAdapter, init=False)
+
+    _use_gateway: bool = field(default=False, init=False)
+    """Use Gateway API instead of Ingress."""
 
     @property
     def name(self) -> Literal["kubernetes-api"]:
@@ -61,6 +77,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         environment: Environment,
         execution_parameters: ExecutionParameters,
     ):
+        resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt, artifacts)
+
         environment_config = get_environment_config(environment)
 
         bolt_resources, all_artifact_resources = self.generate_bolt_resources(
@@ -69,6 +87,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             environment=environment,
             environment_config=environment_config,
             execution_parameters=execution_parameters,
+            resource_providers=resource_providers,
+            service_providers=service_providers,
         )
 
         api_client = get_kubernetes_client(environment)
@@ -86,10 +106,20 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                 for resource in artifact_resources
             ]
 
-    def list_artifact_types(self, environment: Environment) -> list[ArtifactType]:
+    async def list_artifact_types(self, environments: Sequence[Environment]) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
 
-    def list_environments(self) -> list[Environment]:
+    async def list_bolts(
+        self,
+        environments: Sequence[Environment],
+        project_names: Sequence[str] | None = None,
+    ) -> list[Bolt]:
+        if self._bolts:
+            return BoltInspector.list_bolts(self._bolts, project_names=project_names)
+
+        return []
+
+    async def list_environments(self) -> list[Environment]:
         environments = []
         # Use the current kubeconfig context
         _, context = config.list_kube_config_contexts()
@@ -115,44 +145,51 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         return environments
 
-    def list_executable_artifacts(self, environment: Environment) -> list[ArtifactReference]:
+    async def list_executable_artifacts(
+        self,
+        environments: Sequence[Environment],
+        project_names: Sequence[str] | None = None,
+        artifact_names: Sequence[str] | None = None,
+    ) -> list[ArtifactReference]:
         if self._bolts:
-            executable_artifacts = []
-            for bolt in self._bolts:
-                executable_artifacts.extend(
-                    [
-                        ArtifactReference(artifact.name, bolt.version, bolt.project)
-                        for artifact in bolt.executable_artifacts
-                    ]
-                )
-            return executable_artifacts
-
-        api_client = get_kubernetes_client(environment)
-
-        # 1:1 ExecutableArtifact:Deployment
-        api = client.AppsV1Api(api_client)
-        deployments = api.list_deployment_for_all_namespaces(
-            label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}"
-        )
+            return BoltInspector.list_executable_artifacts(
+                self._bolts, project_names=project_names, artifact_names=artifact_names
+            )
 
         executable_artifacts = []
-        for deployment in deployments.items:
-            labels = deployment.metadata.labels
-            executable_artifacts.append(
-                ArtifactReference(
-                    labels["app.kubernetes.io/name"],
-                    labels["app.kubernetes.io/version"],
-                    labels["app.kubernetes.io/part-of"],
+        labels = [
+            f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+            primitives.METADATA_LABEL_RESOURCE,
+        ]
+
+        if project_names:
+            labels.append(f"app.kubernetes.io/part-of in ({','.join(project_names)})")
+        if artifact_names:
+            labels.append(f"app.kubernetes.io/name in ({','.join(artifact_names)})")
+
+        for environment in environments:
+            api_client = get_kubernetes_client(environment)
+
+            # 1:1 ExecutableArtifact:Deployment
+            api = client.AppsV1Api(api_client)
+            deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
+
+            for deployment in deployments.items:
+                metadata_labels = deployment.metadata.labels
+                executable_artifacts.append(
+                    ArtifactReference(
+                        project_name=metadata_labels["app.kubernetes.io/part-of"],
+                        artifact_name=metadata_labels["app.kubernetes.io/name"],
+                        version=metadata_labels["app.kubernetes.io/version"],
+                    )
                 )
-            )
 
         return executable_artifacts
 
-    def list_projects(self, environments: Sequence[Environment]) -> list[Project]:
-        # TODO: Read these from Custom Resources when they exist. For now, read them out of the annotations of Deployments.
-
+    async def list_projects(self, environments: Sequence[Environment]) -> list[Project]:
         if self._bolts:
-            return list({Project(name=bolt.project) for bolt in self._bolts})
+            return BoltInspector.list_projects(self._bolts)
 
         projects: set[Project] = set()
         for environment in environments:
@@ -165,80 +202,164 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             )
 
             for deployment in deployments.items:
-                labels = deployment.metadata.labels
-                projects.add(Project(name=labels["app.kubernetes.io/part-of"]))
+                metadata_labels = deployment.metadata.labels
+                projects.add(Project(name=metadata_labels["app.kubernetes.io/part-of"]))
 
         return list(projects)
 
-    def list_project_bolts(self, project: Project, environments: Sequence[Environment]) -> list[Bolt]:
-        return []
-
-    def list_resources(self, environment: Environment) -> list[ProvidedResourceWithArtifactReference]:
-        """List available Resources and the providing ArtifactIDReference in the specified Environment."""
+    async def list_provided_resources(
+        self,
+        environments: Sequence[Environment],
+        project_names: Sequence[str] | None = None,
+        artifact_names: Sequence[str] | None = None,
+        resource_names: Sequence[str] | None = None,
+    ) -> list[ProvidedResourceWithArtifactReference]:
+        """List Provided Resources and the providing ArtifactIDReference in the specified Environment."""
         if self._bolts:
-            executable_artifacts = []
-            for bolt in self._bolts:
-                executable_artifacts.extend(
-                    [
-                        ProvidedResourceWithArtifactReference(resource, bolt.project, artifact.name, bolt.version)
-                        for artifact in bolt.executable_artifacts
-                        if artifact.execution.provides
-                        for resource in artifact.execution.provides.resources
-                    ]
-                )
-
-            return executable_artifacts
-
-        api_client = get_kubernetes_client(environment)
+            return BoltInspector.list_provided_resources(
+                self._bolts, project_names=project_names, artifact_names=artifact_names, resource_names=resource_names
+            )
 
         # 1:1 ExecutableArtifact:Deployment
         resources = []
-        api = client.AppsV1Api(api_client)
-        for deployment in api.list_deployment_for_all_namespaces(
-            label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name},{primitives.METADATA_LABEL_RESOURCE}"
-        ).items:
-            metadata = cast(client.models.V1ObjectMeta, deployment.metadata)
-            labels = cast(dict[str, str], metadata.labels)
-            resource_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_RESOURCE)
-            if resource_json is not None:
-                try:
-                    resource = ProvidedResource.model_validate_json(resource_json)
-                    ref = ProvidedResourceWithArtifactReference(
-                        resource,
-                        labels["app.kubernetes.io/part-of"],
-                        labels["app.kubernetes.io/name"],
-                        labels["app.kubernetes.io/version"],
-                    )
-                    resources.append(ref)
 
-                except Exception as e:
-                    print(e)
+        labels = [
+            f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+        ]
+
+        if project_names:
+            labels.append(f"app.kubernetes.io/part-of in ({','.join(project_names)})")
+        if artifact_names:
+            labels.append(f"app.kubernetes.io/name in ({','.join(artifact_names)})")
+        if resource_names:
+            # Use label selector for resource names
+            labels.append(f"{primitives.METADATA_LABEL_RESOURCE} in ({','.join(resource_names)})")
+        else:
+            # Otherwise look for any resource
+            labels.append(primitives.METADATA_LABEL_RESOURCE)
+
+        for environment in environments:
+            api_client = get_kubernetes_client(environment)
+            api = client.AppsV1Api(api_client)
+
+            for deployment in api.list_deployment_for_all_namespaces(label_selector=",".join(labels)).items:
+                metadata = cast(client.models.V1ObjectMeta, deployment.metadata)
+                metadata_labels = cast(dict[str, str], metadata.labels)
+                provided_resource_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_RESOURCE)
+                if provided_resource_json is not None:
+                    try:
+                        provided_resource = ProvidedResource.model_validate_json(provided_resource_json)
+                        ref = ProvidedResourceWithArtifactReference(
+                            provided_resource=provided_resource,
+                            artifact_reference=ArtifactReference(
+                                project_name=metadata_labels["app.kubernetes.io/part-of"],
+                                artifact_name=metadata_labels["app.kubernetes.io/name"],
+                                version=metadata_labels["app.kubernetes.io/version"],
+                            ),
+                        )
+                        resources.append(ref)
+
+                    except Exception as e:
+                        print(e)
 
         return resources
 
-    def resolve_artifact_reference(
+    async def list_provided_services(
+        self,
+        environments: Sequence[Environment],
+        project_names: Sequence[str] | None = None,
+        artifact_names: Sequence[str] | None = None,
+        service_names: Sequence[str] | None = None,
+    ) -> list:
+        if self._bolts:
+            return BoltInspector.list_provided_services(
+                self._bolts, project_names=project_names, artifact_names=artifact_names, service_names=service_names
+            )
+
+        # TODO: This won't work when there are Virtual services
+        services = []
+
+        labels = [
+            f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+        ]
+
+        if project_names:
+            labels.append(f"app.kubernetes.io/part-of in ({','.join(project_names)})")
+        if artifact_names:
+            labels.append(f"app.kubernetes.io/name in ({','.join(artifact_names)})")
+        if service_names:
+            labels.append(f"{primitives.METADATA_LABEL_SERVICE} in ({','.join(service_names)})")
+        else:
+            labels.append(primitives.METADATA_LABEL_SERVICE)
+
+        for environment in environments:
+            api_client = get_kubernetes_client(environment)
+            api = client.CoreV1Api(api_client)
+
+            for service in api.list_service_for_all_namespaces(label_selector=",".join(labels)).items:
+                metadata = cast(client.models.V1ObjectMeta, service.metadata)
+                metadata_labels = cast(dict[str, str], metadata.labels)
+                provided_service_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_SERVICE)
+                if provided_service_json is not None:
+                    try:
+                        provided_service = ProvidedService.model_validate_json(provided_service_json)
+                        ref = ProvidedServiceWithArtifactReference(
+                            provided_service=provided_service,
+                            artifact_reference=ArtifactReference(
+                                project_name=metadata_labels["app.kubernetes.io/part-of"],
+                                artifact_name=metadata_labels["app.kubernetes.io/name"],
+                                version=metadata_labels["app.kubernetes.io/version"],
+                            ),
+                        )
+                        services.append(ref)
+
+                    except Exception as e:
+                        print(e)
+
+        return services
+
+    async def list_resources(
+        self,
+        environments: Sequence[Environment],
+        project_names: Sequence[str] | None = None,
+        artifact_names: Sequence[str] | None = None,
+        resource_names: Sequence[str] | None = None,
+        resource_statuses: Sequence[ResourceStatus] | None = None,
+    ) -> list:
+        return []
+
+    async def list_services(
+        self,
+        environments: Sequence[Environment],
+        project_names: Sequence[str] | None = None,
+        artifact_names: Sequence[str] | None = None,
+        service_names: Sequence[str] | None = None,
+        service_types: Sequence[ServiceType] | None = None,
+    ) -> list:
+        return []
+
+    async def resolve_artifact_reference(
         self, environment: Environment, artifact_reference: ArtifactReference
     ) -> tuple[Bolt, Artifact]:
         if self._bolts:
-            for bolt in self._bolts:
-                if bolt.project != artifact_reference.project_name or bolt.version != artifact_reference.version:
-                    continue
-
-                for artifact in bolt.artifacts:
-                    if artifact.name == artifact_reference.artifact_name:
-                        return bolt, artifact
+            return BoltInspector.resolve_artifact_reference(self._bolts, artifact_reference)
 
         # TODO: Do this when the bolts are stored
         raise ArtifactNotFound(artifact_reference)
 
-    def resolve_resource_provider_transport(
-        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+    async def resolve_resource_provider_transport(
+        self,
+        environment: Environment,
+        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+        bolt: Bolt | None = None,
     ) -> ResourceProviderTransport:
         resource = provided_resource_with_artifact.provided_resource
 
         if resource.transport:
             artifact_reference = provided_resource_with_artifact.artifact_reference
-            bolt, artifact = self.resolve_artifact_reference(environment, artifact_reference)
+            bolt, artifact = await self.resolve_artifact_reference(environment, artifact_reference)
 
             if rest_transport := resource.transport.rest:
                 port = None
@@ -255,28 +376,64 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                 ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
 
                 return RESTResourceProviderTransport(
-                    ResourceProviderReference(artifact_reference.project_name, resource.name),
+                    ProvidedResourceReference(
+                        project_name=artifact_reference.project_name,
+                        resource_name=resource.name,
+                    ),
                     f"{ref_name}:{port}{rest_transport.path}",
                 )
 
         raise ValueError()
 
-    def resolve_resource_requirement(
+    async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
     ) -> ProvidedResourceWithArtifactReference:
+        if self._bolts:
+            return BoltInspector.resolve_resource_requirement(self._bolts, resource_requirement)
+
         requirement_project_name = resource_requirement.project_name
         requirement_resource_name = resource_requirement.resource_name
 
-        # TODO: Do a smarter lookup via K8s API
-        for provided_resource_with_provider_artifact in self.list_resources(environment):
-            if (
-                provided_resource_with_provider_artifact.project_name == requirement_project_name
-                and provided_resource_with_provider_artifact.provided_resource.name == requirement_resource_name
-            ):
-                return provided_resource_with_provider_artifact
+        provided_resources = await self.list_provided_resources(
+            [environment],
+            project_names=[requirement_project_name],
+            resource_names=[requirement_resource_name],
+        )
+        for provided_resource_with_provider_artifact in provided_resources:
+            return provided_resource_with_provider_artifact
 
-        raise ResourceProviderNotFound(
-            ResourceProviderReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
+        raise ProvidedResourceNotFound(
+            ProvidedResourceReference(
+                project_name=requirement_project_name,
+                resource_name=requirement_resource_name,
+            )
+        )
+
+    async def resolve_service_requirement(
+        self, environment: Environment, service_requirement: ServiceRequirement
+    ) -> ProvidedServiceWithArtifactReference:
+        if self._bolts:
+            return BoltInspector.resolve_service_requirement(self._bolts, service_requirement)
+
+        requirement_project_name = service_requirement.project_name
+        requirement_artifact_name = service_requirement.artifact_name
+        requirement_service_name = service_requirement.service_name
+
+        provided_resources = await self.list_provided_services(
+            [environment],
+            project_names=[requirement_project_name],
+            artifact_names=[requirement_artifact_name],
+            service_names=[requirement_service_name],
+        )
+        for provided_resource_with_provider_artifact in provided_resources:
+            return provided_resource_with_provider_artifact
+
+        raise ProvidedServiceNotFound(
+            ProvidedServiceReference(
+                project_name=requirement_project_name,
+                artifact_name=requirement_artifact_name,
+                service_name=requirement_service_name,
+            )
         )
 
     async def teardown(

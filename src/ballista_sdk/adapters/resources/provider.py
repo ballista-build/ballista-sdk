@@ -1,8 +1,8 @@
 from collections.abc import Iterable
 from typing import Protocol
 
+from ballista_sdk.adapters.primitives import ArtifactReference
 from ballista_sdk.api.v1 import (
-    ArtifactReference,
     Environment,
     ResourceAccess,
     ResourceProviderStatus,

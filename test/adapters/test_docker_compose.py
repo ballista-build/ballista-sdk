@@ -7,6 +7,7 @@ from ballista_sdk.adapters.docker_compose.generation import (
     DockerComposeService,
     DockerComposeServiceVolume,
 )
+from ballista_sdk.adapters.infrastructure import resolve_artifact_requirements
 from ballista_sdk.api.v1 import (
     Bolt,
     Environment,
@@ -20,7 +21,6 @@ def simple_docker_compose_project():
     return DockerComposeProject(
         name="simple",
         networks={
-            "project-postgres": {"internal": True, "name": "project-postgres"},
             "project-simple": {"internal": True, "name": "project-simple"},
             "env-test": {"internal": True, "name": "env-test"},
             "external-test.ballista.build": {"name": "external-test.ballista.build"},
@@ -57,7 +57,6 @@ def simple_docker_compose_project():
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
                 ports=[{"name": "http", "published": "80", "target": 80}],
-                profiles=["top"],
                 volumes=[
                     DockerComposeServiceVolume(
                         source="simple-api-volume_a",
@@ -67,66 +66,8 @@ def simple_docker_compose_project():
                     ),
                 ],
             ),
-            "postgres-server": DockerComposeService(
-                container_name="postgres-server",
-                deploy={
-                    "resources": {
-                        "limits": {"memory": "1.0g"},
-                        "reservations": {"cpus": "0.25", "memory": "0.1g"},
-                    }
-                },
-                environment={"POSTGRES_SERVICE_HOST": "test.ballista.build", "POSTGRES_SERVICE_PORT": "5432"},
-                env_file=[{"format": "raw", "path": "postgres-server-secrets.env", "required": True}],
-                healthcheck={
-                    "start_interval": "1s",
-                    "start_period": "60s",
-                    "test": ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"],
-                },
-                image="postgres:18.1",
-                networks={
-                    "project-postgres": {},
-                    "env-test": {},
-                    "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
-                },
-                ports=[{"name": "postgres", "published": "5432", "target": 5432}],
-                profiles=["depend", "service"],
-                volumes=[
-                    DockerComposeServiceVolume(
-                        source="postgres-server-data",
-                        target="/var/lib/postgresql/data",
-                        type="volume",
-                        volume={"subpath": "/custom/path"},
-                    )
-                ],
-            ),
-            "postgres-resource-providers": DockerComposeService(
-                container_name="postgres-resource-providers",
-                depends_on={"postgres-server": {"condition": "service_healthy"}},
-                deploy={
-                    "resources": {
-                        "limits": {"memory": "1.0g"},
-                        "reservations": {"cpus": "0.25", "memory": "0.1g"},
-                    }
-                },
-                environment={
-                    "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
-                    "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
-                    "RESOURCE_PROVIDERS_SERVICE_PORT": "345",
-                },
-                image="resource-providers",
-                networks={
-                    "project-postgres": {},
-                    "env-test": {},
-                    "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
-                },
-                ports=[{"name": "resource-providers", "published": "345", "target": 345}],
-                profiles=["depend", "resource"]
-            ),
         },
-        volumes={
-            "simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A"),
-            "postgres-server-data": DockerComposeProjectVolume(driver="local", name="PostgreSQL-Data"),
-        },
+        volumes={"simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A")},
     )
 
 
@@ -160,7 +101,6 @@ def project_docker_compose_project():
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
                 ports=[{"name": "resource-providers", "published": "80", "target": 80}],
-                profiles=["top"]
             )
         },
         volumes={},
@@ -170,10 +110,8 @@ def project_docker_compose_project():
 @pytest.fixture(scope="session")
 def bolt(
     bolt_yaml: dict[str, dict | str],
-    environment: Environment,
-    docker_compose_adapter: DockerComposeInfrastructureAdapter,
 ) -> Bolt:
-    factory = BoltV1Factory(environment, docker_compose_adapter)
+    factory = BoltV1Factory()
 
     bolt = factory.get_bolt(bolt_yaml)
     if bolt:
@@ -183,7 +121,7 @@ def bolt(
 
 
 @pytest.mark.unit
-def test_generate_docker_compose(
+async def test_generate_docker_compose(
     request,
     bolt: Bolt,
     docker_compose_adapter: DockerComposeInfrastructureAdapter,
@@ -193,12 +131,17 @@ def test_generate_docker_compose(
     bolt_name = request.node.callspec.params.get("bolt_yaml")
     docker_compose_project = request.getfixturevalue(f"{bolt_name}_docker_compose_project")
 
-    assert (
-        docker_compose_adapter.generate_docker_compose_project_from_bolt(
-            environment=environment,
-            bolt=bolt,
-            artifacts=bolt.executable_artifacts,
-            execution_parameters=execution_parameters,
-        ).model_dump()
-        == docker_compose_project.model_dump()
+    resource_providers, service_providers = await resolve_artifact_requirements(
+        docker_compose_adapter, environment, bolt, bolt.executable_artifacts
     )
+
+    generated_docker_compose_project = docker_compose_adapter.generate_docker_compose_project_from_bolt(
+        environment=environment,
+        bolt=bolt,
+        artifacts=bolt.executable_artifacts,
+        execution_parameters=execution_parameters,
+        resource_providers=resource_providers,
+        service_providers=service_providers,
+    )
+
+    assert generated_docker_compose_project.model_dump() == docker_compose_project.model_dump()

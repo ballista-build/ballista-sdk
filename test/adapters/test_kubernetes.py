@@ -2,6 +2,7 @@ from typing import cast
 
 import pytest
 
+from ballista_sdk.adapters.infrastructure import resolve_artifact_requirements
 from ballista_sdk.adapters.kubernetes import (
     KubernetesAPIInfrastructureAdapter,
 )
@@ -19,10 +20,8 @@ from ballista_sdk.bolts.v1 import BoltV1Factory
 @pytest.fixture(scope="session")
 def bolt(
     bolt_yaml: dict[str, dict | str],
-    environment: Environment,
-    kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
 ) -> Bolt:
-    factory = BoltV1Factory(environment, kubernetes_api_adapter)
+    factory = BoltV1Factory()
 
     bolt = factory.get_bolt(bolt_yaml)
     if bolt:
@@ -92,14 +91,14 @@ def simple_bolt_resources():
                                     ],
                                     "envFrom": [
                                         # Service configs are always first
-                                        {"configMapRef": {"name": "simple.api", "optional": True}},
+                                        {"configMapRef": {"name": "simple-api", "optional": True}},
                                         # Service secrets are either first or second
-                                        {"secretRef": {"name": "simple.api", "optional": False}},
+                                        {"secretRef": {"name": "simple-api", "optional": False}},
                                         # Shared configs and secrets are next
                                         {
                                             "prefix": "POSTGRES_",
                                             "configMapRef": {
-                                                "name": "postgres.resources.database",
+                                                "name": "postgres-resources-database",
                                                 "optional": False,
                                             },
                                         },
@@ -137,6 +136,7 @@ def simple_bolt_resources():
                 "apiVersion": "v1",
                 "kind": "Service",
                 "metadata": {
+                    "annotations": {"ballista.build/service-json": '{"name":"http","http":80}'},
                     "labels": {
                         "app.kubernetes.io/instance": "api-1",
                         "app.kubernetes.io/managed-by": "Ballista",
@@ -145,8 +145,9 @@ def simple_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "http",
                     },
-                    "name": "simple-api",
+                    "name": "simple-api-http",
                     "namespace": "test",
                 },
                 "spec": {
@@ -226,7 +227,7 @@ def project_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/resource-json": '{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","data_type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","data_type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","data_type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","data_type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","data_type":"string","shared":false}],"transport":{"rest":{"service":"resource-providers","path":"/resources"}}}'
+                        "ballista.build/resource-json": '{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"resource-providers","path":"/resources"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "resource-providers-1",
@@ -298,6 +299,7 @@ def project_bolt_resources():
                 "apiVersion": "v1",
                 "kind": "Service",
                 "metadata": {
+                    "annotations": {"ballista.build/service-json": '{"name":"resource-providers","http":80}'},
                     "labels": {
                         "app.kubernetes.io/instance": "resource-providers-1",
                         "app.kubernetes.io/managed-by": "Ballista",
@@ -306,8 +308,9 @@ def project_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "resource-providers",
                     },
-                    "name": "project-resource-providers",
+                    "name": "project-resource-providers-resource-providers",
                     "namespace": "test",
                 },
                 "spec": {
@@ -359,7 +362,7 @@ def project_bolt_resources():
 
 
 @pytest.mark.unit
-def test_generate_resources(
+async def test_generate_resources(
     request,
     bolt: Bolt,
     environment: Environment,
@@ -371,12 +374,18 @@ def test_generate_resources(
     expected_bolt_resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]] = (
         request.getfixturevalue(f"{bolt_name}_bolt_resources")
     )
-    executable_artifacts = [cast(ExecutableArtifact, a) for a in bolt.artifacts if a.execution is not None]
+
+    resource_providers, service_providers = await resolve_artifact_requirements(
+        kubernetes_api_adapter, environment, bolt, bolt.executable_artifacts
+    )
+
     bolt_resources = kubernetes_api_adapter.generate_bolt_resources(
         bolt=bolt,
-        artifacts=executable_artifacts,
+        artifacts=bolt.executable_artifacts,
         environment=environment,
         environment_config=environment_config,
         execution_parameters=execution_parameters,
+        resource_providers=resource_providers,
+        service_providers=service_providers,
     )
     assert bolt_resources == expected_bolt_resources

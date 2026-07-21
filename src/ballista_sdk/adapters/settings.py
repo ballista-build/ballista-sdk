@@ -1,6 +1,8 @@
 from typing import Protocol
 
-from ballista_sdk.api.v1 import BoundSetting, Environment, SettingValue
+from ballista_sdk.api.v1 import Environment, SettingValue
+
+from .primitives import BoundSetting
 
 
 class SettingsOperation(Protocol):
