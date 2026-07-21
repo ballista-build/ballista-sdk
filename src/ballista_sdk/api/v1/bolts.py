@@ -20,7 +20,7 @@ class Bolt(BaseModel, frozen=True):
         Field(
             description="Version of Bolt. When not provided, required to be given before artifacts can be built or executed."
         ),
-    ] = ""
+    ]
 
     @property
     def buildable_artifacts(self) -> list[BuildableArtifact]:

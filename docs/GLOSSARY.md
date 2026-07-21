@@ -40,6 +40,10 @@ Artifacts may _require_ a Service to be available.
 
 `ProvidedService` in Artifact A + `ServiceRequirement` in Artifact B = unique `Service`
 
+#### Settings (Configs and Secrets)
+
+Settings are can be either _sensitive_ (`Secret`) or _non-sensitive_ (`Config`).
+
 ### Bolt
 
 A bundle of multiple [Artifact](#artifact)s that belong to a single [Project](#project). This contains the known [Artifact](#artifact)s with their related [Build Requirements](#build-requirements) and [Execution Requirements](#execution-requirements).

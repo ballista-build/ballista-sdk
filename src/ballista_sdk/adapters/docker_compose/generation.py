@@ -181,9 +181,6 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
         return compose_project
 
-    def generate_docker_compose_platform_service(self, resource_requirement) -> tuple[str, DockerComposeService]:
-        return "name", DockerComposeService()
-
     def generate_docker_compose_service_from_artifact(
         self,
         environment: Environment,
@@ -225,6 +222,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
         [self.add_artifact_setting(compose_service, artifact_reference, setting) for setting in settings]
 
+        # TODO: Hoist these out so they can be provider services
         # Resource Requirements
         depends_keys = set()
         for resource_requirement in execution.requires.resources:
@@ -252,6 +250,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 for setting in provided_resource.configs + provided_resource.secrets
             ]
 
+        # TODO: Hoist these out so they can be provider services
         # Service Requirements
         for service_requirement in execution.requires.services:
             provided_service_reference = ProvidedServiceReference(
