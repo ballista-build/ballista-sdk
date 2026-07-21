@@ -15,8 +15,12 @@ class Bolt(BaseModel, frozen=True):
     ] = "v1"
     artifacts: Annotated[list[Artifact], Field(description="List of artifacts.")]
     project: Annotated[str, Field(description="Project name.")]
-    # provides: Annotated[list | None, Field(description="Resources provided by Bolt that are not tied to Artifacts.")] = []
-    version: Annotated[str, Field(description="Version of Bolt.")]
+    version: Annotated[
+        str,
+        Field(
+            description="Version of Bolt. When not provided, required to be given before artifacts can be built or executed."
+        ),
+    ] = ""
 
     @property
     def buildable_artifacts(self) -> list[BuildableArtifact]:

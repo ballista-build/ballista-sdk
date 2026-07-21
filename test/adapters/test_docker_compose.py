@@ -21,7 +21,6 @@ def simple_docker_compose_project():
     return DockerComposeProject(
         name="simple",
         networks={
-            # "project-postgres": {"internal": True, "name": "project-postgres"},
             "project-simple": {"internal": True, "name": "project-simple"},
             "env-test": {"internal": True, "name": "env-test"},
             "external-test.ballista.build": {"name": "external-test.ballista.build"},
@@ -67,64 +66,8 @@ def simple_docker_compose_project():
                     ),
                 ],
             ),
-            # "postgres-server": DockerComposeService(
-            #     container_name="postgres-server",
-            #     deploy={
-            #         "resources": {
-            #             "limits": {"memory": "1.0g"},
-            #             "reservations": {"cpus": "0.25", "memory": "0.1g"},
-            #         }
-            #     },
-            #     environment={"POSTGRES_SERVICE_HOST": "test.ballista.build", "POSTGRES_SERVICE_PORT": "5432"},
-            #     env_file=[{"format": "raw", "path": "postgres-server-secrets.env", "required": True}],
-            #     healthcheck={
-            #         "start_interval": "1s",
-            #         "start_period": "60s",
-            #         "test": ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER"],
-            #     },
-            #     image="postgres:18.1",
-            #     networks={
-            #         "project-postgres": {},
-            #         "env-test": {},
-            #         "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
-            #     },
-            #     ports=[{"name": "postgres", "published": "5432", "target": 5432}],
-            #     volumes=[
-            #         DockerComposeServiceVolume(
-            #             source="postgres-server-data",
-            #             target="/var/lib/postgresql/data",
-            #             type="volume",
-            #             volume={"subpath": "/custom/path"},
-            #         )
-            #     ],
-            # ),
-            # "postgres-resource-providers": DockerComposeService(
-            #     container_name="postgres-resource-providers",
-            #     depends_on={"postgres-server": {"condition": "service_healthy"}},
-            #     deploy={
-            #         "resources": {
-            #             "limits": {"memory": "1.0g"},
-            #             "reservations": {"cpus": "0.25", "memory": "0.1g"},
-            #         }
-            #     },
-            #     environment={
-            #         "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
-            #         "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
-            #         "RESOURCE_PROVIDERS_SERVICE_PORT": "345",
-            #     },
-            #     image="resource-providers",
-            #     networks={
-            #         "project-postgres": {},
-            #         "env-test": {},
-            #         "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
-            #     },
-            #     ports=[{"name": "resource-providers", "published": "345", "target": 345}],
-            # ),
         },
-        volumes={
-            "simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A"),
-            # "postgres-server-data": DockerComposeProjectVolume(driver="local", name="PostgreSQL-Data"),
-        },
+        volumes={"simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A")},
     )
 
 
