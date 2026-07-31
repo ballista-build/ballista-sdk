@@ -3,6 +3,8 @@ from .artifacts import (
     ArtifactExecution,
     ArtifactType,
     ArtifactTypeRequirement,
+    BuildableArtifact,
+    BuildParameters,
     ConfigRequirement,
     ExecutableArtifact,
     ResourceRequirement,
@@ -27,6 +29,7 @@ from .healthchecks import (
     GRPCHealthCheckAction,
     HealthcheckProbe,
     HTTPHealthCheckAction,
+    ProvidedHealthchecks,
     TCPHealthCheckAction,
 )
 from .resources import (
@@ -52,6 +55,8 @@ __all__ = [
     "ArtifactTypeRequirement",
     "BaseProjectResourceRequirementName",
     "Bolt",
+    "BuildParameters",
+    "BuildableArtifact",
     "ComputeExecutionParameters",
     "Config",
     "ConfigRequirement",
@@ -67,6 +72,7 @@ __all__ = [
     "HealthcheckRequirements",
     "HTTPHealthCheckAction",
     "Project",
+    "ProvidedHealthchecks",
     "ProvidedResource",
     "ProvidedResourceRequirementSchema",
     "ProvidedResourceTransportMethod",
