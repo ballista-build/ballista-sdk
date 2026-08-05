@@ -147,7 +147,14 @@ def _schema_to_model(
 
 
 class ResourceProviderStatus(StrEnum):
-    """Statuses for a Resource Provider."""
+    """Statuses for a Resource Provider.
+
+    - "unknown": Unknown status and will requests will not be accepted.
+    - "unavailable": Requests will not accepted.
+    - "starting": Starting up and requests will not be accepted.
+    - "available": Accepting requests for resource management.
+    - "terminating": Shutting down and requests will not be accepted.
+    """
 
     UNKNOWN = auto()
     """Resource Provider status is unknown."""
@@ -162,6 +169,16 @@ class ResourceProviderStatus(StrEnum):
 
 
 class ResourceStatus(StrEnum):
+    """Statuses for an individual Resource.
+
+    - "unknown": Status cannot be or has not yet been determined.
+    - "not_found": Resource cannot be found.
+    - "provisioning": Resource is currently being provisioned and is not yet available for use.
+    - "available": Resource is available and is available for use.
+    - "unhealthy": Resource exists but may not be available for use.
+    - "destroying": Resource exists but is currently being destroyed.
+    """
+
     UNKNOWN = auto()
     """Resource status is unknown."""
     NOT_FOUND = auto()
@@ -177,9 +194,19 @@ class ResourceStatus(StrEnum):
 
 
 class ResourceAccess(StrEnum):
+    """Access levels for a Resource.
+
+    - "none": Resource cannot be accessed.
+    - "read": Resource can only be read from.
+    - "read_write": Resource can be read from and written to, but not altered or removed.
+    - "owner": Resource can be read from, written to, altered, and removed.
+    """
+
+    NONE = auto()
+    """Resource cannot be accessed."""
     READ = auto()
     """Resource can only be read from."""
-    READ_WRITE = auto()
+    WRITE = auto()
     """Resource can be read from and written to."""
     OWNER = auto()
-    """Resource can be read from, written to, and modified."""
+    """Resource can be read from, written to, altered, and removed."""

@@ -1,5 +1,3 @@
-from typing import cast
-
 import pytest
 
 from ballista_sdk.adapters.infrastructure import resolve_artifact_requirements
@@ -11,7 +9,6 @@ from ballista_sdk.adapters.kubernetes.primitives import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
     Environment,
-    ExecutableArtifact,
     ExecutionParameters,
 )
 from ballista_sdk.bolts.v1 import BoltV1Factory
@@ -381,7 +378,6 @@ async def test_generate_resources(
 
     bolt_resources = kubernetes_api_adapter.generate_bolt_resources(
         bolt=bolt,
-        artifacts=bolt.executable_artifacts,
         environment=environment,
         environment_config=environment_config,
         execution_parameters=execution_parameters,

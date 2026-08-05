@@ -58,6 +58,9 @@ class ExternalizedServiceParameters(BaseModel, frozen=True):
     path: str | None = None
     """External path."""
 
+    secure: bool = False
+    """Secure connection."""
+
 
 class ScalingExecutionParameters(BaseModel, frozen=True):
     """Parameters to scale execution of an artifact."""
@@ -109,8 +112,11 @@ class ExecutionParameters(BaseModel, frozen=True):
     environments: dict[str, DefaultExecutionParameters] = {}
     projects: dict[tuple[str, str], DefaultExecutionParameters] = {}
     artifacts: dict[tuple[str, str, str], DefaultExecutionParameters] = {}
+    """environment,project,artifact"""
     external_services: dict[tuple[str, str, str, str], ExternalizedServiceParameters] = {}
+    """environment,project,artifact,service"""
     volumes: dict[tuple[str, str, str, str], VolumeExecutionParameters] = {}
+    """environment,project,artifact,volumne"""
 
     def params_for_artifact(
         self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
@@ -119,15 +125,11 @@ class ExecutionParameters(BaseModel, frozen=True):
 
         default_service = defaults.external_service.model_dump()
         external_services = {
-            s.name: ExternalizedServiceParameters(**default_service)
-            for s in (artifact.execution.provides.services if artifact.execution.provides else [])
+            s.name: ExternalizedServiceParameters(**default_service) for s in artifact.execution.provides.services
         }
 
         default_volume = defaults.volume.model_dump()
-        volumes = {
-            v.name: VolumeExecutionParameters(**default_volume)
-            for v in (artifact.execution.requires.volumes if artifact.execution.requires else [])
-        }
+        volumes = {v.name: VolumeExecutionParameters(**default_volume) for v in artifact.execution.requires.volumes}
 
         return ArtifactExecutionParameters(
             compute=defaults.compute,

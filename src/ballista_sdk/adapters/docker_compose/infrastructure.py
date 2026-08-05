@@ -15,7 +15,11 @@ from ballista_sdk.adapters.exceptions import (
     ProvidedServiceNotFound,
     ProvidedServiceReference,
 )
-from ballista_sdk.adapters.infrastructure import BoltInspector, resolve_artifact_requirements
+from ballista_sdk.adapters.infrastructure import (
+    BoltInspector,
+    InfrastructureAdapter,
+    resolve_artifact_requirements,
+)
 from ballista_sdk.adapters.primitives import (
     ArtifactReference,
     BoundSetting,
@@ -31,7 +35,6 @@ from ballista_sdk.api.v1 import (
     ArtifactType,
     Bolt,
     Environment,
-    ExecutableArtifact,
     ExecutionParameters,
     Project,
     ResourceRequirement,
@@ -39,12 +42,13 @@ from ballista_sdk.api.v1 import (
     ServiceRequirement,
 )
 
-from .generation import BaseDockerComposeInfrastructureAdapter, DockerComposeProject
+from .generation import DockerComposeInfrastructureGenerator, DockerComposeProject
 from .settings import DockerComposeSettingsAdapter
 
 
 @dataclass
-class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter):
+class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInfrastructureGenerator):
+    execution_parameters: ExecutionParameters
     _bolts: list[Bolt] = field(default_factory=list)
     _settings_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter, init=False)
 
@@ -70,27 +74,26 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
             subprocess.run(args)
 
-    async def deploy(
-        self,
-        bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
-        environment: Environment,
-        execution_parameters: ExecutionParameters,
-    ):
-        resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt, artifacts)
+    async def deploy(self, bolt: Bolt, environment: Environment):
+        executable_artifacts = bolt.executable_artifacts
+        resource_providers, service_providers = await resolve_artifact_requirements(
+            self, environment, bolt, executable_artifacts
+        )
+
+        execution_parameters = await self.get_execution_parameters(bolt, environment)
 
         docker_compose_project = self.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,
-            artifacts=artifacts,
+            artifacts=executable_artifacts,
             execution_parameters=execution_parameters,
             resource_providers=resource_providers,
             service_providers=service_providers,
         )
 
-        # Do some resource shit
+        # TODO: Move this so it's handled entirely by docker compose
         artifact_resources: list[tuple[ArtifactReference, ResourceRequirement, Environment]] = []
-        for artifact in artifacts:
+        for artifact in executable_artifacts:
             artifact_reference = ArtifactReference(
                 project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
             )
@@ -119,10 +122,60 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
                     environment, artifact, provided_resource_with_artifact, resource_requirement
                 )
 
-        if True:
-            commands = ["up", "--build", "--watch", "--remove-orphans"]
-        else:
-            commands = ["up", "--remove-orphans"]
+        commands = ["up", "--detach", "--remove-orphans"]
+
+        self._call_compose(docker_compose_project, commands)
+
+    async def get_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
+        return self.execution_parameters
+
+    async def interact(self, bolt: Bolt, environment: Environment):
+        executable_artifacts = bolt.executable_artifacts
+        resource_providers, service_providers = await resolve_artifact_requirements(
+            self, environment, bolt, executable_artifacts
+        )
+
+        docker_compose_project = self.generate_docker_compose_project_from_bolt(
+            environment=environment,
+            bolt=bolt,
+            artifacts=executable_artifacts,
+            execution_parameters=execution_parameters,
+            resource_providers=resource_providers,
+            service_providers=service_providers,
+        )
+
+        # TODO: Move this so it's handled entirely by docker compose
+        artifact_resources: list[tuple[ArtifactReference, ResourceRequirement, Environment]] = []
+        for artifact in executable_artifacts:
+            artifact_reference = ArtifactReference(
+                project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
+            )
+
+            if artifact.execution and artifact.execution.requires.resources:
+                artifact_resources.extend(
+                    [(artifact_reference, r, environment) for r in artifact.execution.requires.resources]
+                )
+
+        if artifact_resources:
+            # We need to start the docker compose with only the "depends" profile so we can check resources
+            self._call_compose(docker_compose_project, ["--profile", "depend", "up", "--build"])
+
+            for artifact, project_resource_requirement, environment in artifact_resources:
+                provided_resource_with_artifact = await self.resolve_resource_requirement(
+                    environment, project_resource_requirement
+                )
+                requirement_model = provided_resource_with_artifact.provided_resource.get_requirements_model(
+                    provided_resource_with_artifact.artifact_reference.project_name
+                )
+                resource_requirement_data = project_resource_requirement.resource_requirement.model_dump()
+
+                resource_requirement = requirement_model.model_validate(resource_requirement_data)
+
+                await self._create_or_update_resource(
+                    environment, artifact, provided_resource_with_artifact, resource_requirement
+                )
+
+        commands = ["up", "--build", "--watch", "--remove-orphans"]
 
         self._call_compose(docker_compose_project, commands)
 
@@ -187,6 +240,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
     async def list_executable_artifacts(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
     ) -> list[ArtifactReference]:
@@ -194,17 +248,20 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             self._bolts, project_names=project_names, artifact_names=artifact_names
         )
 
-    async def list_projects(self, environments: Sequence[Environment]) -> list[Project]:
+    async def list_projects(
+        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
+    ) -> list[Project]:
         return []
 
     async def list_bolts(
-        self, environments: Sequence[Environment], project_names: Sequence[str] | None = None
+        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
     ) -> list[Bolt]:
         return BoltInspector.list_bolts(self._bolts, project_names=project_names)
 
     async def list_provided_resources(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
@@ -218,6 +275,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
     async def list_provided_services(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
@@ -231,6 +289,7 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
     async def list_resources(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
@@ -316,19 +375,17 @@ class DockerComposeInfrastructureAdapter(BaseDockerComposeInfrastructureAdapter)
             )
         )
 
-    async def teardown(
-        self,
-        bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
-        environment: Environment,
-        execution_parameters: ExecutionParameters,
-    ):
-        resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt, artifacts)
+    async def teardown(self, bolt: Bolt, environment: Environment):
+        executable_artifacts = bolt.executable_artifacts
+        resource_providers, service_providers = await resolve_artifact_requirements(
+            self, environment, bolt, executable_artifacts
+        )
 
+        execution_parameters = await self.get_execution_parameters(bolt, environment)
         docker_compose_project = self.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,
-            artifacts=artifacts,
+            artifacts=executable_artifacts,
             execution_parameters=execution_parameters,
             resource_providers=resource_providers,
             service_providers=service_providers,

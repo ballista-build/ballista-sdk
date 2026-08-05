@@ -4,7 +4,6 @@ from typing import Any, Literal
 
 from pydantic import BaseModel
 
-from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.adapters.primitives import (
     ArtifactReference,
     ProvidedResourceReference,
@@ -85,7 +84,9 @@ def generate_resource_setting_envfile_filename(
 
 
 @dataclass
-class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
+class DockerComposeInfrastructureGenerator:
+    """Generates docker compose projects."""
+
     def _add_envfile(self, service: DockerComposeService, filename: str, required: bool):
         """Add a list of BoundSettings to the Docker Compose Service being generated."""
 
@@ -262,6 +263,16 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
+            service_dns_name = provided_service.name.lower().replace("_", "-")
+            service_env_name = provided_service.name.upper().replace("-", "_")
+
+            env.update(
+                {
+                    f"{service_env_name}_HOST": service_dns_name,
+                    f"{service_env_name}_PORT": provided_service.grpc or provided_service.http or provided_service.tcp,
+                }
+            )
+
             # TODO: Add to env
 
         compose_service.depends_on = {key: {"condition": "service_healthy"} for key in depends_keys}
@@ -280,6 +291,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
             key = service.name.upper().replace("-", "_") + "_SERVICE"
             host = "localhost"
             path = "/"
+            secure = service.secure
             env[f"{key}_PORT"] = str(port_service)
 
             external_service_parameters = execution_parameters.external_services.get(service.name)
@@ -288,6 +300,9 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
 
                 if external_service_parameters.path:
                     path = external_service_parameters.path
+                if external_service_parameters.secure:
+                    # Only set when true; no insecure downgrading.
+                    secure = external_service_parameters.secure
 
                 network_name = f"external-{host}"
                 if network_name not in compose_service.networks:
@@ -302,6 +317,7 @@ class BaseDockerComposeInfrastructureAdapter(InfrastructureAdapter):
                 )
 
             env[f"{key}_HOST"] = host
+            env[f"{key}_SECURE"] = "true" if secure else "false"
             if service.http:
                 env[f"{key}_PATH"] = path
 

@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, Sequence
+
+from kubernetes.client.models import V1Deployment
 
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.adapters.primitives import (
@@ -16,6 +19,7 @@ from ballista_sdk.adapters.primitives import (
 from ballista_sdk.api.v1 import (
     ArtifactExecutionParameters,
     Bolt,
+    ComputeExecutionParameters,
     Environment,
     ExecutableArtifact,
     ExecutionParameters,
@@ -36,7 +40,7 @@ def generate_environment_labels(environment) -> KubernetesMetadataLabels:
     """Generate metadata labels for a specific Environment."""
 
     return {
-        "app.kubernetes.io/managed-by": primitives.METADATA_MANAGED_BY,
+        primitives.METADATA_LABEL_APP_MANAGED_BY: primitives.METADATA_MANAGED_BY,
         primitives.METADATA_LABEL_ENVIRONMENT: environment.name,
         primitives.METADATA_LABEL_ENVIRONMENT_TIER: str(environment.tier),
     }
@@ -48,8 +52,8 @@ def generate_artifact_metadata_labels(
     """Generate metadata labels for an ExecutableArtifact in a specific Environment."""
 
     return generate_environment_labels(environment) | {
-        "app.kubernetes.io/part-of": bolt.project,
-        "app.kubernetes.io/name": artifact.name,
+        primitives.METADATA_LABEL_APP_PART_OF: bolt.project,
+        primitives.METADATA_LABEL_APP_NAME: artifact.name,
     }
 
 
@@ -59,8 +63,8 @@ def generate_versioned_artifact_metadata_labels(
     """Generate metadata labels for an ExecutableArtifact and version in a specific Environment."""
 
     return generate_artifact_metadata_labels(environment, bolt, artifact) | {
-        "app.kubernetes.io/instance": f"{artifact.name}-{bolt.version}",
-        "app.kubernetes.io/version": bolt.version,
+        primitives.METADATA_LABEL_APP_INSTANCE: f"{artifact.name}-{bolt.version}",
+        primitives.METADATA_LABEL_APP_VERSION: bolt.version,
     }
 
 
@@ -72,8 +76,8 @@ def generate_artifact_selector_labels(
     return {
         # Environment configuration may not guarantee namespace separation, so its name is included.
         primitives.METADATA_LABEL_ENVIRONMENT: environment.name,
-        "app.kubernetes.io/part-of": bolt.project,
-        "app.kubernetes.io/name": artifact.name,
+        primitives.METADATA_LABEL_APP_PART_OF: bolt.project,
+        primitives.METADATA_LABEL_APP_NAME: artifact.name,
     }
 
 
@@ -140,6 +144,7 @@ class KubernetesResourcesGenerator(Protocol):
         environment: Environment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
+        execution_parameters: ExecutionParameters,
         artifact: ExecutableArtifact,
         artifact_execution_parameters: ArtifactExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -216,21 +221,18 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         environment: Environment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
         execution_parameters: ExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
         service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
     ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
         """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
 
-        if len(artifacts) == 0:
-            raise ValueError("No artifacts to generate resources.")
-
         artifact_resources = {
             artifact.name: self.generate_artifact_resources(
                 environment=environment,
                 environment_config=environment_config,
                 bolt=bolt,
+                execution_parameters=execution_parameters,
                 artifact=artifact,
                 artifact_execution_parameters=execution_parameters.params_for_artifact(
                     environment=environment, bolt=bolt, artifact=artifact
@@ -238,8 +240,11 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
                 resource_providers=resource_providers,
                 service_providers=service_providers,
             )
-            for artifact in artifacts
+            for artifact in bolt.executable_artifacts
         }
+
+        if len(artifact_resources) == 0:
+            raise ValueError("No artifacts to generate resources.")
 
         # Bolt resources
         k8s_resources: list[KubernetesResource] = []
@@ -250,6 +255,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         environment: Environment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
+        execution_parameters: ExecutionParameters,
         artifact: ExecutableArtifact,
         artifact_execution_parameters: ArtifactExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -265,6 +271,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
                 environment=environment,
                 environment_config=environment_config,
                 bolt=bolt,
+                execution_parameters=execution_parameters,
                 artifact=artifact,
                 artifact_execution_parameters=artifact_execution_parameters,
                 resource_providers=resource_providers,
@@ -307,6 +314,7 @@ def _generate_config_kubernetes_resources(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
+    execution_parameters: ExecutionParameters,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -321,6 +329,7 @@ def _generate_secrets_kubernetes_resources(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
+    execution_parameters: ExecutionParameters,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -392,6 +401,7 @@ def _generate_deployment(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
+    execution_parameters: ExecutionParameters,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -402,8 +412,7 @@ def _generate_deployment(
 
     metadata = generate_artifact_metadata(environment, environment_config, bolt, artifact)
 
-    env: list[dict] = []
-    env_from: list[dict] = []
+    env: OrderedDict[str, str] = OrderedDict()
 
     # Start PodSpec
     container: dict[str, Any] = {
@@ -472,18 +481,23 @@ def _generate_deployment(
         key = service.name.upper().replace("-", "_") + "_SERVICE"
         host = "localhost"
         path = "/"
+        secure = service.secure
         container["ports"] = container.get("ports", []) + [{"containerPort": service_port, "name": service.name}]
-        env.append({"name": f"{key}_PORT", "value": str(service_port)})
+        env[f"{key}_PORT"] = str(service_port)
 
         external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
         if external_service_parameters and external_service_parameters.host:
             host = external_service_parameters.host
             if external_service_parameters.path:
                 path = external_service_parameters.path
+            if external_service_parameters.secure:
+                # Only set this if true; no downgrading to insecure.
+                secure = external_service_parameters.secure
 
-        env.append({"name": f"{key}_HOST", "value": host})
+        env[f"{key}_HOST"] = host
+        env[f"{key}_SECURE"] = "true" if secure else "false"
         if service.http:
-            env.append({"name": f"{key}_PATH", "value": path})
+            env[f"{key}_PATH"] = path
 
     # Healthchecks; processed after Provided Services since they can refer to them
     if healthchecks := execution.provides.healthchecks:
@@ -495,9 +509,7 @@ def _generate_deployment(
             container["startupProbe"] = startup_probe
 
     if env:
-        container["env"] = env
-    if env_from:
-        container["envFrom"] = env_from
+        container["env"] = [{"name": key, "value": value} for key, value in env.items()]
 
     # TODO
     # securityContext
@@ -580,12 +592,17 @@ def _generate_deployment(
     ]
 
 
+def extract_compute_execution_parameters_from_deployment(deployment: V1Deployment) -> ComputeExecutionParameters:
+    return ComputeExecutionParameters()
+
+
 @KubernetesInfrastructureAdapter.add_generator
 def _generate_services(
     adapter: KubernetesInfrastructureAdapter,
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
+    execution_parameters: ExecutionParameters,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -647,6 +664,7 @@ def _generate_persistent_volume_claims(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
+    execution_parameters: ExecutionParameters,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
@@ -677,48 +695,66 @@ def _generate_ingresses(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
+    execution_parameters: ExecutionParameters,
     artifact: ExecutableArtifact,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
 ) -> list[KubernetesResource]:
-    hosts: dict[str, dict] = {}
+    resources: list[KubernetesResource] = []
+
     for service in artifact.execution.provides.services:
-        http_service_port = service.http or service.grpc
+        http_service_port = service.http
         if not http_service_port:
-            # Only do HTTP/GRPC service right now
+            # Only do HTTP service right now
             continue
 
         service_execution_parameters = artifact_execution_parameters.external_services.get(service.name)
         if service_execution_parameters is None:
             continue
 
-        path = {
-            "path": service_execution_parameters.path or "/",
-            "pathType": "Prefix",
-            "backend": {
-                "service": {
-                    "name": generate_artifact_kubernetes_name(environment, environment_config, bolt, artifact),
-                    "port": {"number": service_execution_parameters.port or http_service_port},
-                }
-            },
-        }
+        # Embed the
+        metadata = generate_artifact_metadata(environment, environment_config, bolt, artifact, service.name)
+        metadata["labels"][primitives.METADATA_LABEL_SERVICE] = service.name
+        if top_externalized_service_parameters := execution_parameters.external_services.get(
+            (environment.name, bolt.project, artifact.name, service.name)
+        ):
+            metadata["annotations"] = {
+                primitives.METADATA_ANNOTATION_EXTERNALIZED_SERVICE: top_externalized_service_parameters.model_dump_json(
+                    exclude_none=True
+                )
+            }
+        resources.append(
+            {
+                "apiVersion": "networking.k8s.io/v1",
+                "kind": "Ingress",
+                "metadata": metadata,
+                "spec": {
+                    "rules": [
+                        {
+                            "host": service_execution_parameters.host,
+                            "http": {
+                                "paths": [
+                                    {
+                                        "path": service_execution_parameters.path or "/",
+                                        "pathType": "Prefix",
+                                        "backend": {
+                                            "service": {
+                                                "name": generate_artifact_kubernetes_name(
+                                                    environment, environment_config, bolt, artifact, service.name
+                                                ),
+                                                "port": {
+                                                    "number": service_execution_parameters.port or http_service_port
+                                                },
+                                            }
+                                        },
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            }
+        )
 
-        host = service_execution_parameters.host
-        if host:
-            if host in hosts:
-                hosts[host]["http"]["paths"].append(path)
-            else:
-                hosts[host] = {"host": host, "http": {"paths": [path]}}
-
-    if not hosts:
-        return []
-
-    return [
-        {
-            "apiVersion": "networking.k8s.io/v1",
-            "kind": "Ingress",
-            "metadata": generate_artifact_metadata(environment, environment_config, bolt, artifact),
-            "spec": {"rules": list(hosts.values())},
-        }
-    ]
+    return resources

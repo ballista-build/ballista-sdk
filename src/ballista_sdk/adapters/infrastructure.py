@@ -47,15 +47,17 @@ class InfrastructureAdapter(Protocol):
         """Settings adapter specifically to manage Secrets."""
         ...
 
-    async def deploy(
-        self,
-        bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
-        environment: Environment,
-        execution_parameters: ExecutionParameters,
-    ):
-        """Deploy a Bolt and sequence of ExecutableArtifacts in the specified Environment with ExecutionParameters."""
+    async def deploy(self, bolt: Bolt, environment: Environment):
+        """Deploy a Bolt to the specified Environment."""
         ...
+
+    async def get_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
+        """Returns the ExecutionParameters that is used when deploying a specified Bolt and Environment."""
+        ...
+
+    async def interact(self, bolt: Bolt, environment: Environment):
+        """Start an interactive development session that automatically builds, deploys, and tears down the Bolt."""
+        raise Exception("Not implemented.")
 
     async def list_artifact_types(self, environments: Sequence[Environment]) -> Sequence[ArtifactType]:
         """List available ArtifactTypes in the specified Environment."""
@@ -64,18 +66,21 @@ class InfrastructureAdapter(Protocol):
     async def list_executable_artifacts(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
     ) -> Sequence[ArtifactReference]:
-        """List ExecutableArtifacts in the specified Environment."""
+        """List ExecutableArtifacts in the specified sequence of Environments."""
         ...
 
-    async def list_projects(self, environments: Sequence[Environment]) -> Sequence[Project]:
-        """List Projects that exist in the specified Environments."""
+    async def list_projects(
+        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
+    ) -> Sequence[Project]:
+        """List Projects that exist in the specified sequence of Environments."""
         ...
 
     async def list_bolts(
-        self, environments: Sequence[Environment], project_names: Sequence[str] | None = None
+        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
     ) -> Sequence[Bolt]:
         """List Bolts in the specified sequence of Environments."""
         ...
@@ -83,6 +88,7 @@ class InfrastructureAdapter(Protocol):
     async def list_provided_resources(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
@@ -93,16 +99,18 @@ class InfrastructureAdapter(Protocol):
     async def list_provided_services(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
     ) -> Iterable[ProvidedServiceWithArtifactReference]:
-        """List Services in the specified Environment."""
+        """List Services in the specified sequence of Environments."""
         ...
 
     async def list_resources(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
@@ -114,6 +122,7 @@ class InfrastructureAdapter(Protocol):
     async def list_services(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
@@ -137,23 +146,17 @@ class InfrastructureAdapter(Protocol):
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
     ) -> ProvidedResourceWithArtifactReference:
-        """Resolves a `ResourceRequirement` in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
+        """Resolves a `ResourceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedResource` with an ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
     async def resolve_service_requirement(
         self, environment: Environment, service_requirement: ServiceRequirement
     ) -> ProvidedServiceWithArtifactReference:
-        """Resolves a `ServiceRequirement` in the specified `Environment`, returning a Service with the providing ArtifactReference. Raises UnknownService if dependency cannot be met."""
+        """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an ArtifactReference. Raises UnknownService if dependency cannot be met."""
         ...
 
-    async def teardown(
-        self,
-        bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
-        environment: Environment,
-        execution_parameters: ExecutionParameters,
-    ):
-        """Teardown a running Bolt and sequence of ExecutableArtifacts in the specified Environment with ExecutionParameters."""
+    async def teardown(self, bolt: Bolt, environment: Environment):
+        """Teardown a running Bolt executing in the specified Environment."""
         ...
 
 
@@ -307,9 +310,14 @@ async def resolve_artifact_requirements(
             )
 
             if provided_resource_reference not in resource_providers:
-                resource_providers[provided_resource_reference] = await adapter.resolve_resource_requirement(
-                    environment, resource_requirement
-                )
+                # Attempt to resolve from the Bolt first.
+                try:
+                    resolution = BoltInspector.resolve_resource_requirement([bolt], resource_requirement)
+
+                except ProvidedResourceNotFound:
+                    resolution = await adapter.resolve_resource_requirement(environment, resource_requirement)
+
+                resource_providers[provided_resource_reference] = resolution
 
         for service_requirement in artifact.execution.requires.services:
             provided_service_reference = ProvidedServiceReference(
@@ -319,9 +327,14 @@ async def resolve_artifact_requirements(
             )
 
             if provided_service_reference not in service_providers:
-                service_providers[provided_service_reference] = await adapter.resolve_service_requirement(
-                    environment, service_requirement
-                )
+                # Attempt to resolve from the Bolt first.
+                try:
+                    resolution = BoltInspector.resolve_service_requirement([bolt], service_requirement)
+
+                except ProvidedServiceNotFound:
+                    resolution = await adapter.resolve_service_requirement(environment, service_requirement)
+
+                service_providers[provided_service_reference] = resolution
 
     return resource_providers, service_providers
 

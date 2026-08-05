@@ -2,9 +2,10 @@ from __future__ import annotations
 
 from collections.abc import Sequence
 from dataclasses import dataclass, field
-from typing import Literal, cast
+from typing import Literal
 
 from kubernetes import client, config, utils
+from pydantic import ValidationError
 
 from ballista_sdk.adapters.exceptions import ArtifactNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
 from ballista_sdk.adapters.infrastructure import BoltInspector, resolve_artifact_requirements
@@ -23,10 +24,11 @@ from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactType,
     Bolt,
+    DefaultExecutionParameters,
     Environment,
     EnvironmentTier,
-    ExecutableArtifact,
     ExecutionParameters,
+    ExternalizedServiceParameters,
     Project,
     ProvidedResource,
     ProvidedService,
@@ -70,20 +72,19 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     def secrets_adapter(self) -> KubernetesAPISecretsAdapter:
         return self._secrets_adapter
 
-    async def deploy(
-        self,
-        bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
-        environment: Environment,
-        execution_parameters: ExecutionParameters,
-    ):
-        resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt, artifacts)
+    async def deploy(self, bolt: Bolt, environment: Environment):
+        executable_artifacts = bolt.executable_artifacts
+        resource_providers, service_providers = await resolve_artifact_requirements(
+            self, environment, bolt, executable_artifacts
+        )
 
         environment_config = get_environment_config(environment)
 
+        execution_parameters = await self.determine_execution_parameters(bolt, environment)
+        raise Exception(execution_parameters)
+
         bolt_resources, all_artifact_resources = self.generate_bolt_resources(
             bolt=bolt,
-            artifacts=artifacts,
             environment=environment,
             environment_config=environment_config,
             execution_parameters=execution_parameters,
@@ -106,6 +107,102 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                 for resource in artifact_resources
             ]
 
+    async def determine_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
+        api_client = get_kubernetes_client(environment)
+        corev1_api = client.CoreV1Api(api_client=api_client)
+        appsv1_api = client.AppsV1Api(api_client=api_client)
+        networkingv1_api = client.NetworkingV1Api(api_client=api_client)
+
+        # Get initial from somewhere
+        initial = DefaultExecutionParameters()
+        execution_parameters = ExecutionParameters(initial=initial)
+
+        environment_label_selector = ",".join(
+            [
+                f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+                f"{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}",
+                f"{primitives.METADATA_LABEL_ENVIRONMENT_TIER}={environment.tier}",
+            ]
+        )
+
+        # Environment parameters are on namespaces
+        namespace_response = corev1_api.list_namespace(label_selector=environment_label_selector)
+        for namespace in namespace_response.items:
+            if not namespace.metadata or not namespace.metadata.labels or not namespace.metadata.annotations:
+                continue
+
+            metadata_labels = namespace.metadata.labels
+            environment_name = metadata_labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
+            annotation = namespace.metadata.annotations.get(primitives.METADATA_ANNOTATION_DEFAULT_EXECUTION_PARAMETERS)
+            if not environment_name or not annotation:
+                continue
+
+            try:
+                default_execution_parameters = DefaultExecutionParameters.model_validate_json(annotation)
+                execution_parameters.environments[environment_name] = default_execution_parameters
+            except ValidationError:
+                pass
+
+        project_label_selector = ",".join(
+            [environment_label_selector, f"{primitives.METADATA_LABEL_APP_PART_OF}={bolt.project}"]
+        )
+
+        # TODO: Nothing for Project parameters
+
+        # Artifact parameters are on Deployments
+        deployment_response = appsv1_api.list_deployment_for_all_namespaces(
+            label_selector=f"{project_label_selector},{primitives.METADATA_LABEL_APP_NAME}"
+        )
+        for deployment in deployment_response.items:
+            if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                continue
+
+            metadata_labels = deployment.metadata.labels
+            environment_name = metadata_labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
+            project_name = metadata_labels.get(primitives.METADATA_LABEL_APP_PART_OF)
+            artifact_name = metadata_labels.get(primitives.METADATA_LABEL_APP_NAME)
+            annotation = deployment.metadata.annotations.get(
+                primitives.METADATA_ANNOTATION_DEFAULT_EXECUTION_PARAMETERS
+            )
+            if not environment_name or not project_name or not artifact_name or not annotation:
+                continue
+
+            try:
+                default_execution_parameters = DefaultExecutionParameters.model_validate_json(annotation)
+                execution_parameters.artifacts[(environment_name, project_name, artifact_name)] = (
+                    default_execution_parameters
+                )
+            except ValidationError:
+                pass
+
+        # List all ingresses with the appropriate labels
+        ingress_response = networkingv1_api.list_ingress_for_all_namespaces(
+            label_selector=f"{project_label_selector},{primitives.METADATA_LABEL_APP_NAME}"
+        )
+        for ingress in ingress_response.items:
+            if not ingress.metadata or not ingress.metadata.labels or not ingress.metadata.annotations:
+                continue
+
+            metadata_labels = ingress.metadata.labels
+            environment_name = metadata_labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
+            project_name = metadata_labels.get(primitives.METADATA_LABEL_APP_PART_OF)
+            artifact_name = metadata_labels.get(primitives.METADATA_LABEL_APP_NAME)
+            service_name = metadata_labels.get(primitives.METADATA_LABEL_SERVICE)
+            annotation = ingress.metadata.annotations.get(primitives.METADATA_ANNOTATION_EXTERNALIZED_SERVICE)
+            if not environment_name or not project_name or not artifact_name or not service_name or not annotation:
+                continue
+
+            try:
+                externalized_service = ExternalizedServiceParameters.model_validate_json(annotation)
+                execution_parameters.external_services[
+                    (environment_name, project_name, artifact_name, service_name)
+                ] = externalized_service
+            except ValidationError:
+                pass
+
+        # Volumes are stuffed in ???
+        return execution_parameters
+
     async def list_artifact_types(self, environments: Sequence[Environment]) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
 
@@ -122,26 +219,29 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     async def list_environments(self) -> list[Environment]:
         environments = []
         # Use the current kubeconfig context
-        _, context = config.list_kube_config_contexts()
+        _, current_context = config.list_kube_config_contexts()
 
-        if context:
-            api_client = config.new_client_from_config(context=context["name"])
+        if current_context:
+            api_client = config.new_client_from_config(context=current_context["name"])
 
-            # TODO: We don't have an Environment type, so use Namespace with labels for now.
-            corev1_api = client.CoreV1Api(api_client=api_client)
-            ballista_namespaces = corev1_api.list_namespace(
-                label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}"
-            )
+            with api_client:
+                # TODO: We don't have an Environment type, so use Namespace with labels for now.
+                corev1_api = client.CoreV1Api(api_client=api_client)
+                namespace_response = corev1_api.list_namespace(
+                    label_selector=f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}",
+                )
 
-            environments.extend(
-                [
-                    Environment(
-                        name=n.metadata.name,
-                        tier=EnvironmentTier(n.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)),
-                    )
-                    for n in ballista_namespaces.items
-                ]
-            )
+                for namespace in namespace_response.items:
+                    if not namespace.metadata or not namespace.metadata.labels:
+                        continue
+
+                    environment_name = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
+                    environment_tier = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)
+
+                    if not environment_name or not environment_tier:
+                        continue
+
+                    environments.append(Environment(name=environment_name, tier=EnvironmentTier(environment_tier)))
 
         return environments
 
@@ -158,15 +258,15 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         executable_artifacts = []
         labels = [
-            f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
             f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
             primitives.METADATA_LABEL_RESOURCE,
         ]
 
         if project_names:
-            labels.append(f"app.kubernetes.io/part-of in ({','.join(project_names)})")
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
         if artifact_names:
-            labels.append(f"app.kubernetes.io/name in ({','.join(artifact_names)})")
+            labels.append(f"{primitives.METADATA_LABEL_APP_NAME} in ({','.join(artifact_names)})")
 
         for environment in environments:
             api_client = get_kubernetes_client(environment)
@@ -176,18 +276,20 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
 
             for deployment in deployments.items:
-                metadata_labels = deployment.metadata.labels
-                executable_artifacts.append(
-                    ArtifactReference(
-                        project_name=metadata_labels["app.kubernetes.io/part-of"],
-                        artifact_name=metadata_labels["app.kubernetes.io/name"],
-                        version=metadata_labels["app.kubernetes.io/version"],
-                    )
-                )
+                if not deployment.metadata or not deployment.metadata.labels:
+                    continue
+
+                artifact_reference = _get_artifact_reference_from_metadata(deployment.metadata)
+                if not artifact_reference:
+                    continue
+
+                executable_artifacts.append(artifact_reference)
 
         return executable_artifacts
 
-    async def list_projects(self, environments: Sequence[Environment]) -> list[Project]:
+    async def list_projects(
+        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
+    ) -> list[Project]:
         if self._bolts:
             return BoltInspector.list_projects(self._bolts)
 
@@ -198,18 +300,27 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             # 1:1 ExecutableArtifact:Deployment
             api = client.AppsV1Api(api_client)
             deployments = api.list_deployment_for_all_namespaces(
-                label_selector=f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}"
+                label_selector=f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}"
             )
 
             for deployment in deployments.items:
+                if not deployment.metadata or not deployment.metadata.labels:
+                    continue
+
                 metadata_labels = deployment.metadata.labels
-                projects.add(Project(name=metadata_labels["app.kubernetes.io/part-of"]))
+                project_name = metadata_labels.get(primitives.METADATA_LABEL_APP_PART_OF)
+
+                if not project_name:
+                    continue
+
+                projects.add(Project(name=project_name))
 
         return list(projects)
 
     async def list_provided_resources(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
@@ -224,14 +335,14 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         resources = []
 
         labels = [
-            f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
             f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
         ]
 
         if project_names:
-            labels.append(f"app.kubernetes.io/part-of in ({','.join(project_names)})")
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
         if artifact_names:
-            labels.append(f"app.kubernetes.io/name in ({','.join(artifact_names)})")
+            labels.append(f"{primitives.METADATA_LABEL_APP_NAME} in ({','.join(artifact_names)})")
         if resource_names:
             # Use label selector for resource names
             labels.append(f"{primitives.METADATA_LABEL_RESOURCE} in ({','.join(resource_names)})")
@@ -244,30 +355,30 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             api = client.AppsV1Api(api_client)
 
             for deployment in api.list_deployment_for_all_namespaces(label_selector=",".join(labels)).items:
-                metadata = cast(client.models.V1ObjectMeta, deployment.metadata)
-                metadata_labels = cast(dict[str, str], metadata.labels)
-                provided_resource_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_RESOURCE)
-                if provided_resource_json is not None:
-                    try:
-                        provided_resource = ProvidedResource.model_validate_json(provided_resource_json)
-                        ref = ProvidedResourceWithArtifactReference(
-                            provided_resource=provided_resource,
-                            artifact_reference=ArtifactReference(
-                                project_name=metadata_labels["app.kubernetes.io/part-of"],
-                                artifact_name=metadata_labels["app.kubernetes.io/name"],
-                                version=metadata_labels["app.kubernetes.io/version"],
-                            ),
-                        )
-                        resources.append(ref)
+                if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                    continue
 
-                    except Exception as e:
-                        print(e)
+                artifact_reference = _get_artifact_reference_from_metadata(deployment.metadata)
+                annotation = deployment.metadata.annotations.get(primitives.METADATA_ANNOTATION_SERVICE)
+                if not artifact_reference or not annotation:
+                    continue
+
+                try:
+                    provided_resource = ProvidedResource.model_validate_json(annotation)
+                    resources.append(
+                        ProvidedResourceWithArtifactReference(
+                            provided_resource=provided_resource, artifact_reference=artifact_reference
+                        )
+                    )
+                except ValidationError:
+                    pass
 
         return resources
 
     async def list_provided_services(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
@@ -281,14 +392,14 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         services = []
 
         labels = [
-            f"app.kubernetes.io/managed-by={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
             f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
         ]
 
         if project_names:
-            labels.append(f"app.kubernetes.io/part-of in ({','.join(project_names)})")
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
         if artifact_names:
-            labels.append(f"app.kubernetes.io/name in ({','.join(artifact_names)})")
+            labels.append(f"{primitives.METADATA_LABEL_APP_NAME} in ({','.join(artifact_names)})")
         if service_names:
             labels.append(f"{primitives.METADATA_LABEL_SERVICE} in ({','.join(service_names)})")
         else:
@@ -299,30 +410,30 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             api = client.CoreV1Api(api_client)
 
             for service in api.list_service_for_all_namespaces(label_selector=",".join(labels)).items:
-                metadata = cast(client.models.V1ObjectMeta, service.metadata)
-                metadata_labels = cast(dict[str, str], metadata.labels)
-                provided_service_json = metadata.annotations.get(primitives.METADATA_ANNOTATION_SERVICE)
-                if provided_service_json is not None:
-                    try:
-                        provided_service = ProvidedService.model_validate_json(provided_service_json)
-                        ref = ProvidedServiceWithArtifactReference(
-                            provided_service=provided_service,
-                            artifact_reference=ArtifactReference(
-                                project_name=metadata_labels["app.kubernetes.io/part-of"],
-                                artifact_name=metadata_labels["app.kubernetes.io/name"],
-                                version=metadata_labels["app.kubernetes.io/version"],
-                            ),
-                        )
-                        services.append(ref)
+                if not service.metadata or not service.metadata.labels or not service.metadata.annotations:
+                    continue
 
-                    except Exception as e:
-                        print(e)
+                artifact_reference = _get_artifact_reference_from_metadata(service.metadata)
+                annotation = service.metadata.annotations.get(primitives.METADATA_ANNOTATION_SERVICE)
+                if not artifact_reference or not annotation:
+                    continue
+
+                try:
+                    provided_service = ProvidedService.model_validate_json(annotation)
+                    services.append(
+                        ProvidedServiceWithArtifactReference(
+                            provided_service=provided_service, artifact_reference=artifact_reference
+                        )
+                    )
+                except ValidationError:
+                    pass
 
         return services
 
     async def list_resources(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
@@ -333,6 +444,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     async def list_services(
         self,
         environments: Sequence[Environment],
+        *,
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
@@ -436,13 +548,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             )
         )
 
-    async def teardown(
-        self,
-        bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
-        environment: Environment,
-        execution_parameters: ExecutionParameters,
-    ):
+    async def teardown(self, bolt: Bolt, environment: Environment):
         pass
 
     def _ensure_namespace_exists(self, environment: Environment, api_client, namespace: str):
@@ -453,7 +559,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         labels = generate_environment_labels(environment)
 
         try:
-            existing_namespace = cast(client.V1Namespace, api.read_namespace(namespace))
+            existing_namespace = api.read_namespace(namespace)
 
         except client.ApiException:
             api.create_namespace(
@@ -467,6 +573,17 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         else:
             # Update labels
-            existing_metadata = cast(client.V1ObjectMeta, existing_namespace.metadata)
+            existing_metadata = existing_namespace.metadata or client.V1ObjectMeta()
+            existing_metadata.labels = existing_metadata.labels or {}
             existing_metadata.labels.update(labels)
             api.patch_namespace(namespace, client.V1Namespace(metadata=existing_metadata))
+
+
+def _get_artifact_reference_from_metadata(metadata: client.V1ObjectMeta) -> ArtifactReference | None:
+    if labels := metadata.labels:
+        project_name = labels.get(primitives.METADATA_LABEL_APP_PART_OF)
+        artifact_name = labels.get(primitives.METADATA_LABEL_APP_NAME)
+        version = labels.get(primitives.METADATA_LABEL_APP_VERSION)
+
+        if project_name and artifact_name and version:
+            return ArtifactReference(project_name=project_name, artifact_name=artifact_name, version=version)

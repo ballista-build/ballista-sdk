@@ -17,13 +17,12 @@ classifiers = [
 ]
 dependencies = [
     "aiohttp>=3.13.5",
-    "kubernetes>=32.0",
+    "kubernetes>=36.0,<37.0",
     "openapi-pydantic>=0.5.1",
     "pydantic>=2",
     "python-dotenv>=1.2.1",
     "pyyaml>=6.0",
     "semver>=3.0",
-    "ty>=0.0.1a32",
     "urllib3>=1.25,<3.0.0",
 ]
 
@@ -41,8 +40,8 @@ dev = [
     { include-group = "coverage" },
     "ruff",
     "ty",
-    "kubernetes-typed[client]>=18.20.2",
     "fastapi",
+    "kubernetes-stubs-elephant-fork>=36.0,<37.0",
 ]
 
 [build-system]

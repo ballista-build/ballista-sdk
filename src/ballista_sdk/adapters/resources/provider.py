@@ -118,7 +118,7 @@ class ResourceProvider[ResourceProviderResourceRequirement: ResourceRequirement]
         environment: Environment,
         artifact: ArtifactReference,
         resource_requirement: ResourceProviderResourceRequirement,
-    ) -> ResourceAccess | None:
+    ) -> ResourceAccess:
         """Get artifact's access level to resource. If no access, returns `None`.
 
         :raises ResourceNotFound: Resource could not be found to check access.
