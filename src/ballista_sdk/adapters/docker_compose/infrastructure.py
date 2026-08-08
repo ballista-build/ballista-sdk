@@ -136,6 +136,8 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             self, environment, bolt, executable_artifacts
         )
 
+        execution_parameters = await self.get_execution_parameters(bolt, environment)
+
         docker_compose_project = self.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,

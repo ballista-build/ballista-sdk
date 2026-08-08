@@ -204,6 +204,9 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         # Volumes are stuffed in ???
         return execution_parameters
 
+    async def interact(self, bolt: Bolt, environment: Environment):
+        raise NotImplementedError("No interactive session support.")
+
     async def list_artifact_types(self, environments: Sequence[Environment]) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
 

@@ -160,14 +160,13 @@ class DockerComposeInfrastructureGenerator:
                 service_providers=service_providers,
             )
 
-            if artifact.execution.provides.services:
-                for service in artifact.execution.provides.services:
-                    external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
-                    if external_service_parameters and external_service_parameters.host is not None:
-                        network_name = f"external-{external_service_parameters.host}"
+            for service in artifact.execution.provides.services:
+                external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
+                if external_service_parameters and external_service_parameters.host is not None:
+                    network_name = f"external-{external_service_parameters.host}"
 
-                        if network_name not in compose_project.networks:
-                            compose_project.networks = compose_project.networks | {network_name: {"name": network_name}}
+                    if network_name not in compose_project.networks:
+                        compose_project.networks = compose_project.networks | {network_name: {"name": network_name}}
 
             compose_project.services[artifact_ref_name] = compose_service
 
