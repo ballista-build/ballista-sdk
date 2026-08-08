@@ -84,6 +84,7 @@ def simple_bolt_resources():
                                     "env": [
                                         {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                         {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
+                                        {"name": "HTTP_SERVICE_SECURE", "value": "false"},
                                         {"name": "HTTP_SERVICE_PATH", "value": "/"},
                                     ],
                                     "envFrom": [
@@ -190,8 +191,9 @@ def simple_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "http",
                     },
-                    "name": "simple-api",
+                    "name": "simple-api-http",
                     "namespace": "test",
                 },
                 "spec": {
@@ -201,7 +203,7 @@ def simple_bolt_resources():
                             "http": {
                                 "paths": [
                                     {
-                                        "backend": {"service": {"name": "simple-api", "port": {"number": 80}}},
+                                        "backend": {"service": {"name": "simple-api-http", "port": {"number": 80}}},
                                         "path": "/",
                                         "pathType": "Prefix",
                                     }
@@ -275,6 +277,7 @@ def project_bolt_resources():
                                             "name": "RESOURCE_PROVIDERS_SERVICE_HOST",
                                             "value": "test.ballista.build",
                                         },
+                                        {"name": "RESOURCE_PROVIDERS_SERVICE_SECURE", "value": "false"},
                                         {"name": "RESOURCE_PROVIDERS_SERVICE_PATH", "value": "/"},
                                     ],
                                     "image": "hello-world:latest",
@@ -331,8 +334,9 @@ def project_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "resource-providers",
                     },
-                    "name": "project-resource-providers",
+                    "name": "project-resource-providers-resource-providers",
                     "namespace": "test",
                 },
                 "spec": {
@@ -343,7 +347,10 @@ def project_bolt_resources():
                                 "paths": [
                                     {
                                         "backend": {
-                                            "service": {"name": "project-resource-providers", "port": {"number": 80}}
+                                            "service": {
+                                                "name": "project-resource-providers-resource-providers",
+                                                "port": {"number": 80},
+                                            }
                                         },
                                         "path": "/",
                                         "pathType": "Prefix",
@@ -358,7 +365,7 @@ def project_bolt_resources():
     }
 
 
-@pytest.mark.unit
+@pytest.mark.integration
 async def test_generate_resources(
     request,
     bolt: Bolt,

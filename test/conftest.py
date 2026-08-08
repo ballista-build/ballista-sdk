@@ -241,7 +241,7 @@ def postgres_bolt() -> Bolt:
     )
 
     return Bolt(
-        api_version="v1", artifacts=[server_artifact, resource_providers_artifact], project="postgres", version="18.1.0"
+        api_version="v1", artifacts=[server_artifact, resource_providers_artifact], project="postgres", version="18.1"
     )
 
 

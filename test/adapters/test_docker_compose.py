@@ -38,6 +38,7 @@ def simple_docker_compose_project():
                 environment={
                     "HTTP_SERVICE_HOST": "test.ballista.build",
                     "HTTP_SERVICE_PATH": "/",
+                    "HTTP_SERVICE_SECURE": "false",
                     "HTTP_SERVICE_PORT": "80",
                 },
                 env_file=[
@@ -92,6 +93,7 @@ def project_docker_compose_project():
                 environment={
                     "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
                     "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
+                    "RESOURCE_PROVIDERS_SERVICE_SECURE": "false",
                     "RESOURCE_PROVIDERS_SERVICE_PORT": "80",
                 },
                 image="hello-world:latest",

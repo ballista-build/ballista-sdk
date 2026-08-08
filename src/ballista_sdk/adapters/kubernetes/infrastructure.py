@@ -5,6 +5,7 @@ from dataclasses import dataclass, field
 from typing import Literal
 
 from kubernetes import client, config, utils
+from kubernetes.client.exceptions import ApiException
 from pydantic import ValidationError
 
 from ballista_sdk.adapters.exceptions import ArtifactNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
@@ -359,7 +360,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                     continue
 
                 artifact_reference = _get_artifact_reference_from_metadata(deployment.metadata)
-                annotation = deployment.metadata.annotations.get(primitives.METADATA_ANNOTATION_SERVICE)
+                annotation = deployment.metadata.annotations.get(primitives.METADATA_ANNOTATION_RESOURCE)
                 if not artifact_reference or not annotation:
                     continue
 
@@ -382,7 +383,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
-    ) -> list:
+        service_types: Sequence[ServiceType] | None = None,
+    ) -> list[ProvidedServiceWithArtifactReference]:
         if self._bolts:
             return BoltInspector.list_provided_services(
                 self._bolts, project_names=project_names, artifact_names=artifact_names, service_names=service_names
@@ -438,7 +440,15 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
         resource_statuses: Sequence[ResourceStatus] | None = None,
-    ) -> list:
+    ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
+        if self._bolts:
+            return BoltInspector.list_resources(
+                self._bolts,
+                project_names=project_names,
+                artifact_names=artifact_names,
+                resource_names=resource_names,
+                resource_statuses=resource_statuses,
+            )
         return []
 
     async def list_services(
@@ -449,7 +459,12 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
         service_types: Sequence[ServiceType] | None = None,
-    ) -> list:
+    ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
+        if self._bolts:
+            return BoltInspector.list_services(
+                self._bolts, project_names=project_names, artifact_names=artifact_names, service_names=service_names
+            )
+
         return []
 
     async def resolve_artifact_reference(
@@ -460,42 +475,6 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         # TODO: Do this when the bolts are stored
         raise ArtifactNotFound(artifact_reference)
-
-    async def resolve_resource_provider_transport(
-        self,
-        environment: Environment,
-        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
-        bolt: Bolt | None = None,
-    ) -> ResourceProviderTransport:
-        resource = provided_resource_with_artifact.provided_resource
-
-        if resource.transport:
-            artifact_reference = provided_resource_with_artifact.artifact_reference
-            bolt, artifact = await self.resolve_artifact_reference(environment, artifact_reference)
-
-            if rest_transport := resource.transport.rest:
-                port = None
-
-                if artifact.execution and artifact.execution.provides:
-                    for service in artifact.execution.provides.services:
-                        if service.name == rest_transport.service and service.http:
-                            port = service.http
-                            break
-
-                if port is None:
-                    raise ValueError("BAD SERVICE REFERENCE")
-
-                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
-
-                return RESTResourceProviderTransport(
-                    ProvidedResourceReference(
-                        project_name=artifact_reference.project_name,
-                        resource_name=resource.name,
-                    ),
-                    f"{ref_name}:{port}{rest_transport.path}",
-                )
-
-        raise ValueError()
 
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
@@ -551,6 +530,42 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     async def teardown(self, bolt: Bolt, environment: Environment):
         pass
 
+    async def transport_resource_provider(
+        self,
+        environment: Environment,
+        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+        bolt: Bolt | None = None,
+    ) -> ResourceProviderTransport:
+        resource = provided_resource_with_artifact.provided_resource
+
+        if resource.transport:
+            artifact_reference = provided_resource_with_artifact.artifact_reference
+            bolt, artifact = await self.resolve_artifact_reference(environment, artifact_reference)
+
+            if rest_transport := resource.transport.rest:
+                port = None
+
+                if artifact.execution and artifact.execution.provides:
+                    for service in artifact.execution.provides.services:
+                        if service.name == rest_transport.service and service.http:
+                            port = service.http
+                            break
+
+                if port is None:
+                    raise ValueError("BAD SERVICE REFERENCE")
+
+                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
+
+                return RESTResourceProviderTransport(
+                    ProvidedResourceReference(
+                        project_name=artifact_reference.project_name,
+                        resource_name=resource.name,
+                    ),
+                    f"{ref_name}:{port}{rest_transport.path}",
+                )
+
+        raise ValueError()
+
     def _ensure_namespace_exists(self, environment: Environment, api_client, namespace: str):
         """Ensure the specified Environment has a properly setup Kubernetes Namespace."""
 
@@ -561,7 +576,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         try:
             existing_namespace = api.read_namespace(namespace)
 
-        except client.ApiException:
+        except ApiException:
             api.create_namespace(
                 client.V1Namespace(
                     metadata=client.V1ObjectMeta(

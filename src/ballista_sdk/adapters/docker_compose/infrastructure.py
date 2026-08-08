@@ -40,6 +40,7 @@ from ballista_sdk.api.v1 import (
     ResourceRequirement,
     ResourceStatus,
     ServiceRequirement,
+    ServiceType,
 )
 
 from .generation import DockerComposeInfrastructureGenerator, DockerComposeProject
@@ -48,7 +49,7 @@ from .settings import DockerComposeSettingsAdapter
 
 @dataclass
 class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInfrastructureGenerator):
-    execution_parameters: ExecutionParameters
+    execution_parameters: ExecutionParameters = field(default_factory=ExecutionParameters)
     _bolts: list[Bolt] = field(default_factory=list)
     _settings_adapter: DockerComposeSettingsAdapter = field(default_factory=DockerComposeSettingsAdapter, init=False)
 
@@ -190,7 +191,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         resource_requirement,
     ):
         try:
-            transport = await self.resolve_resource_provider_transport(environment, provided_resource_with_artifact)
+            transport = await self.transport_resource_provider(environment, provided_resource_with_artifact)
         except Exception:
             raise
 
@@ -248,15 +249,15 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             self._bolts, project_names=project_names, artifact_names=artifact_names
         )
 
-    async def list_projects(
-        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
-    ) -> list[Project]:
-        return []
-
     async def list_bolts(
         self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
     ) -> list[Bolt]:
         return BoltInspector.list_bolts(self._bolts, project_names=project_names)
+
+    async def list_projects(
+        self, environments: Sequence[Environment], *, project_names: Sequence[str] | None = None
+    ) -> list[Project]:
+        return BoltInspector.list_projects(self._bolts, project_names=project_names)
 
     async def list_provided_resources(
         self,
@@ -279,6 +280,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         project_names: Sequence[str] | None = None,
         artifact_names: Sequence[str] | None = None,
         service_names: Sequence[str] | None = None,
+        service_types: Sequence[ServiceType] | None = None,
     ) -> list[ProvidedServiceWithArtifactReference]:
         """List Provided Services with a providing ArtifactReference in the specified Environment."""
 
@@ -294,44 +296,37 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         artifact_names: Sequence[str] | None = None,
         resource_names: Sequence[str] | None = None,
         resource_statuses: Sequence[ResourceStatus] | None = None,
-    ):
+    ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
         """List Resources in specified Environment."""
-        return []
+        return BoltInspector.list_resources(
+            self._bolts,
+            project_names=project_names,
+            artifact_names=artifact_names,
+            resource_names=resource_names,
+            resource_statuses=resource_statuses,
+        )
+
+    async def list_services(
+        self,
+        environments: Sequence[Environment],
+        *,
+        project_names: Sequence[str] | None = None,
+        artifact_names: Sequence[str] | None = None,
+        service_names: Sequence[str] | None = None,
+        service_types: Sequence[ServiceType] | None = None,
+    ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
+        return BoltInspector.list_services(
+            self._bolts,
+            project_names=project_names,
+            artifact_names=artifact_names,
+            service_names=service_names,
+            service_types=service_types,
+        )
 
     async def resolve_artifact_reference(
         self, environment: Environment, artifact_reference: ArtifactReference
     ) -> tuple[Bolt, Artifact]:
         return BoltInspector.resolve_artifact_reference(self._bolts, artifact_reference)
-
-    async def resolve_resource_provider_transport(
-        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
-    ) -> ResourceProviderTransport:
-        resource = provided_resource_with_artifact.provided_resource
-
-        if resource.transport:
-            artifact_reference = provided_resource_with_artifact.artifact_reference
-            bolt, artifact = await self.resolve_artifact_reference(environment, artifact_reference)
-
-            if rest_transport := resource.transport.rest:
-                port = None
-
-                if artifact.execution and artifact.execution.provides:
-                    for service in artifact.execution.provides.services:
-                        if service.name == rest_transport.service and service.http:
-                            port = service.http
-                            break
-
-                if port is None:
-                    raise ValueError("BAD SERVICE REFERENCE")
-
-                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
-
-                return RESTResourceProviderTransport(
-                    ProvidedResourceReference(artifact_reference.project_name, resource.name),
-                    f"http://{ref_name}:{port}{rest_transport.path}",
-                )
-
-        raise ValueError()
 
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
@@ -392,3 +387,33 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         )
 
         self._call_compose(docker_compose_project, ["down"])
+
+    async def transport_resource_provider(
+        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+    ) -> ResourceProviderTransport:
+        resource = provided_resource_with_artifact.provided_resource
+
+        if resource.transport:
+            artifact_reference = provided_resource_with_artifact.artifact_reference
+            bolt, artifact = await self.resolve_artifact_reference(environment, artifact_reference)
+
+            if rest_transport := resource.transport.rest:
+                port = None
+
+                if artifact.execution and artifact.execution.provides:
+                    for service in artifact.execution.provides.services:
+                        if service.name == rest_transport.service and service.http:
+                            port = service.http
+                            break
+
+                if port is None:
+                    raise ValueError("BAD SERVICE REFERENCE")
+
+                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
+
+                return RESTResourceProviderTransport(
+                    ProvidedResourceReference(artifact_reference.project_name, resource.name),
+                    f"http://{ref_name}:{port}{rest_transport.path}",
+                )
+
+        raise ValueError()

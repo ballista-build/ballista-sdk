@@ -13,7 +13,7 @@ def docker_compose_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
 
 @pytest.fixture(scope="session")
 def kubernetes_api_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
-    return KubernetesAPIInfrastructureAdapter(_bolts=fake_bolts)
+    return KubernetesAPIInfrastructureAdapter()
 
 
 @pytest.fixture(

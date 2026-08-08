@@ -108,7 +108,7 @@ class DefaultExecutionParameters(BaseModel, frozen=True):
 class ExecutionParameters(BaseModel, frozen=True):
     """Parameters for executing ExecutableArtifacts across all environments and projects."""
 
-    initial: DefaultExecutionParameters
+    initial: DefaultExecutionParameters = Field(default_factory=DefaultExecutionParameters)
     environments: dict[str, DefaultExecutionParameters] = {}
     projects: dict[tuple[str, str], DefaultExecutionParameters] = {}
     artifacts: dict[tuple[str, str, str], DefaultExecutionParameters] = {}
