@@ -433,11 +433,11 @@ def _generate_deployment(
     pod_resources = {"requests": {}, "limits": {}}
     compute_parameters = artifact_execution_parameters.compute
     if compute_parameters.min_cpu:
-        pod_resources["requests"]["cpu"] = f"{compute_parameters.min_cpu}G"
+        pod_resources["requests"]["cpu"] = f"{int(round(compute_parameters.min_cpu, 3) * 1000)}m"
     if compute_parameters.min_memory:
         pod_resources["requests"]["memory"] = f"{compute_parameters.min_memory}Gi"
     if compute_parameters.max_cpu:
-        pod_resources["limits"]["cpu"] = f"{compute_parameters.max_cpu}G"
+        pod_resources["limits"]["cpu"] = f"{int(round(compute_parameters.max_cpu, 3 * 1000))}m"
     if compute_parameters.max_memory:
         pod_resources["limits"]["memory"] = f"{compute_parameters.max_memory}Gi"
 

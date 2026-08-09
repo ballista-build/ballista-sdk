@@ -109,7 +109,7 @@ def simple_bolt_resources():
                                         "limits": {
                                             "memory": "1.0Gi",
                                         },
-                                        "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
+                                        "requests": {"cpu": "250m", "memory": "0.1Gi"},
                                     },
                                     "volumeMounts": [
                                         {
@@ -287,7 +287,7 @@ def project_bolt_resources():
                                         "limits": {
                                             "memory": "1.0Gi",
                                         },
-                                        "requests": {"cpu": "0.25G", "memory": "0.1Gi"},
+                                        "requests": {"cpu": "250m", "memory": "0.1Gi"},
                                     },
                                 }
                             ],
