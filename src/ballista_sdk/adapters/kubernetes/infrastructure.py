@@ -88,7 +88,6 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         environment_config = get_environment_config(environment)
 
         execution_parameters = await self.determine_execution_parameters(bolt, environment)
-        raise Exception(execution_parameters)
 
         bolt_resources, all_artifact_resources = self.generate_bolt_resources(
             bolt=bolt,
@@ -99,7 +98,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             service_providers=service_providers,
         )
 
-        api_client = self._get_api_client(environment)
+        api_client = await self._get_api_client(environment)
 
         namespace = generate_bolt_kubernetes_namespace(environment, environment_config, bolt)
 
@@ -222,20 +221,10 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         buildable: bool | None = None,
         executable: bool | None = None,
     ) -> list[ArtifactReference]:
-        if self._bolts:
-            return BoltInspector.list_artifacts(
-                self._bolts,
-                project_names=project_names,
-                artifact_names=artifact_names,
-                buildable=buildable,
-                executable=executable,
-            )
-
         artifacts = []
         labels = [
             f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
             f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
-            primitives.METADATA_LABEL_RESOURCE,
         ]
 
         if project_names:
@@ -618,7 +607,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         raise ValueError()
 
-    def _ensure_namespace_exists(self, environment: Environment, api_client, namespace: str):
+    def _ensure_namespace_exists(self, environment: Environment, api_client: ApiClient, namespace: str):
         """Ensure the specified Environment has a properly setup Kubernetes Namespace."""
 
         api = client.CoreV1Api(api_client)

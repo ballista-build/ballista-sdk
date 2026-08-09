@@ -7,7 +7,6 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, Sequence
 
 from kubernetes.client.models import V1Deployment
-from pydantic_core import to_json
 
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.adapters.primitives import (
@@ -570,7 +569,8 @@ def _generate_deployment(
 
     resource_names = [provided_resource.name for provided_resource in artifact_execution.provides.resources]
     if resource_names:
-        metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = to_json(resource_names).decode()
+        # ARGH
+        metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = "true"
 
     pod_template = {
         "metadata": metadata,
