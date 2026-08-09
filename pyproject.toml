@@ -61,6 +61,7 @@ markers = [
     "unit: Tests with no other dependent systems",
     "integration: Tests requiring dependent systems"
 ]
+verbosity_subtests = "0"
 
 [tool.ruff]
 line-length = 120

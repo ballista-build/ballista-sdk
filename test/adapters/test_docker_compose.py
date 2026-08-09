@@ -134,13 +134,12 @@ async def test_generate_docker_compose(
     docker_compose_project = request.getfixturevalue(f"{bolt_name}_docker_compose_project")
 
     resource_providers, service_providers = await resolve_artifact_requirements(
-        docker_compose_adapter, environment, bolt, bolt.executable_artifacts
+        docker_compose_adapter, environment, bolt
     )
 
     generated_docker_compose_project = docker_compose_adapter.generate_docker_compose_project_from_bolt(
         environment=environment,
         bolt=bolt,
-        artifacts=bolt.executable_artifacts,
         execution_parameters=execution_parameters,
         resource_providers=resource_providers,
         service_providers=service_providers,

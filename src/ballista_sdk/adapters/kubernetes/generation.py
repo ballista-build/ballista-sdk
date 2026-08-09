@@ -7,6 +7,7 @@ from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, Sequence
 
 from kubernetes.client.models import V1Deployment
+from pydantic_core import to_json
 
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.adapters.primitives import (
@@ -17,11 +18,12 @@ from ballista_sdk.adapters.primitives import (
     ProvidedServiceWithArtifactReference,
 )
 from ballista_sdk.api.v1 import (
+    Artifact,
+    ArtifactExecution,
     ArtifactExecutionParameters,
     Bolt,
     ComputeExecutionParameters,
     Environment,
-    ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
     ProvidedService,
@@ -47,9 +49,9 @@ def generate_environment_labels(environment) -> KubernetesMetadataLabels:
 
 
 def generate_artifact_metadata_labels(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+    environment: Environment, bolt: Bolt, artifact: Artifact
 ) -> KubernetesMetadataLabels:
-    """Generate metadata labels for an ExecutableArtifact in a specific Environment."""
+    """Generate metadata labels for an Artifact in a specific Environment."""
 
     return generate_environment_labels(environment) | {
         primitives.METADATA_LABEL_APP_PART_OF: bolt.project,
@@ -58,9 +60,9 @@ def generate_artifact_metadata_labels(
 
 
 def generate_versioned_artifact_metadata_labels(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+    environment: Environment, bolt: Bolt, artifact: Artifact
 ) -> KubernetesMetadataLabels:
-    """Generate metadata labels for an ExecutableArtifact and version in a specific Environment."""
+    """Generate metadata labels for an Artifact and version in a specific Environment."""
 
     return generate_artifact_metadata_labels(environment, bolt, artifact) | {
         primitives.METADATA_LABEL_APP_INSTANCE: f"{artifact.name}-{bolt.version}",
@@ -69,9 +71,9 @@ def generate_versioned_artifact_metadata_labels(
 
 
 def generate_artifact_selector_labels(
-    environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+    environment: Environment, bolt: Bolt, artifact: Artifact
 ) -> KubernetesMetadataLabels:
-    """Generate labels for selecting an ExecutableArtifact in a specific Environment."""
+    """Generate labels for selecting an Artifact in a specific Environment."""
 
     return {
         # Environment configuration may not guarantee namespace separation, so its name is included.
@@ -100,10 +102,10 @@ def generate_artifact_kubernetes_name(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
     name: str | None = None,
 ) -> str:
-    """Generate the Kubernetes name used for an ExecutableArtifact or Artifact-specific item when running in a specific Environment."""
+    """Generate the Kubernetes name used for an Artifact or Artifact-specific item when running in a specific Environment."""
 
     if environment_config.project_namespaces:
         return artifact.name + (f"-{name}" if name else "")
@@ -123,10 +125,10 @@ def generate_artifact_metadata(
     environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
     name: str | None = None,
 ) -> KubernetesMetadata:
-    """Generates the Kubernetes metadata for an ExecutableArtifact in a specific Environment."""
+    """Generates the Kubernetes metadata for an Artifact in a specific Environment."""
 
     return {
         "labels": generate_versioned_artifact_metadata_labels(environment, bolt, artifact),
@@ -145,7 +147,8 @@ class KubernetesResourcesGenerator(Protocol):
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
-        artifact: ExecutableArtifact,
+        artifact: Artifact,
+        artifact_execution: ArtifactExecution,
         artifact_execution_parameters: ArtifactExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
         service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
@@ -234,13 +237,15 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
                 bolt=bolt,
                 execution_parameters=execution_parameters,
                 artifact=artifact,
+                artifact_execution=artifact.execution,
                 artifact_execution_parameters=execution_parameters.params_for_artifact(
                     environment=environment, bolt=bolt, artifact=artifact
                 ),
                 resource_providers=resource_providers,
                 service_providers=service_providers,
             )
-            for artifact in bolt.executable_artifacts
+            for artifact in bolt.artifacts
+            if artifact.execution
         }
 
         if len(artifact_resources) == 0:
@@ -256,7 +261,8 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
-        artifact: ExecutableArtifact,
+        artifact: Artifact,
+        artifact_execution: ArtifactExecution,
         artifact_execution_parameters: ArtifactExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
         service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
@@ -273,6 +279,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
                 bolt=bolt,
                 execution_parameters=execution_parameters,
                 artifact=artifact,
+                artifact_execution=artifact_execution,
                 artifact_execution_parameters=artifact_execution_parameters,
                 resource_providers=resource_providers,
                 service_providers=service_providers,
@@ -285,7 +292,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         environment: Environment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
-        artifact: ExecutableArtifact,
+        artifact: Artifact,
     ) -> str:
         """Get the name of the image to use in a PodSpec Container definition."""
 
@@ -315,7 +322,8 @@ def _generate_config_kubernetes_resources(
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     execution_parameters: ExecutionParameters,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
@@ -330,7 +338,8 @@ def _generate_secrets_kubernetes_resources(
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     execution_parameters: ExecutionParameters,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
@@ -402,12 +411,12 @@ def _generate_deployment(
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     execution_parameters: ExecutionParameters,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
 ) -> list[KubernetesResource]:
-    execution = artifact.execution
     artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
     metadata = generate_artifact_metadata(environment, environment_config, bolt, artifact)
@@ -439,11 +448,11 @@ def _generate_deployment(
     # Artifact configs and secrets
     [
         adapter.add_artifact_setting(container, artifact_reference, s)
-        for s in execution.requires.configs + execution.requires.secrets
+        for s in artifact_execution.requires.configs + artifact_execution.requires.secrets
     ]
 
     # Required Resources
-    for resource_requirement in execution.requires.resources:
+    for resource_requirement in artifact_execution.requires.resources:
         provided_resource_reference = ProvidedResourceReference(
             resource_requirement.project_name, resource_requirement.resource_name
         )
@@ -462,7 +471,7 @@ def _generate_deployment(
         ]
 
     # Required Services
-    for service_requirement in execution.requires.services:
+    for service_requirement in artifact_execution.requires.services:
         provided_service_reference = ProvidedServiceReference(
             service_requirement.project_name, service_requirement.artifact_name, service_requirement.service_name
         )
@@ -470,7 +479,7 @@ def _generate_deployment(
 
     # Provided Services
     services_added = {}
-    for service in execution.provides.services:
+    for service in artifact_execution.provides.services:
         service_port = service.grpc or service.http or service.tcp
         if service_port is None:
             # TODO: WTF is it, then? Probably need a better abstraction haha
@@ -500,7 +509,7 @@ def _generate_deployment(
             env[f"{key}_PATH"] = path
 
     # Healthchecks; processed after Provided Services since they can refer to them
-    if healthchecks := execution.provides.healthchecks:
+    if healthchecks := artifact_execution.provides.healthchecks:
         if healthchecks.alive and (liveness_probe := _generate_probe(healthchecks.alive, services_added)):
             container["livenessProbe"] = liveness_probe
         if healthchecks.ready and (readiness_probe := _generate_probe(healthchecks.ready, services_added)):
@@ -517,7 +526,7 @@ def _generate_deployment(
     # Volumes
     volumes: list[dict] = []
     volume_mounts: list[dict] = []
-    for volume in execution.requires.volumes:
+    for volume in artifact_execution.requires.volumes:
         # Mount Path
         volume_mount = {"mountPath": volume.path, "name": volume.name}
         volume_mounts.append(volume_mount)
@@ -559,20 +568,20 @@ def _generate_deployment(
     if volumes:
         pod_spec["volumes"] = volumes
 
+    resource_names = [provided_resource.name for provided_resource in artifact_execution.provides.resources]
+    if resource_names:
+        metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = to_json(resource_names).decode()
+
     pod_template = {
         "metadata": metadata,
         "spec": pod_spec,
     }
 
-    deployment_metadata = metadata
-    for provided_resource in artifact.execution.provides.resources:
-        metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = provided_resource.name
-
-        deployment_metadata = metadata.copy()
-        deployment_metadata["annotations"] = {
-            primitives.METADATA_ANNOTATION_RESOURCE: provided_resource.model_dump_json(exclude_unset=True)
-        }
-        break
+    deployment_metadata = metadata.copy()
+    # Stuff Artifact into annotation
+    deployment_metadata["annotations"] = {
+        primitives.METADATA_ANNOTATION_ARTIFACT: artifact.model_dump_json(exclude_unset=True)
+    }
 
     # Deployment
     return [
@@ -603,13 +612,14 @@ def _generate_services(
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     execution_parameters: ExecutionParameters,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
 ) -> list[KubernetesResource]:
     services: list[KubernetesResource] = []
-    for provided_service in artifact.execution.provides.services:
+    for provided_service in artifact_execution.provides.services:
         metadata = generate_artifact_metadata(environment, environment_config, bolt, artifact, provided_service.name)
         metadata["annotations"] = {
             primitives.METADATA_ANNOTATION_SERVICE: provided_service.model_dump_json(exclude_unset=True)
@@ -665,13 +675,14 @@ def _generate_persistent_volume_claims(
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     execution_parameters: ExecutionParameters,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
 ) -> list[KubernetesResource]:
     resources: list[KubernetesResource] = []
-    for volume in artifact.execution.requires.volumes:
+    for volume in artifact_execution.requires.volumes:
         if volume.persistent is False:
             continue
 
@@ -696,14 +707,15 @@ def _generate_ingresses(
     environment_config: KubernetesEnvironmentConfig,
     bolt: Bolt,
     execution_parameters: ExecutionParameters,
-    artifact: ExecutableArtifact,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
     resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
     service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
 ) -> list[KubernetesResource]:
     resources: list[KubernetesResource] = []
 
-    for service in artifact.execution.provides.services:
+    for service in artifact_execution.provides.services:
         http_service_port = service.http
         if not http_service_port:
             # Only do HTTP service right now

@@ -1,4 +1,3 @@
-from collections.abc import Sequence
 from dataclasses import dataclass
 from typing import Any, Literal
 
@@ -12,10 +11,11 @@ from ballista_sdk.adapters.primitives import (
     ProvidedServiceWithArtifactReference,
 )
 from ballista_sdk.api.v1 import (
+    Artifact,
+    ArtifactExecution,
     ArtifactExecutionParameters,
     Bolt,
     Environment,
-    ExecutableArtifact,
     ExecutionParameters,
     HealthcheckProbe,
     ProvidedService,
@@ -127,20 +127,19 @@ class DockerComposeInfrastructureGenerator:
         self,
         environment: Environment,
         bolt: Bolt,
-        artifacts: Sequence[ExecutableArtifact],
         execution_parameters: ExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
         service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
     ) -> DockerComposeProject:
         """Generate a docker compose project."""
 
-        if len(artifacts) == 0:
-            raise ValueError("No ExecutableArtifactes to generate for.")
-
         networks = {f"env-{environment.name}": {"internal": True, "name": f"env-{environment.name}"}}
         compose_project = DockerComposeProject(name=bolt.project, networks=networks, services={}, volumes={})
 
-        for artifact in artifacts:
+        for artifact in bolt.artifacts:
+            if not (artifact_execution := artifact.execution):
+                continue
+
             artifact_ref_name = f"{bolt.project}-{artifact.name}"
 
             project_network_name = f"project-{bolt.project}"
@@ -155,12 +154,13 @@ class DockerComposeInfrastructureGenerator:
                 environment=environment,
                 bolt=bolt,
                 artifact=artifact,
-                execution_parameters=artifact_execution_parameters,
+                artifact_execution=artifact_execution,
+                artifact_execution_parameters=artifact_execution_parameters,
                 resource_providers=resource_providers,
                 service_providers=service_providers,
             )
 
-            for service in artifact.execution.provides.services:
+            for service in artifact_execution.provides.services:
                 external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
                 if external_service_parameters and external_service_parameters.host is not None:
                     network_name = f"external-{external_service_parameters.host}"
@@ -175,7 +175,7 @@ class DockerComposeInfrastructureGenerator:
                     driver="local",
                     name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
                 )
-                for volume in artifact.execution.requires.volumes
+                for volume in artifact_execution.requires.volumes
                 if volume.persistent
             }
 
@@ -185,14 +185,14 @@ class DockerComposeInfrastructureGenerator:
         self,
         environment: Environment,
         bolt: Bolt,
-        artifact: ExecutableArtifact,
-        execution_parameters: ArtifactExecutionParameters,
+        artifact: Artifact,
+        artifact_execution: ArtifactExecution,
+        artifact_execution_parameters: ArtifactExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
         service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
     ) -> DockerComposeService:
         """Generate a docker compose Service definition for an ExecutableArtifact."""
 
-        execution = artifact.execution
         artifact_ref_name = _get_artifact_ref_name(bolt, artifact)
         artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
@@ -200,7 +200,7 @@ class DockerComposeInfrastructureGenerator:
             container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
         )
 
-        if compute_parameters := execution_parameters.compute:
+        if compute_parameters := artifact_execution_parameters.compute:
             resource_max = {}
             resource_min = {}
             if max_cpu := compute_parameters.max_cpu:
@@ -218,14 +218,14 @@ class DockerComposeInfrastructureGenerator:
         env = {}
 
         # Artifact configs
-        settings = execution.requires.configs + execution.requires.secrets
+        settings = artifact_execution.requires.configs + artifact_execution.requires.secrets
 
         [self.add_artifact_setting(compose_service, artifact_reference, setting) for setting in settings]
 
         # TODO: Hoist these out so they can be provider services
         # Resource Requirements
         depends_keys = set()
-        for resource_requirement in execution.requires.resources:
+        for resource_requirement in artifact_execution.requires.resources:
             provided_resource_reference = ProvidedResourceReference(
                 project_name=resource_requirement.project_name, resource_name=resource_requirement.resource_name
             )
@@ -252,7 +252,7 @@ class DockerComposeInfrastructureGenerator:
 
         # TODO: Hoist these out so they can be provider services
         # Service Requirements
-        for service_requirement in execution.requires.services:
+        for service_requirement in artifact_execution.requires.services:
             provided_service_reference = ProvidedServiceReference(
                 project_name=service_requirement.project_name,
                 artifact_name=service_requirement.artifact_name,
@@ -279,7 +279,7 @@ class DockerComposeInfrastructureGenerator:
         # Provided Services
         services_added = {}
         compose_service.ports = ports = []
-        for service in execution.provides.services:
+        for service in artifact_execution.provides.services:
             port_service = service.grpc or service.http or service.tcp
             if port_service is None:
                 # WTF is it, then? Needs a better abstraction.
@@ -293,7 +293,7 @@ class DockerComposeInfrastructureGenerator:
             secure = service.secure
             env[f"{key}_PORT"] = str(port_service)
 
-            external_service_parameters = execution_parameters.external_services.get(service.name)
+            external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
             if external_service_parameters and external_service_parameters.host is not None:
                 host = external_service_parameters.host
 
@@ -321,7 +321,7 @@ class DockerComposeInfrastructureGenerator:
                 env[f"{key}_PATH"] = path
 
         # Healthchecks; processed after services as they can depend on them.
-        if healthchecks := execution.provides.healthchecks:
+        if healthchecks := artifact_execution.provides.healthchecks:
             # Docker Compose only supports a single healthcheck
             if probe := (healthchecks.ready or healthchecks.alive or healthchecks.started):
                 compose_service.healthcheck = _generate_healthcheck(probe, services_added)
@@ -341,8 +341,8 @@ class DockerComposeInfrastructureGenerator:
             compose_service.image = artifact.type.docker_image.image or artifact.name
 
         # Volumes
-        for volume in execution.requires.volumes:
-            execution_volume_parameters = execution_parameters.volumes.get(volume.name)
+        for volume in artifact_execution.requires.volumes:
+            execution_volume_parameters = artifact_execution_parameters.volumes.get(volume.name)
 
             if volume.persistent:
                 volume_options = None
@@ -370,7 +370,7 @@ class DockerComposeInfrastructureGenerator:
         return compose_service
 
 
-def _get_artifact_ref_name(bolt: Bolt, artifact: ExecutableArtifact) -> str:
+def _get_artifact_ref_name(bolt: Bolt, artifact: Artifact) -> str:
     return f"{bolt.project}-{artifact.name}"
 
 

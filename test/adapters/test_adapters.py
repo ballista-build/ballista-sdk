@@ -7,7 +7,6 @@ from ballista_sdk.adapters.resources.transports import RESTResourceProviderTrans
 from ballista_sdk.api.v1 import Bolt, Environment, ResourceRequirement, ServiceRequirement
 
 
-@pytest.mark.unit
 async def test_transport_resource_provider(
     environment: Environment,
     infrastructure_adapter: InfrastructureAdapter,
@@ -18,34 +17,29 @@ async def test_transport_resource_provider(
     assert isinstance(transport, RESTResourceProviderTransport)
 
 
-async def test_resolve_artifact_reference(
+async def test_resolve_artifact(
     environment: Environment, infrastructure_adapter: InfrastructureAdapter, postgres_bolt: Bolt
 ):
-    resolved_bolt, resolved_artifact = await infrastructure_adapter.resolve_artifact_reference(
+    resolved_artifact = await infrastructure_adapter.resolve_artifact_reference(
         environment, ArtifactReference(project_name="postgres", artifact_name="server", version="18.1")
     )
 
-    assert resolved_bolt == postgres_bolt
-    assert resolved_artifact == postgres_bolt.artifacts[0]
-
-    # Wrong project name
-    with pytest.raises(ArtifactNotFound):
-        await infrastructure_adapter.resolve_artifact_reference(
-            environment, ArtifactReference(project_name="other_project", artifact_name="server", version="18.1")
-        )
-    # Wrong artifact name
-    with pytest.raises(ArtifactNotFound):
-        await infrastructure_adapter.resolve_artifact_reference(
-            environment, ArtifactReference(project_name="postgres", artifact_name="not_the_server", version="18.1")
-        )
-    # Wrong version
-    with pytest.raises(ArtifactNotFound):
-        await infrastructure_adapter.resolve_artifact_reference(
-            environment, ArtifactReference(project_name="postgres", artifact_name="server", version="18.0")
-        )
+    assert resolved_artifact in postgres_bolt.artifacts
 
 
-async def test_resolve_resource_requirement(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_resolve_artifact_not_found(
+    environment: Environment, infrastructure_adapter: InfrastructureAdapter, subtests: pytest.Subtests
+):
+    for artifact_reference in [
+        ArtifactReference(project_name="other_project", artifact_name="server", version="18.1"),
+        ArtifactReference(project_name="postgres", artifact_name="not_the_server", version="18.1"),
+        ArtifactReference(project_name="postgres", artifact_name="server", version="18.0"),
+    ]:
+        with subtests.test(artifact_reference=artifact_reference), pytest.raises(ArtifactNotFound):
+            await infrastructure_adapter.resolve_artifact_reference(environment, artifact_reference)
+
+
+async def test_resolve_resource(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
     requirement = ResourceRequirement.model_validate({"postgres": {"database": {"name": "my_database"}}})
     resolved = await infrastructure_adapter.resolve_resource_requirement(environment, requirement)
 
@@ -54,18 +48,23 @@ async def test_resolve_resource_requirement(environment: Environment, infrastruc
         project_name="postgres", artifact_name="resource-providers", version="18.1"
     )
 
-    # Wrong project name
-    with pytest.raises(ProvidedResourceNotFound):
-        requirement = ResourceRequirement.model_validate({"mysql": {"database": {"name": "my_database"}}})
-        await infrastructure_adapter.resolve_resource_requirement(environment, requirement)
 
-    # Wrong resource name
-    with pytest.raises(ProvidedResourceNotFound):
-        requirement = ResourceRequirement.model_validate({"postgres": {"name": {"database": "my_name"}}})
-        await infrastructure_adapter.resolve_resource_requirement(environment, requirement)
+async def test_resolve_resource_not_found(
+    environment: Environment,
+    infrastructure_adapter: InfrastructureAdapter,
+    subtests: pytest.Subtests,
+):
+    for requirement in [
+        ResourceRequirement.model_validate({"mysql": {"database": {"name": "my_database"}}}),
+        ResourceRequirement.model_validate({"postgres": {"name": {"database": "my_name"}}}),
+    ]:
+        with subtests.test(requirement=requirement), pytest.raises(ProvidedResourceNotFound):
+            await infrastructure_adapter.resolve_resource_requirement(environment, requirement)
 
 
-async def test_resolve_service_requirement(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_resolve_service(
+    environment: Environment, infrastructure_adapter: InfrastructureAdapter, subtests: pytest.Subtests
+):
     requirement = ServiceRequirement.model_validate({"postgres": {"server": "postgres"}})
     resolved = await infrastructure_adapter.resolve_service_requirement(environment, requirement)
 
@@ -74,20 +73,37 @@ async def test_resolve_service_requirement(environment: Environment, infrastruct
         project_name="postgres", artifact_name="server", version="18.1"
     )
 
-    # Wrong project name
-    with pytest.raises(ProvidedServiceNotFound):
-        requirement = ServiceRequirement.model_validate({"mysql": {"server": "postgres"}})
-        resolved = await infrastructure_adapter.resolve_service_requirement(environment, requirement)
+    for requirement in [
+        ServiceRequirement.model_validate({"mysql": {"server": "postgres"}}),
+        ServiceRequirement.model_validate({"postgres": {"daemon": "postgres"}}),
+        ServiceRequirement.model_validate({"postgres": {"server": "mysql"}}),
+    ]:
+        with subtests.test(requirement=requirement), pytest.raises(ProvidedServiceNotFound):
+            await infrastructure_adapter.resolve_service_requirement(environment, requirement)
 
-    # Wrong artifact name
-    with pytest.raises(ProvidedServiceNotFound):
-        requirement = ServiceRequirement.model_validate({"postgres": {"daemon": "postgres"}})
-        resolved = await infrastructure_adapter.resolve_service_requirement(environment, requirement)
 
-    # Wrong service name
-    with pytest.raises(ProvidedServiceNotFound):
-        requirement = ServiceRequirement.model_validate({"postgres": {"server": "mysql"}})
-        resolved = await infrastructure_adapter.resolve_service_requirement(environment, requirement)
+async def test_resolve_service_not_found(
+    environment: Environment, infrastructure_adapter: InfrastructureAdapter, subtests: pytest.Subtests
+):
+    for requirement in [
+        ServiceRequirement.model_validate({"mysql": {"server": "postgres"}}),
+        ServiceRequirement.model_validate({"postgres": {"daemon": "postgres"}}),
+        ServiceRequirement.model_validate({"postgres": {"server": "mysql"}}),
+    ]:
+        with subtests.test(requirement=requirement), pytest.raises(ProvidedServiceNotFound):
+            await infrastructure_adapter.resolve_service_requirement(environment, requirement)
+
+
+async def test_list_artifacts(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+    artifacts = list(await infrastructure_adapter.list_artifacts([environment]))
+
+    assert artifacts
+
+
+async def test_list_bolts(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+    bolts = list(await infrastructure_adapter.list_bolts([environment]))
+
+    assert bolts
 
 
 async def test_list_projects(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
@@ -97,7 +113,7 @@ async def test_list_projects(environment: Environment, infrastructure_adapter: I
 
     for project in projects:
         assert project is not None
-        assert project.name == "postgres"
+        assert project.project_name == "postgres"
 
 
 async def test_list_provided_resources(environment: Environment, infrastructure_adapter: InfrastructureAdapter):

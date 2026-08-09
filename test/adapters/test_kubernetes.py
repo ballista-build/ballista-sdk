@@ -226,7 +226,7 @@ def project_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/resource-json": '{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"resource-providers","path":"/resources"}}}'
+                        "ballista.build/artifact-json": '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"resource-providers","path":"/resources"}}}],"services":[{"name":"resource-providers","http":80}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "resource-providers-1",
@@ -236,7 +236,7 @@ def project_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
-                        "ballista.build/resource": "project-resource1",
+                        "ballista.build/resource": '["project-resource1"]',
                     },
                     "name": "project-resource-providers",
                     "namespace": "test",
@@ -263,7 +263,7 @@ def project_bolt_resources():
                                 "app.kubernetes.io/version": "1",
                                 "ballista.build/environment": "test",
                                 "ballista.build/environment-tier": "development",
-                                "ballista.build/resource": "project-resource1",
+                                "ballista.build/resource": '["project-resource1"]',
                             },
                             "name": "project-resource-providers",
                             "namespace": "test",
@@ -380,7 +380,7 @@ async def test_generate_resources(
     )
 
     resource_providers, service_providers = await resolve_artifact_requirements(
-        kubernetes_api_adapter, environment, bolt, bolt.executable_artifacts
+        kubernetes_api_adapter, environment, bolt
     )
 
     bolt_resources = kubernetes_api_adapter.generate_bolt_resources(

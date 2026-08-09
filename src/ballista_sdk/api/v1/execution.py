@@ -3,9 +3,37 @@ from typing import Annotated
 
 from pydantic import BaseModel, Field
 
-from .artifacts import ExecutableArtifact
+from .artifacts import Artifact
 from .bolts import Bolt
 from .common import BaseNamedModel
+
+
+class ExecutionStatus(StrEnum):
+    """Statuses for Artifact execution.
+
+    - "unknown": Artifact execution status is unknown.
+    - "not_found": Artifact cannot be found.
+    - "pending": Artifact execution is pending.
+    - "executing": Artifact execution has started and is healthy.
+    - "unhealthy": Artifact execution has started but is not healthy.
+    - "succeeded": Artifact execution has ended in a healthy state.
+    - "failed": Artifact execution has ended but in an unhealthy state."
+    """
+
+    UNKNOWN = auto()
+    """Artifact execution status is unknown."""
+    NOT_FOUND = auto()
+    """Artifact cannot be found."""
+    PENDING = auto()
+    """Artifact execution is pending."""
+    EXECUTING = auto()
+    """Artifact execution has started and is healthy."""
+    UNHEALTHY = auto()
+    """Artifact execution has started but is not healthy."""
+    SUCCEEDED = auto()
+    """Artifact execution has ended in a healthy state."""
+    FAILED = auto()
+    """Artifact execution has ended but in an unhealthy state."""
 
 
 class EnvironmentTier(StrEnum):
@@ -119,16 +147,18 @@ class ExecutionParameters(BaseModel, frozen=True):
     """environment,project,artifact,volumne"""
 
     def params_for_artifact(
-        self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+        self, environment: Environment, bolt: Bolt, artifact: Artifact
     ) -> ArtifactExecutionParameters:
-        defaults = self.defaults_for_artifact(environment, bolt, artifact)
+        if not artifact.execution:
+            return ArtifactExecutionParameters()
 
+        defaults = self.defaults_for_artifact(environment, bolt, artifact)
         default_service = defaults.external_service.model_dump()
+        default_volume = defaults.volume.model_dump()
+
         external_services = {
             s.name: ExternalizedServiceParameters(**default_service) for s in artifact.execution.provides.services
         }
-
-        default_volume = defaults.volume.model_dump()
         volumes = {v.name: VolumeExecutionParameters(**default_volume) for v in artifact.execution.requires.volumes}
 
         return ArtifactExecutionParameters(
@@ -139,7 +169,7 @@ class ExecutionParameters(BaseModel, frozen=True):
         )
 
     def defaults_for_artifact(
-        self, environment: Environment, bolt: Bolt, artifact: ExecutableArtifact
+        self, environment: Environment, bolt: Bolt, artifact: Artifact
     ) -> DefaultExecutionParameters:
         defaults = self.initial.model_dump()
 

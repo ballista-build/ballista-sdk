@@ -1,8 +1,8 @@
-from typing import Annotated, Literal, cast
+from typing import Annotated, Literal
 
 from pydantic import BaseModel, Field
 
-from .artifacts import Artifact, BuildableArtifact, ExecutableArtifact
+from .artifacts import Artifact
 from .common import BaseNamedModel
 
 
@@ -21,14 +21,6 @@ class Bolt(BaseModel, frozen=True):
             description="Version of Bolt. When not provided, required to be given before artifacts can be built or executed."
         ),
     ]
-
-    @property
-    def buildable_artifacts(self) -> list[BuildableArtifact]:
-        return [cast(BuildableArtifact, a) for a in self.artifacts if a.build]
-
-    @property
-    def executable_artifacts(self) -> list[ExecutableArtifact]:
-        return [cast(ExecutableArtifact, a) for a in self.artifacts if a.execution]
 
 
 class Project(BaseNamedModel, frozen=True):

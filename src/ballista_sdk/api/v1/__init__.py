@@ -3,10 +3,8 @@ from .artifacts import (
     ArtifactExecution,
     ArtifactType,
     ArtifactTypeRequirement,
-    BuildableArtifact,
     BuildParameters,
     ConfigRequirement,
-    ExecutableArtifact,
     ResourceRequirement,
     SecretRequirement,
     ServiceRequirement,
@@ -46,6 +44,7 @@ from .resources import (
 )
 from .services import ProvidedService, ServiceType
 from .settings import Config, Secret, Setting, SettingDataType, SettingValue
+from .workspace import Workspace
 
 __all__ = [
     "Artifact",
@@ -56,7 +55,6 @@ __all__ = [
     "BaseProjectResourceRequirementName",
     "Bolt",
     "BuildParameters",
-    "BuildableArtifact",
     "ComputeExecutionParameters",
     "Config",
     "ConfigRequirement",
@@ -64,7 +62,6 @@ __all__ = [
     "Environment",
     "EnvironmentTier",
     "ExecHealthCheckAction",
-    "ExecutableArtifact",
     "ExecutionParameters",
     "ExternalizedServiceParameters",
     "GRPCHealthCheckAction",
@@ -96,4 +93,5 @@ __all__ = [
     "TCPHealthCheckAction",
     "VolumeExecutionParameters",
     "VolumeRequirement",
+    "Workspace",
 ]

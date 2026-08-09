@@ -13,6 +13,7 @@ def docker_compose_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
 
 @pytest.fixture(scope="session")
 def kubernetes_api_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
+    # TODO: This needs Kubernetes running somewhere and we should have a way to boot strap the needed resources.
     return KubernetesAPIInfrastructureAdapter()
 
 

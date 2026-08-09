@@ -1,4 +1,4 @@
-from typing import Annotated, ClassVar, Protocol
+from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -185,39 +185,6 @@ class VirtualArtifactTypeRequirement(BaseModel):
 
 class ArtifactTypeRequirement(BaseOneOfModel):
     docker_image: Annotated[DockerImageArtifactTypeRequirement, Field(description="Artifact is a Docker image.")]
-
-
-class BaseArtifactProtocol(Protocol):
-    @property
-    def annotations(self) -> dict[str, str]: ...
-
-    @property
-    def build(self) -> BuildParameters | None: ...
-
-    @property
-    def description(self) -> str | None: ...
-
-    @property
-    def execution(self) -> ArtifactExecution | None: ...
-
-    @property
-    def name(self) -> str: ...
-
-    @property
-    def title(self) -> str | None: ...
-
-    @property
-    def type(self) -> ArtifactTypeRequirement: ...
-
-
-class BuildableArtifact(BaseArtifactProtocol, Protocol):
-    @property
-    def build(self) -> BuildParameters: ...
-
-
-class ExecutableArtifact(BaseArtifactProtocol, Protocol):
-    @property
-    def execution(self) -> ArtifactExecution: ...
 
 
 class Artifact(BaseNamedModel):
