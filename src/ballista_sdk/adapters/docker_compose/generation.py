@@ -262,17 +262,16 @@ class DockerComposeInfrastructureGenerator:
 
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
-            service_dns_name = provided_service.name.lower().replace("_", "-")
-            service_env_name = provided_service.name.upper().replace("-", "_")
+            service_env_name = f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}-{provided_service.name}".upper().replace(
+                "-", "_"
+            )
 
             env.update(
                 {
-                    f"{service_env_name}_HOST": service_dns_name,
+                    f"{service_env_name}_HOST": provided_service.name,
                     f"{service_env_name}_PORT": provided_service.grpc or provided_service.http or provided_service.tcp,
                 }
             )
-
-            # TODO: Add to env
 
         compose_service.depends_on = {key: {"condition": "service_healthy"} for key in depends_keys}
 
