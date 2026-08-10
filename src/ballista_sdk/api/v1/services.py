@@ -11,6 +11,7 @@ class ProvidedService(BaseNamedModel):
 
     grpc: Annotated[int | None, Field(description="GRPC service available on specified port.")] = None
     http: Annotated[int | None, Field()] = None
+    secure: Annotated[bool, Field(description="Indicates a secure connection is expected.")] = False
     tcp: Annotated[int | None, Field()] = None
 
 

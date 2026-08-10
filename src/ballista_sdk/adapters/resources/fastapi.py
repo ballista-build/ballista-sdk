@@ -14,12 +14,13 @@ from ballista_sdk.api.v1 import Environment, EnvironmentTier
 
 from ..exceptions import ArtifactResourceAlreadyExists, ArtifactResourceNotFound
 from .provider import (
+    ResourceAccess,
     ResourceProvider,
     ResourceProviderStatus,
     ResourceRequirement,
     ResourceStatus,
 )
-from .pydantic import ResourceProviderStatusResponse, ResourceStatusResponse
+from .pydantic import ResourceAccessResponse, ResourceProviderStatusResponse, ResourceStatusResponse
 
 
 def _get_environment(environment_tier: EnvironmentTier, environment_name: str) -> Environment:
@@ -54,6 +55,8 @@ def resource_provider_to_apirouter[Requirement: ResourceRequirement](
 
     @provider_router.get("/")
     async def get_status(environment: DepEnvironment, response: Response) -> ResourceProviderStatusResponse:
+        """Get the status of the Resource Provider APIs."""
+
         status, message = await resource_provider.get_status(environment)
 
         if status != ResourceProviderStatus.AVAILABLE:
@@ -84,6 +87,8 @@ def resource_provider_to_apirouter[Requirement: ResourceRequirement](
     async def provision_resource(
         environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
     ):
+        """Provisions a new resource. Grants ownership access to the Project + Artifact."""
+
         try:
             await resource_provider.provision_resource(environment, artifact, resource_requirement)
 
@@ -123,8 +128,16 @@ def resource_provider_to_apirouter[Requirement: ResourceRequirement](
         environment: DepEnvironment,
         artifact: DepArtifact,
         resource_requirement: Annotated[resource_requirement_type, Query()],
-    ):
-        pass
+        response: Response,
+    ) -> ResourceAccessResponse:
+        """Get an Artifact's `ResourceAccess` level to a Resource."""
+
+        access = await resource_provider.get_resource_access(environment, artifact, resource_requirement)
+
+        if access == ResourceAccess.NONE:
+            response.status_code = fastapi_status.HTTP_404_NOT_FOUND
+
+        return ResourceAccessResponse(access=access)
 
     @access_router.post("/")
     async def grant_resource_access(

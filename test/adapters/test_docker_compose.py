@@ -38,6 +38,7 @@ def simple_docker_compose_project():
                 environment={
                     "HTTP_SERVICE_HOST": "test.ballista.build",
                     "HTTP_SERVICE_PATH": "/",
+                    "HTTP_SERVICE_SECURE": "false",
                     "HTTP_SERVICE_PORT": "80",
                 },
                 env_file=[
@@ -59,15 +60,15 @@ def simple_docker_compose_project():
                 ports=[{"name": "http", "published": "80", "target": 80}],
                 volumes=[
                     DockerComposeServiceVolume(
-                        source="simple-api-volume_a",
-                        target="/var/volume_a",
+                        source="simple-api-volume-a",
+                        target="/var/volume-a",
                         type="volume",
                         volume={"subpath": "/custom/path"},
                     ),
                 ],
             ),
         },
-        volumes={"simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A")},
+        volumes={"simple-api-volume-a": DockerComposeProjectVolume(driver="local", name="Volume-A")},
     )
 
 
@@ -92,6 +93,7 @@ def project_docker_compose_project():
                 environment={
                     "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
                     "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
+                    "RESOURCE_PROVIDERS_SERVICE_SECURE": "false",
                     "RESOURCE_PROVIDERS_SERVICE_PORT": "80",
                 },
                 image="hello-world:latest",
@@ -132,13 +134,12 @@ async def test_generate_docker_compose(
     docker_compose_project = request.getfixturevalue(f"{bolt_name}_docker_compose_project")
 
     resource_providers, service_providers = await resolve_artifact_requirements(
-        docker_compose_adapter, environment, bolt, bolt.executable_artifacts
+        docker_compose_adapter, environment, bolt
     )
 
     generated_docker_compose_project = docker_compose_adapter.generate_docker_compose_project_from_bolt(
         environment=environment,
         bolt=bolt,
-        artifacts=bolt.executable_artifacts,
         execution_parameters=execution_parameters,
         resource_providers=resource_providers,
         service_providers=service_providers,

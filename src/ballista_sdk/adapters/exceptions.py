@@ -1,6 +1,23 @@
 from dataclasses import dataclass
 
-from .primitives import ArtifactReference, ProvidedResourceReference, ProvidedServiceReference
+from .primitives import ArtifactReference, BoltReference, ProvidedResourceReference, ProvidedServiceReference
+
+
+@dataclass
+class BoltException(Exception):
+    bolt: BoltReference
+
+
+class BoltNotFound(BoltException):
+    """Bolt referenced was not found."""
+
+    pass
+
+
+class BoltArtifactTypesUnavailable(BoltException):
+    """Bolt could not be deployed because none of its Artifacts had fulfilled ArtifactTypes."""
+
+    pass
 
 
 @dataclass
@@ -9,7 +26,7 @@ class ArtifactException(Exception):
 
 
 class ArtifactNotFound(ArtifactException):
-    """Artifact referenced is unknown."""
+    """Artifact referenced was not found."""
 
     pass
 

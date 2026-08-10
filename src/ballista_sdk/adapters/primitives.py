@@ -4,8 +4,19 @@ from typing import NamedTuple
 from ballista_sdk.api.v1 import ProvidedResource, ProvidedService, Setting
 
 
+class ProjectReference(NamedTuple):
+    project_name: str
+
+
+class BoltReference(NamedTuple):
+    """Reference to a Bolt by its name and version."""
+
+    project_name: str
+    version: str
+
+
 class ArtifactReference(NamedTuple):
-    """Reference to an Artifact by its name, a version number, and the Project's name its in."""
+    """Reference to an Artifact by its name, a version, and the Project's name its in."""
 
     project_name: str
     artifact_name: str

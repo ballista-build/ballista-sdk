@@ -20,7 +20,7 @@ class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minPrope
 
 
 class BaseNamedModel(ABC, BaseModel):
-    name: Annotated[str, Field(description="Unique name of object.")]  # TODO: Put a pattern on here
+    name: Annotated[str, Field(description="Unique name of object.", pattern=r"^[a-z0-9-]+$", min_length=1)]
     description: Annotated[str | None, Field(description="Human-readable description of object.")] = None
     title: str | None = Field(
         default_factory=lambda data: data.get("name"), description="Human-readable title of object."

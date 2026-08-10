@@ -1,6 +1,7 @@
 from typing import Annotated
 
-from kubernetes import client, config
+from kubernetes import config
+from kubernetes.client.api_client import ApiClient
 from pydantic import BaseModel, Field
 
 from ballista_sdk.api.v1 import Environment
@@ -36,7 +37,7 @@ def get_environment_config(environment: Environment) -> KubernetesEnvironmentCon
     return KubernetesEnvironmentConfig.model_validate(environment.config if environment.config else {})
 
 
-def get_kubernetes_client(environment: Environment) -> client.ApiClient:
+def get_kubernetes_client(environment: Environment) -> ApiClient:
     # TODO: Get context where environment is
     context = None
 

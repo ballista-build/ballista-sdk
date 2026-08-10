@@ -1,6 +1,6 @@
 from pydantic import BaseModel
 
-from ...api.v1 import ResourceProviderStatus, ResourceStatus, SettingValue
+from ...api.v1 import ResourceAccess, ResourceProviderStatus, ResourceStatus, SettingValue
 
 
 class ResourceProviderStatusResponse(BaseModel):
@@ -11,6 +11,10 @@ class ResourceProviderStatusResponse(BaseModel):
 class ResourceStatusResponse(BaseModel):
     status: ResourceStatus
     detail: str | None
+
+
+class ResourceAccessResponse(BaseModel):
+    access: ResourceAccess
 
 
 class WriteResourceResponse(BaseModel):

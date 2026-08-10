@@ -3,8 +3,8 @@ from .artifacts import (
     ArtifactExecution,
     ArtifactType,
     ArtifactTypeRequirement,
+    BuildParameters,
     ConfigRequirement,
-    ExecutableArtifact,
     ResourceRequirement,
     SecretRequirement,
     ServiceRequirement,
@@ -27,6 +27,7 @@ from .healthchecks import (
     GRPCHealthCheckAction,
     HealthcheckProbe,
     HTTPHealthCheckAction,
+    ProvidedHealthchecks,
     TCPHealthCheckAction,
 )
 from .resources import (
@@ -43,6 +44,7 @@ from .resources import (
 )
 from .services import ProvidedService, ServiceType
 from .settings import Config, Secret, Setting, SettingDataType, SettingValue
+from .workspace import Workspace
 
 __all__ = [
     "Artifact",
@@ -52,6 +54,7 @@ __all__ = [
     "ArtifactTypeRequirement",
     "BaseProjectResourceRequirementName",
     "Bolt",
+    "BuildParameters",
     "ComputeExecutionParameters",
     "Config",
     "ConfigRequirement",
@@ -59,7 +62,6 @@ __all__ = [
     "Environment",
     "EnvironmentTier",
     "ExecHealthCheckAction",
-    "ExecutableArtifact",
     "ExecutionParameters",
     "ExternalizedServiceParameters",
     "GRPCHealthCheckAction",
@@ -67,6 +69,7 @@ __all__ = [
     "HealthcheckRequirements",
     "HTTPHealthCheckAction",
     "Project",
+    "ProvidedHealthchecks",
     "ProvidedResource",
     "ProvidedResourceRequirementSchema",
     "ProvidedResourceTransportMethod",
@@ -90,4 +93,5 @@ __all__ = [
     "TCPHealthCheckAction",
     "VolumeExecutionParameters",
     "VolumeRequirement",
+    "Workspace",
 ]

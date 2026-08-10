@@ -4,6 +4,7 @@ from dataclasses import dataclass, field
 from typing import Literal, Self, cast
 
 from kubernetes import client
+from kubernetes.client.exceptions import ApiException
 
 from ballista_sdk.adapters.primitives import ArtifactReference, BoundSetting, ProvidedResourceReference
 from ballista_sdk.api.v1 import (
@@ -15,7 +16,6 @@ from ballista_sdk.api.v1 import (
 
 from .environments import KubernetesEnvironmentConfig, get_environment_config, get_kubernetes_client
 from .generation import generate_artifact_settings_refname, generate_resource_settings_refname
-from .primitives import KubernetesMetadata
 
 
 @dataclass
@@ -45,21 +45,21 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
 
     def _get_bound_setting_metadata(
         self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
-    ) -> KubernetesMetadata:
+    ) -> client.V1ObjectMeta:
         if bound_setting.artifact:
             namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.artifact)
             name = generate_artifact_settings_refname(bound_setting.artifact)
 
-            return {"labels": {}, "name": name, "namespace": namespace}
         elif bound_setting.provided_resource:
             namespace = _get_reference_kubernetes_namespace(
                 environment, environment_config, bound_setting.provided_resource
             )
             name = generate_resource_settings_refname(bound_setting.provided_resource)
 
-            return {"labels": {}, "name": name, "namespace": namespace}
         else:
             raise ValueError()
+
+        return client.V1ObjectMeta(labels={}, name=name, namespace=namespace)
 
     def _get_bound_setting_names(
         self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
@@ -196,7 +196,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
         api = client.CoreV1Api(api_client)
         try:
             return api.read_namespaced_config_map(name=ref_name, namespace=namespace)
-        except client.ApiException:
+        except ApiException:
             return None
 
     def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: client.V1ConfigMap):
@@ -205,7 +205,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
         api = client.CoreV1Api(api_client)
         try:
             api.read_namespaced_config_map(name=ref_name, namespace=namespace)
-        except client.ApiException:
+        except ApiException:
             api.create_namespaced_config_map(namespace=namespace, body=obj)
         else:
             api.replace_namespaced_config_map(name=ref_name, namespace=namespace, body=obj)
@@ -279,7 +279,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         api = client.CoreV1Api(api_client)
         try:
             return api.read_namespaced_secret(name=ref_name, namespace=namespace)
-        except client.ApiException:
+        except ApiException:
             return None
 
     def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: client.V1Secret):
@@ -288,7 +288,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         api = client.CoreV1Api(api_client)
         try:
             api.read_namespaced_secret(name=ref_name, namespace=namespace)
-        except client.ApiException:
+        except ApiException:
             api.create_namespaced_secret(namespace=namespace, body=obj)
         else:
             api.replace_namespaced_secret(name=ref_name, namespace=namespace, body=obj)
