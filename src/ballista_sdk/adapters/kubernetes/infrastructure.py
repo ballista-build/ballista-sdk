@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 from collections.abc import Collection
 from dataclasses import dataclass, field
 from typing import Literal
@@ -54,6 +55,8 @@ from .generation import (
 )
 from .settings import KubernetesAPIConfigsAdapter, KubernetesAPISecretsAdapter
 
+LOGGER = logging.getLogger("ballista")
+
 
 @dataclass
 class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
@@ -105,13 +108,13 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         if environment_config.ensure_namespaces:
             self._ensure_namespace_exists(environment, api_client, namespace)
 
-        [utils.create_from_dict(api_client, resource, namespace=namespace, apply=True) for resource in bolt_resources]
-
-        for artifact_id, artifact_resources in all_artifact_resources.items():
-            [
+        for resource in bolt_resources + [
+            resource for artifact_resources in all_artifact_resources.values() for resource in artifact_resources
+        ]:
+            try:
                 utils.create_from_dict(api_client, resource, namespace=namespace, apply=True)
-                for resource in artifact_resources
-            ]
+            except Exception:
+                LOGGER.exception("Error applying resource.")
 
     async def determine_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
         api_client = await self._get_api_client(environment)
