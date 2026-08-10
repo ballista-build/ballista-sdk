@@ -46,7 +46,7 @@ artifacts:
                     http: 80
             requires:
                 configs:
-                    - name: "option_a"
+                    - name: "option-a"
                       type: "string"
                 resources:
                     - postgres:
@@ -54,12 +54,12 @@ artifacts:
                             name: "testdatabase"
                             name_alias: "BUG_DATABASE"
                 secrets:
-                    - name: "secret_a"
+                    - name: "secret-a"
                       type: "string"
                 volumes:
-                    - name: "volume_a"
+                    - name: "volume-a"
                       capacity: 0.01
-                      path: "/var/volume_a"
+                      path: "/var/volume-a"
                       persistent: True
                       title: "Volume A"
         type:
@@ -151,13 +151,13 @@ def postgres_bolt() -> Bolt:
                     "secrets": [
                         {
                             "description": "Username for the default/root login.",
-                            "name": "root_username",
+                            "name": "root-username",
                             "title": "Root Username",
                             "type": "string",
                         },
                         {
                             "description": "Password for the default/root login.",
-                            "name": "root_password",
+                            "name": "root-password",
                             "title": "Root Password",
                             "type": "string",
                         },

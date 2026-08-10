@@ -113,17 +113,17 @@ def simple_bolt_resources():
                                     },
                                     "volumeMounts": [
                                         {
-                                            "mountPath": "/var/volume_a",
-                                            "name": "volume_a",
-                                            "subPath": "/custom/path/volume_a",
+                                            "mountPath": "/var/volume-a",
+                                            "name": "volume-a",
+                                            "subPath": "/custom/path/volume-a",
                                         },
                                     ],
                                 }
                             ],
                             "volumes": [
                                 {
-                                    "name": "volume_a",
-                                    "persistentVolumeClaim": {"claimName": "simple-api-volume_a"},
+                                    "name": "volume-a",
+                                    "persistentVolumeClaim": {"claimName": "simple-api-volume-a"},
                                 },
                             ],
                         },
@@ -170,7 +170,7 @@ def simple_bolt_resources():
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
                     },
-                    "name": "simple-api-volume_a",
+                    "name": "simple-api-volume-a",
                     "namespace": "test",
                 },
                 "spec": {

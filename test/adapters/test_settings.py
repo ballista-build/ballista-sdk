@@ -98,14 +98,14 @@ def secrets_adapters(request) -> SettingsAdapter:
 @pytest.fixture(scope="session")
 def sample_settings() -> list[tuple[str, SettingDataType, SettingValue]]:
     return [
-        ("bool_false", SettingDataType.BOOL, False),
-        ("bool_true", SettingDataType.BOOL, True),
+        ("bool-false", SettingDataType.BOOL, False),
+        ("bool-true", SettingDataType.BOOL, True),
         ("bytes", SettingDataType.BYTES, bytes.fromhex("2EF0F1F2")),
         ("float", SettingDataType.FLOAT, 1.24),
-        ("int32_pos", SettingDataType.INT32, 36),
-        ("int32_neg", SettingDataType.INT32, -24593),
-        ("int64_pos", SettingDataType.INT32, 12345678901),
-        ("int64_neg", SettingDataType.INT32, -5678901234),
+        ("int32-pos", SettingDataType.INT32, 36),
+        ("int32-neg", SettingDataType.INT32, -24593),
+        ("int64-pos", SettingDataType.INT32, 12345678901),
+        ("int64-neg", SettingDataType.INT32, -5678901234),
         ("string", SettingDataType.STRING, "burgundy blue hair"),
         ("uint32", SettingDataType.UINT32, 45503),
         ("uint64", SettingDataType.UINT64, 1),

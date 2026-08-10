@@ -60,15 +60,15 @@ def simple_docker_compose_project():
                 ports=[{"name": "http", "published": "80", "target": 80}],
                 volumes=[
                     DockerComposeServiceVolume(
-                        source="simple-api-volume_a",
-                        target="/var/volume_a",
+                        source="simple-api-volume-a",
+                        target="/var/volume-a",
                         type="volume",
                         volume={"subpath": "/custom/path"},
                     ),
                 ],
             ),
         },
-        volumes={"simple-api-volume_a": DockerComposeProjectVolume(driver="local", name="Volume-A")},
+        volumes={"simple-api-volume-a": DockerComposeProjectVolume(driver="local", name="Volume-A")},
     )
 
 
