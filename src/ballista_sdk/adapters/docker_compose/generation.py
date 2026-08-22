@@ -327,15 +327,12 @@ class DockerComposeInfrastructureGenerator:
 
         # Building
         if build := artifact.build:
-            context = "."
-            dockerfile = build.dockerfile or "Dockerfile"
-            if (pieces := dockerfile.rsplit("/", 1)) and len(pieces) > 1:
-                context, dockerfile = pieces
-
-            compose_service.build = {"context": context, "dockerfile": dockerfile, "target": build.dockerfile_target}
+            compose_service.build = {"dockerfile": build.dockerfile or "Dockerfile"}
+            if build.dockerfile_target:
+                compose_service.build["target"] = build.dockerfile_target
 
             # TODO: Implement better development specs
-            compose_service.develop = {"watch": [{"action": "rebuild", "path": context}]}
+            compose_service.develop = {"watch": [{"action": "rebuild", "path": "."}]}
         else:
             compose_service.image = artifact.type.docker_image.image or artifact.name
 
