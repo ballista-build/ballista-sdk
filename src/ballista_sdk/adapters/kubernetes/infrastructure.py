@@ -503,7 +503,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             if not service.metadata or not service.metadata.labels or not service.spec or not service.spec.ports:
                 continue
 
-            return f"{service.metadata.name}-{service.metadata.namespace}.svc.cluster.local"
+            return f"{service.metadata.name}.{service.metadata.namespace}.svc.cluster.local"
 
         raise ProvidedServiceNotFound(service_reference)
 

@@ -118,10 +118,10 @@ artifacts:
                     transport:
                         rest:
                             path: "/resources"
-                            service: "resource-providers"
+                            service: "rest"
                 services:
-                  - name: "resource-providers"
-                    http: 80
+                  - name: "rest"
+                    http: 8000
         type:
             docker_image:
                 image: "hello-world:latest"
@@ -229,10 +229,10 @@ def postgres_bolt() -> Bolt:
                                 },
                             ],
                             "title": "Postgres Database",
-                            "transport": {"rest": {"path": "/resources", "service": "resource-providers"}},
+                            "transport": {"rest": {"path": "/resources", "service": "rest"}},
                         },
                     ],
-                    "services": [{"name": "resource-providers", "http": 345}],
+                    "services": [{"name": "rest", "http": 8000}],
                 },
                 "requires": {"services": [{"postgres": {"server": "postgres"}}]},
             },
@@ -251,7 +251,7 @@ def artifact_reference() -> ArtifactReference:
 
 
 @pytest.fixture(scope="session")
-def provided_resource_with_artifact(postgres_bolt: Bolt) -> ResolvedProvidedResource:
+def resolved_provided_resource(postgres_bolt: Bolt) -> ResolvedProvidedResource:
     artifact = postgres_bolt.artifacts[1]
 
     return ResolvedProvidedResource(
