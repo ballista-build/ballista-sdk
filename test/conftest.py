@@ -1,7 +1,7 @@
 import pytest
 import yaml
 
-from ballista_sdk.adapters.infrastructure import ArtifactReference, ProvidedResourceWithArtifactReference
+from ballista_sdk.adapters.infrastructure import ArtifactReference, ResolvedProvidedResource
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactTypeRequirement,
@@ -251,10 +251,10 @@ def artifact_reference() -> ArtifactReference:
 
 
 @pytest.fixture(scope="session")
-def provided_resource_with_artifact(postgres_bolt: Bolt) -> ProvidedResourceWithArtifactReference:
+def provided_resource_with_artifact(postgres_bolt: Bolt) -> ResolvedProvidedResource:
     artifact = postgres_bolt.artifacts[1]
 
-    return ProvidedResourceWithArtifactReference(
+    return ResolvedProvidedResource(
         artifact.execution.provides.resources[0],
         ArtifactReference(
             project_name=postgres_bolt.project, artifact_name=artifact.name, version=postgres_bolt.version

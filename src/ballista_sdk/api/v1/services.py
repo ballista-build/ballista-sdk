@@ -1,7 +1,7 @@
 from enum import StrEnum
 from typing import Annotated
 
-from pydantic import Field
+from pydantic import BaseModel, Field
 
 from .common import BaseNamedModel
 
@@ -19,3 +19,11 @@ class ServiceType(StrEnum):
     grpc = "grpc"
     http = "http"
     tcp = "tcp"
+
+
+class VirtualProvidedService(BaseModel):
+    """A static address for a ProvidedService, pretending to be executed in an Artifact."""
+
+    address: str
+    artifact: str
+    service: ProvidedService

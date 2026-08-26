@@ -20,9 +20,9 @@ from .primitives import (
     BoltReference,
     ProjectReference,
     ProvidedResourceReference,
-    ProvidedResourceWithArtifactReference,
     ProvidedServiceReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from .repository import BoltRepository
 from .resources.transports import ResourceProviderTransport
@@ -62,7 +62,7 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> Iterable[ProvidedResourceWithArtifactReference]:
+    ) -> Iterable[ResolvedProvidedResource]:
         """List available Resources with the providing ArtifactReference in the specified Environments."""
         ...
 
@@ -74,7 +74,7 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> Iterable[ProvidedServiceWithArtifactReference]:
+    ) -> Iterable[ResolvedProvidedService]:
         """List Services in the specified Environments."""
         ...
 
@@ -107,18 +107,18 @@ class InfrastructureAdapter(BoltRepository, Protocol):
 
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+    ) -> ResolvedProvidedResource:
         """Resolves a `ResourceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedResource` with an ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
     async def resolve_service_requirement(
         self, environment: Environment, service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
-        """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an ArtifactReference. Raises UnknownService if dependency cannot be met."""
+    ) -> ResolvedProvidedService:
+        """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an `ArtifactReference` and address to reach it. Raises UnknownService if dependency cannot be met."""
         ...
 
     async def transport_resource_provider(
-        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+        self, environment: Environment, provided_resource_with_artifact: ResolvedProvidedResource
     ) -> ResourceProviderTransport:
         """Transports a Resource Provider communication that is accessible to the adapter."""
         ...
@@ -177,10 +177,10 @@ class BoltInspector:
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> list[ProvidedResourceWithArtifactReference]:
+    ) -> list[ResolvedProvidedResource]:
         """List ProvidedResources with the providing ArtifactReference in the specified Bolts."""
         return [
-            ProvidedResourceWithArtifactReference(
+            ResolvedProvidedResource(
                 provided_resource=resource,
                 artifact_reference=ArtifactReference(
                     project_name=bolt.project,
@@ -206,16 +206,17 @@ class BoltInspector:
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[ProvidedServiceWithArtifactReference]:
+    ) -> list[ResolvedProvidedService]:
         """List ProvidedServices with the providing ArtifactReference in the specified Bolts."""
         return [
-            ProvidedServiceWithArtifactReference(
+            ResolvedProvidedService(
                 provided_service=service,
                 artifact_reference=ArtifactReference(
                     project_name=bolt.project,
                     artifact_name=artifact.name,
                     version=bolt.version,
                 ),
+                host=service.name,
             )
             for bolt in bolts
             if not project_names or bolt.project in project_names
@@ -316,7 +317,7 @@ class BoltInspector:
     @classmethod
     def resolve_resource_requirement(
         cls, bolts: Iterable[Bolt], resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+    ) -> ResolvedProvidedResource:
         """Resolves a `ResourceRequirement` in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         for match in cls.list_provided_resources(
             bolts,
@@ -334,7 +335,7 @@ class BoltInspector:
     @classmethod
     def resolve_service_requirement(
         cls, bolts: Iterable[Bolt], service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
+    ) -> ResolvedProvidedService:
         """Resolves a `ServiceRequirement` in the specified `Environment`, returning a Service with the providing ArtifactReference. Raises UnknownService if dependency cannot be met."""
         for match in cls.list_provided_services(
             bolts,
@@ -356,11 +357,11 @@ class BoltInspector:
 async def resolve_artifact_requirements(
     adapter: InfrastructureAdapter, environment: Environment, bolt: Bolt
 ) -> tuple[
-    dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    dict[ProvidedResourceReference, ResolvedProvidedResource],
+    dict[ProvidedServiceReference, ResolvedProvidedService],
 ]:
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference] = {}
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference] = {}
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource] = {}
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService] = {}
 
     for artifact in bolt.artifacts:
         if not artifact.execution:

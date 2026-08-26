@@ -25,8 +25,8 @@ from ballista_sdk.adapters.primitives import (
     BoltReference,
     BoundSetting,
     ProjectReference,
-    ProvidedResourceWithArtifactReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from ballista_sdk.adapters.resources.transports import (
     ResourceProviderTransport,
@@ -180,7 +180,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         self,
         environment: Environment,
         artifact: ArtifactReference,
-        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+        provided_resource_with_artifact: ResolvedProvidedResource,
         resource_requirement,
     ):
         try:
@@ -265,7 +265,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> list[ProvidedResourceWithArtifactReference]:
+    ) -> list[ResolvedProvidedResource]:
         """List Provided Resources with a providing ArtifactReference in the specified Environment."""
 
         return BoltInspector.list_provided_resources(
@@ -280,7 +280,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[ProvidedServiceWithArtifactReference]:
+    ) -> list[ResolvedProvidedService]:
         """List Provided Services with a providing ArtifactReference in the specified Environment."""
 
         return BoltInspector.list_provided_services(
@@ -335,7 +335,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+    ) -> ResolvedProvidedResource:
         # Get the project_name of the requirement points to and compare our resources
         requirement_project_name = resource_requirement.project_name
         requirement_resource_name = resource_requirement.resource_name
@@ -343,8 +343,8 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         provided_resources = await self.list_provided_resources(
             [environment], project_names=[requirement_project_name], resource_names=[requirement_resource_name]
         )
-        for resource_provider_artifact_reference in provided_resources:
-            return resource_provider_artifact_reference
+        for resolved_provided_resource in provided_resources:
+            return resolved_provided_resource
 
         raise ProvidedResourceNotFound(
             ProvidedResourceReference(project_name=requirement_project_name, resource_name=requirement_resource_name)
@@ -352,7 +352,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
     async def resolve_service_requirement(
         self, environment: Environment, service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
+    ) -> ResolvedProvidedService:
         # Get the project_name of the requirement points to and compare our services
         requirement_project_name = service_requirement.project_name
         requirement_artifact_name = service_requirement.artifact_name
@@ -364,8 +364,8 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             artifact_names=[requirement_artifact_name],
             service_names=[requirement_service_name],
         )
-        for service_provider_artifact_reference in provided_services:
-            return service_provider_artifact_reference
+        for resolved_provided_service in provided_services:
+            return resolved_provided_service
 
         raise ProvidedServiceNotFound(
             ProvidedServiceReference(
@@ -390,7 +390,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         self._call_compose(docker_compose_project, ["down"])
 
     async def transport_resource_provider(
-        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+        self, environment: Environment, provided_resource_with_artifact: ResolvedProvidedResource
     ) -> ResourceProviderTransport:
         resource = provided_resource_with_artifact.provided_resource
 

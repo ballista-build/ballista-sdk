@@ -6,22 +6,19 @@ from collections import OrderedDict
 from dataclasses import dataclass
 from typing import Any, ClassVar, Protocol, Sequence
 
-from kubernetes.client.models import V1Deployment
-
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.adapters.primitives import (
     ArtifactReference,
     ProvidedResourceReference,
-    ProvidedResourceWithArtifactReference,
     ProvidedServiceReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactExecution,
     ArtifactExecutionParameters,
     Bolt,
-    ComputeExecutionParameters,
     Environment,
     ExecutionParameters,
     HealthcheckProbe,
@@ -149,8 +146,8 @@ class KubernetesResourcesGenerator(Protocol):
         artifact: Artifact,
         artifact_execution: ArtifactExecution,
         artifact_execution_parameters: ArtifactExecutionParameters,
-        resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-        service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+        resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+        service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
     ) -> Sequence[KubernetesResource]: ...
 
 
@@ -224,10 +221,13 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
-        resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-        service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+        resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+        service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
     ) -> tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]]:
         """Generate Kubernetes resource definitions shared across multiple artifacts and the individual artifacts."""
+
+        # Bolt resources
+        k8s_resources: list[KubernetesResource] = []
 
         artifact_resources = {
             artifact.name: self.generate_artifact_resources(
@@ -250,8 +250,6 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         if len(artifact_resources) == 0:
             raise ValueError("No artifacts to generate resources.")
 
-        # Bolt resources
-        k8s_resources: list[KubernetesResource] = []
         return k8s_resources, artifact_resources
 
     def generate_artifact_resources(
@@ -263,8 +261,8 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
         artifact: Artifact,
         artifact_execution: ArtifactExecution,
         artifact_execution_parameters: ArtifactExecutionParameters,
-        resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-        service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+        resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+        service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
     ) -> list[KubernetesResource]:
         """Generate Kubernetes Resources for a specific ExecutableArtifact."""
 
@@ -324,8 +322,8 @@ def _generate_config_kubernetes_resources(
     artifact: Artifact,
     artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
 ) -> list[KubernetesResource]:
     return []
 
@@ -340,8 +338,8 @@ def _generate_secrets_kubernetes_resources(
     artifact: Artifact,
     artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
 ) -> list[KubernetesResource]:
     return []
 
@@ -413,8 +411,8 @@ def _generate_deployment(
     artifact: Artifact,
     artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
 ) -> list[KubernetesResource]:
     artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
@@ -474,7 +472,16 @@ def _generate_deployment(
         provided_service_reference = ProvidedServiceReference(
             service_requirement.project_name, service_requirement.artifact_name, service_requirement.service_name
         )
-        service, provider_artifact_reference = service_providers[provided_service_reference]
+        provided_service, provider_artifact_reference, provided_service_host = service_providers[
+            provided_service_reference
+        ]
+
+        service_env_name = f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}-{provided_service.name}".upper().replace(
+            "-", "_"
+        )
+        env[f"{service_env_name}_HOST"] = provided_service_host
+        env[f"{service_env_name}_PORT"] = str(provided_service.grpc or provided_service.http or provided_service.tcp)
+        env[f"{service_env_name}_SECURE"] = "true" if provided_service.secure else "false"
 
     # Provided Services
     services_added = {}
@@ -601,10 +608,6 @@ def _generate_deployment(
     ]
 
 
-def extract_compute_execution_parameters_from_deployment(deployment: V1Deployment) -> ComputeExecutionParameters:
-    return ComputeExecutionParameters()
-
-
 @KubernetesInfrastructureAdapter.add_generator
 def _generate_services(
     adapter: KubernetesInfrastructureAdapter,
@@ -615,8 +618,8 @@ def _generate_services(
     artifact: Artifact,
     artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
 ) -> list[KubernetesResource]:
     services: list[KubernetesResource] = []
     for provided_service in artifact_execution.provides.services:
@@ -678,8 +681,8 @@ def _generate_persistent_volume_claims(
     artifact: Artifact,
     artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
 ) -> list[KubernetesResource]:
     resources: list[KubernetesResource] = []
     for volume in artifact_execution.requires.volumes:
@@ -710,8 +713,8 @@ def _generate_ingresses(
     artifact: Artifact,
     artifact_execution: ArtifactExecution,
     artifact_execution_parameters: ArtifactExecutionParameters,
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
 ) -> list[KubernetesResource]:
     resources: list[KubernetesResource] = []
 
@@ -768,5 +771,63 @@ def _generate_ingresses(
                 },
             }
         )
+
+    return resources
+
+
+@KubernetesInfrastructureAdapter.add_generator
+def _generate_virtual_services(
+    adapter: KubernetesInfrastructureAdapter,
+    environment: Environment,
+    environment_config: KubernetesEnvironmentConfig,
+    bolt: Bolt,
+    execution_parameters: ExecutionParameters,
+    artifact: Artifact,
+    artifact_execution: ArtifactExecution,
+    artifact_execution_parameters: ArtifactExecutionParameters,
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
+) -> list[KubernetesResource]:
+    resources: list[KubernetesResource] = []
+
+    for vps in bolt.provides.services:
+        if vps.artifact == artifact.name:
+            provided_service = vps.service
+            metadata = generate_artifact_metadata(
+                environment, environment_config, bolt, artifact, provided_service.name
+            )
+            metadata["annotations"] = {
+                primitives.METADATA_ANNOTATION_SERVICE: provided_service.model_dump_json(exclude_unset=True)
+            }
+            metadata["labels"][primitives.METADATA_LABEL_SERVICE] = provided_service.name
+
+            ports = [
+                {
+                    "port": provided_service.grpc or provided_service.http or provided_service.tcp,
+                    "name": provided_service.name,
+                    "targetPort": provided_service.name,
+                }
+            ]
+
+            resources.extend(
+                [
+                    {
+                        "apiVersion": "v1",
+                        "kind": "Service",
+                        "metadata": metadata,
+                        "spec": {
+                            "ports": ports,
+                        },
+                    },
+                    {
+                        "apiVersion": "discovery.k8s.io/v1",
+                        "kind": "EndpointSlice",
+                        "metadata": metadata,
+                        "addressType": "FQDN",
+                        "ports": ports,
+                        "endpoints": {"addresses": address},
+                    },
+                ]
+            )
 
     return resources

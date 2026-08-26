@@ -2,7 +2,7 @@ import pytest
 
 from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.adapters.exceptions import ArtifactNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
-from ballista_sdk.adapters.infrastructure import ArtifactReference, ProvidedResourceWithArtifactReference
+from ballista_sdk.adapters.infrastructure import ArtifactReference, ResolvedProvidedResource
 from ballista_sdk.adapters.resources.transports import RESTResourceProviderTransport
 from ballista_sdk.api.v1 import Bolt, Environment, ResourceRequirement, ServiceRequirement
 
@@ -10,9 +10,9 @@ from ballista_sdk.api.v1 import Bolt, Environment, ResourceRequirement, ServiceR
 async def test_transport_resource_provider(
     environment: Environment,
     infrastructure_adapter: InfrastructureAdapter,
-    provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+    resolved_provided_resource: ResolvedProvidedResource,
 ):
-    transport = await infrastructure_adapter.transport_resource_provider(environment, provided_resource_with_artifact)
+    transport = await infrastructure_adapter.transport_resource_provider(environment, resolved_provided_resource)
 
     assert isinstance(transport, RESTResourceProviderTransport)
 

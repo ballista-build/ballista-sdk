@@ -22,9 +22,9 @@ from ballista_sdk.adapters.primitives import (
     BoltReference,
     ProjectReference,
     ProvidedResourceReference,
-    ProvidedResourceWithArtifactReference,
     ProvidedServiceReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from ballista_sdk.adapters.resources.transports import (
     ResourceProviderTransport,
@@ -327,7 +327,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> list[ProvidedResourceWithArtifactReference]:
+    ) -> list[ResolvedProvidedResource]:
         """List Provided Resources and the providing ArtifactIDReference in the specified Environment."""
         provided_resources = []
 
@@ -365,7 +365,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                     for provided_resource in artifact.execution.provides.resources:
                         if not resource_names or provided_resource.name in resource_names:
                             provided_resources.append(
-                                ProvidedResourceWithArtifactReference(
+                                ResolvedProvidedResource(
                                     provided_resource=provided_resource, artifact_reference=artifact_reference
                                 )
                             )
@@ -382,7 +382,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[ProvidedServiceWithArtifactReference]:
+    ) -> list[ResolvedProvidedService]:
         provided_services = []
 
         labels = [
@@ -414,9 +414,10 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
                 try:
                     provided_service = ProvidedService.model_validate_json(annotation)
+                    host = f"{service.metadata.name}.{service.metadata.namespace}.svc.cluster.local"
                     provided_services.append(
-                        ProvidedServiceWithArtifactReference(
-                            provided_service=provided_service, artifact_reference=artifact_reference
+                        ResolvedProvidedService(
+                            provided_service=provided_service, artifact_reference=artifact_reference, host=host
                         )
                     )
                 except ValidationError:
@@ -483,12 +484,35 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         raise ArtifactNotFound(artifact_reference)
 
+    async def resolve_service_address(
+        self, environment: Environment, service_reference: ProvidedServiceReference
+    ) -> str:
+        """Get the host to connect to a ProvidedService."""
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}",
+            f"{primitives.METADATA_LABEL_APP_PART_OF}={service_reference.project_name}",
+            f"{primitives.METADATA_LABEL_APP_NAME}={service_reference.artifact_name}",
+            f"{primitives.METADATA_LABEL_SERVICE}={service_reference.service_name}",
+        ]
+
+        api_client = await self._get_api_client(environment)
+        api = client.CoreV1Api(api_client)
+
+        for service in api.list_service_for_all_namespaces(label_selector=",".join(labels)).items:
+            if not service.metadata or not service.metadata.labels or not service.spec or not service.spec.ports:
+                continue
+
+            return f"{service.metadata.name}-{service.metadata.namespace}.svc.cluster.local"
+
+        raise ProvidedServiceNotFound(service_reference)
+
     async def resolve_bolt_reference(self, environment: Environment, bolt_reference: BoltReference) -> Bolt:
         raise BoltNotFound(bolt_reference)
 
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+    ) -> ResolvedProvidedResource:
         requirement_project_name = resource_requirement.project_name
         requirement_resource_name = resource_requirement.resource_name
 
@@ -497,8 +521,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             project_names=[requirement_project_name],
             resource_names=[requirement_resource_name],
         )
-        for provided_resource_with_provider_artifact in provided_resources:
-            return provided_resource_with_provider_artifact
+        for resolved_provided_resource in provided_resources:
+            return resolved_provided_resource
 
         raise ProvidedResourceNotFound(
             ProvidedResourceReference(
@@ -509,7 +533,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
     async def resolve_service_requirement(
         self, environment: Environment, service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
+    ) -> ResolvedProvidedService:
         requirement_project_name = service_requirement.project_name
         requirement_artifact_name = service_requirement.artifact_name
         requirement_service_name = service_requirement.service_name
@@ -520,8 +544,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             artifact_names=[requirement_artifact_name],
             service_names=[requirement_service_name],
         )
-        for provided_resource_with_provider_artifact in provided_resources:
-            return provided_resource_with_provider_artifact
+        for resolved_provided_resource in provided_resources:
+            return resolved_provided_resource
 
         raise ProvidedServiceNotFound(
             ProvidedServiceReference(
@@ -537,7 +561,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     async def transport_resource_provider(
         self,
         environment: Environment,
-        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+        provided_resource_with_artifact: ResolvedProvidedResource,
         bolt: Bolt | None = None,
     ) -> ResourceProviderTransport:
         resource = provided_resource_with_artifact.provided_resource
@@ -547,25 +571,32 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             artifact = await self.resolve_artifact_reference(environment, artifact_reference)
 
             if rest_transport := resource.transport.rest:
-                port = None
+                service_host = None
+                service_port = None
 
                 if artifact.execution and artifact.execution.provides:
                     for service in artifact.execution.provides.services:
                         if service.name == rest_transport.service and service.http:
-                            port = service.http
+                            service_host = await self.resolve_service_address(
+                                environment,
+                                ProvidedServiceReference(
+                                    project_name=artifact_reference.project_name,
+                                    artifact_name=artifact_reference.artifact_name,
+                                    service_name=rest_transport.service,
+                                ),
+                            )
+                            service_port = service.http
                             break
 
-                if port is None:
+                if service_host is None or service_port is None:
                     raise ValueError("BAD SERVICE REFERENCE")
-
-                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
 
                 return RESTResourceProviderTransport(
                     ProvidedResourceReference(
                         project_name=artifact_reference.project_name,
                         resource_name=resource.name,
                     ),
-                    f"{ref_name}:{port}{rest_transport.path}",
+                    f"{service_host}:{service_port}{rest_transport.path}",
                 )
 
         raise ValueError()
