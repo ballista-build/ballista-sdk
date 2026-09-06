@@ -29,7 +29,7 @@ from .resources.transports import ResourceProviderTransport
 from .settings import SettingsAdapter
 
 
-class InfrastructureAdapter(BoltRepository, Protocol):
+class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository, Protocol):
     """Infastructure adapter for executing Artifacts in Environments.
 
     InfrastructureAdapters encapsulate the following capabilities:
@@ -47,17 +47,21 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         """Settings adapter specifically to manage Secrets."""
         ...
 
-    async def get_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
+    async def get_execution_parameters(self, bolt: Bolt, environment: AdapterEnvironment) -> ExecutionParameters:
         """Returns the ExecutionParameters used when deploying a specified Bolt and Environment."""
         ...
 
-    async def interact(self, bolt: Bolt, environment: Environment):
+    def get_development_environment(self, name: str, title: str) -> AdapterEnvironment:
+        """Get an Environment instance suited for development."""
+        ...
+
+    async def interact(self, bolt: Bolt, environment: AdapterEnvironment):
         """Start an interactive development session that automatically builds, deploys, and tears down the Bolt."""
         ...
 
     async def list_provided_resources(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -68,7 +72,7 @@ class InfrastructureAdapter(BoltRepository, Protocol):
 
     async def list_provided_services(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -80,7 +84,7 @@ class InfrastructureAdapter(BoltRepository, Protocol):
 
     async def list_resources(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -93,7 +97,7 @@ class InfrastructureAdapter(BoltRepository, Protocol):
 
     async def list_services(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -106,19 +110,19 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         ...
 
     async def resolve_resource_requirement(
-        self, environment: Environment, resource_requirement: ResourceRequirement
+        self, environment: AdapterEnvironment, resource_requirement: ResourceRequirement
     ) -> ResolvedProvidedResource:
         """Resolves a `ResourceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedResource` with an ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
     async def resolve_service_requirement(
-        self, environment: Environment, service_requirement: ServiceRequirement
+        self, environment: AdapterEnvironment, service_requirement: ServiceRequirement
     ) -> ResolvedProvidedService:
         """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an `ArtifactReference` and address to reach it. Raises UnknownService if dependency cannot be met."""
         ...
 
     async def transport_resource_provider(
-        self, environment: Environment, provided_resource_with_artifact: ResolvedProvidedResource
+        self, environment: AdapterEnvironment, provided_resource_with_artifact: ResolvedProvidedResource
     ) -> ResourceProviderTransport:
         """Transports a Resource Provider communication that is accessible to the adapter."""
         ...

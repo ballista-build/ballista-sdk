@@ -14,7 +14,12 @@ from ballista_sdk.api.v1 import (
     SettingValue,
 )
 
-from .environments import KubernetesEnvironmentConfig, get_environment_config, get_kubernetes_client
+from .environments import (
+    KubernetesAPIEnvironment,
+    KubernetesEnvironmentConfig,
+    get_environment_apiclient,
+    get_environment_config,
+)
 from .generation import generate_artifact_settings_refname, generate_resource_settings_refname
 
 
@@ -22,11 +27,13 @@ from .generation import generate_artifact_settings_refname, generate_resource_se
 class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
     """SettingsAdapter using the Kubernetes API."""
 
-    _loaded: dict[tuple[Environment, str, str], SettingKind] = field(default_factory=dict, init=False)
+    _loaded: dict[tuple[KubernetesAPIEnvironment, str, str], SettingKind] = field(default_factory=dict, init=False)
     """Loaded objects."""
-    _pending_writes: dict[tuple[Environment, str, str], SettingKind] = field(default_factory=dict, init=False)
+    _pending_writes: dict[tuple[KubernetesAPIEnvironment, str, str], SettingKind] = field(
+        default_factory=dict, init=False
+    )
     """Objects pending being written."""
-    _pending_deletes: set[tuple[Environment, str, str]] = field(default_factory=set, init=False)
+    _pending_deletes: set[tuple[KubernetesAPIEnvironment, str, str]] = field(default_factory=set, init=False)
     """Objects pending being deleted."""
 
     def __enter__(self) -> Self:
@@ -44,7 +51,10 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
         self._pending_deletes.clear()
 
     def _get_bound_setting_metadata(
-        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+        self,
+        environment: KubernetesAPIEnvironment,
+        environment_config: KubernetesEnvironmentConfig,
+        bound_setting: BoundSetting,
     ) -> client.V1ObjectMeta:
         if bound_setting.artifact:
             namespace = _get_reference_kubernetes_namespace(environment, environment_config, bound_setting.artifact)
@@ -62,7 +72,10 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
         return client.V1ObjectMeta(labels={}, name=name, namespace=namespace)
 
     def _get_bound_setting_names(
-        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+        self,
+        environment: KubernetesAPIEnvironment,
+        environment_config: KubernetesEnvironmentConfig,
+        bound_setting: BoundSetting,
     ) -> tuple[str, str]:
         if bound_setting.artifact:
             return _get_reference_kubernetes_namespace(
@@ -75,12 +88,12 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
         else:
             raise ValueError()
 
-    def _delete_object(self, environment: Environment, namespace: str, ref_name: str):
+    def _delete_object(self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str):
         cache_key = (environment, namespace, ref_name)
 
         self._loaded.pop(cache_key, None)
 
-    def delete(self, environment: Environment, bound_setting: BoundSetting):
+    def delete(self, environment: KubernetesAPIEnvironment, bound_setting: BoundSetting):
         """Delete the value stored for the BoundSetting in specified Environment."""
 
         environment_config = get_environment_config(environment)
@@ -97,7 +110,7 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
         self._delete_object_value(obj, bound_setting.setting)
         self._pending_writes[(environment, namespace, ref_name)] = obj
 
-    def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
+    def exists(self, environment: KubernetesAPIEnvironment, bound_setting: BoundSetting) -> bool:
         """Checks if the value for the BoundSetting exists/persists."""
 
         environment_config = get_environment_config(environment)
@@ -112,10 +125,12 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
         except Exception:
             return False
 
-    def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> SettingKind | None:
+    def _read_object(self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str) -> SettingKind | None:
         return None
 
-    def _read_cached_object(self, environment: Environment, namespace: str, ref_name: str) -> SettingKind | None:
+    def _read_cached_object(
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
+    ) -> SettingKind | None:
         cache_key = (environment, namespace, ref_name)
 
         if loaded_object := self._loaded.get(cache_key):
@@ -123,7 +138,7 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
 
         return self._read_object(environment, namespace, ref_name)
 
-    def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
+    def read(self, environment: KubernetesAPIEnvironment, bound_setting: BoundSetting) -> SettingValue:
         """Retrieve the value for the BoundSetting in the specified Environment."""
 
         environment_config = get_environment_config(environment)
@@ -137,7 +152,10 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
 
     @abstractmethod
     def _create_object(
-        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+        self,
+        environment: KubernetesAPIEnvironment,
+        environment_config: KubernetesEnvironmentConfig,
+        bound_setting: BoundSetting,
     ) -> SettingKind: ...
 
     @abstractmethod
@@ -149,14 +167,14 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
     @abstractmethod
     def _delete_object_value(self, obj: SettingKind, setting: Setting): ...
 
-    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: SettingKind):
+    def _write_object(self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: SettingKind):
         cache_key = (environment, namespace, ref_name)
 
         self._loaded.pop(cache_key, None)
 
     def write(
         self,
-        environment: Environment,
+        environment: KubernetesAPIEnvironment,
         bound_setting: BoundSetting,
         value: SettingValue,
     ):
@@ -183,7 +201,10 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
         return True
 
     def _create_object(
-        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+        self,
+        environment: KubernetesAPIEnvironment,
+        environment_config: KubernetesEnvironmentConfig,
+        bound_setting: BoundSetting,
     ) -> client.V1ConfigMap:
         return client.V1ConfigMap(
             api_version="v1",
@@ -191,16 +212,20 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
             metadata=self._get_bound_setting_metadata(environment, environment_config, bound_setting),
         )
 
-    def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> client.V1ConfigMap | None:
-        api_client = get_kubernetes_client(environment)
+    def _read_object(
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
+    ) -> client.V1ConfigMap | None:
+        api_client = get_environment_apiclient(environment)
         api = client.CoreV1Api(api_client)
         try:
             return api.read_namespaced_config_map(name=ref_name, namespace=namespace)
         except ApiException:
             return None
 
-    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: client.V1ConfigMap):
-        api_client = get_kubernetes_client(environment)
+    def _write_object(
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: client.V1ConfigMap
+    ):
+        api_client = get_environment_apiclient(environment)
 
         api = client.CoreV1Api(api_client)
         try:
@@ -264,7 +289,10 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         return True
 
     def _create_object(
-        self, environment: Environment, environment_config: KubernetesEnvironmentConfig, bound_setting: BoundSetting
+        self,
+        environment: KubernetesAPIEnvironment,
+        environment_config: KubernetesEnvironmentConfig,
+        bound_setting: BoundSetting,
     ) -> client.V1Secret:
         return client.V1Secret(
             api_version="v1",
@@ -273,8 +301,10 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
             type="Opaque",
         )
 
-    def _read_object(self, environment: Environment, namespace: str, ref_name: str) -> client.V1Secret | None:
-        api_client = get_kubernetes_client(environment)
+    def _read_object(
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
+    ) -> client.V1Secret | None:
+        api_client = get_environment_apiclient(environment)
 
         api = client.CoreV1Api(api_client)
         try:
@@ -282,8 +312,8 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         except ApiException:
             return None
 
-    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: client.V1Secret):
-        api_client = get_kubernetes_client(environment)
+    def _write_object(self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: client.V1Secret):
+        api_client = get_environment_apiclient(environment)
 
         api = client.CoreV1Api(api_client)
         try:

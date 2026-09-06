@@ -153,7 +153,7 @@ class KubernetesResourcesGenerator(Protocol):
 
 # TODO: Break out into a "Default" adapter?
 @dataclass
-class KubernetesInfrastructureAdapter(InfrastructureAdapter):
+class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](InfrastructureAdapter[AdapterEnvironment]):
     """Infrastructure Adapter for Kubernetes."""
 
     _generators: ClassVar[list[KubernetesResourcesGenerator]] = []
@@ -217,7 +217,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
 
     def generate_bolt_resources(
         self,
-        environment: Environment,
+        environment: AdapterEnvironment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
@@ -254,7 +254,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
 
     def generate_artifact_resources(
         self,
-        environment: Environment,
+        environment: AdapterEnvironment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
@@ -286,7 +286,7 @@ class KubernetesInfrastructureAdapter(InfrastructureAdapter):
 
     def _get_docker_image_name(
         self,
-        environment: Environment,
+        environment: AdapterEnvironment,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         artifact: Artifact,

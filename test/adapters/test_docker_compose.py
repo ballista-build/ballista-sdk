@@ -91,10 +91,10 @@ def project_docker_compose_project():
                     }
                 },
                 environment={
-                    "RESOURCE_PROVIDERS_SERVICE_HOST": "test.ballista.build",
-                    "RESOURCE_PROVIDERS_SERVICE_PATH": "/",
-                    "RESOURCE_PROVIDERS_SERVICE_SECURE": "false",
-                    "RESOURCE_PROVIDERS_SERVICE_PORT": "80",
+                    "REST_SERVICE_HOST": "test.ballista.build",
+                    "REST_SERVICE_PATH": "/",
+                    "REST_SERVICE_SECURE": "false",
+                    "REST_SERVICE_PORT": "8000",
                 },
                 image="hello-world:latest",
                 networks={
@@ -102,7 +102,7 @@ def project_docker_compose_project():
                     "env-test": {},
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
-                ports=[{"name": "resource-providers", "published": "80", "target": 80}],
+                ports=[{"name": "rest", "published": "8000", "target": 8000}],
             )
         },
         volumes={},
@@ -127,9 +127,9 @@ async def test_generate_docker_compose(
     request,
     bolt: Bolt,
     docker_compose_adapter: DockerComposeInfrastructureAdapter,
-    environment: Environment,
     execution_parameters: ExecutionParameters,
 ):
+    environment = docker_compose_adapter.get_development_environment("test", "Test Environment")
     bolt_name = request.node.callspec.params.get("bolt_yaml")
     docker_compose_project = request.getfixturevalue(f"{bolt_name}_docker_compose_project")
 

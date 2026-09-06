@@ -7,6 +7,13 @@ from pydantic import BaseModel, Field
 from ballista_sdk.api.v1 import Environment
 
 
+class KubernetesAPIEnvironment(Environment):
+    """An Environment that can be used by KubernetesAPI adapters."""
+
+    kubeconfig_file: str | None
+    """Path to a kubeconfig file."""
+
+
 class KubernetesEnvironmentConfig(BaseModel):
     """Configuration for a Kubernetes environment."""
 
@@ -30,6 +37,9 @@ class KubernetesEnvironmentConfig(BaseModel):
     project_namespaces: bool = False
     """Projects are deployed into their own namespaces."""
 
+    gateway_api: bool = False
+    """Use Gateway API instead of Ingress."""
+
 
 def get_environment_config(environment: Environment) -> KubernetesEnvironmentConfig:
     """Get a shaped configuration from an Environment."""
@@ -37,8 +47,9 @@ def get_environment_config(environment: Environment) -> KubernetesEnvironmentCon
     return KubernetesEnvironmentConfig.model_validate(environment.config if environment.config else {})
 
 
-def get_kubernetes_client(environment: Environment) -> ApiClient:
-    # TODO: Get context where environment is
-    context = None
+def get_environment_apiclient(environment: KubernetesAPIEnvironment) -> ApiClient:
+    """Get a Kubernetes APIClient for the specified KuberenetesAPIEnvironment."""
 
-    return config.new_client_from_config(context=context)
+    return config.new_client_from_config(
+        config_file=environment.kubeconfig_file, persist_config=(environment.kubeconfig_file is None)
+    )

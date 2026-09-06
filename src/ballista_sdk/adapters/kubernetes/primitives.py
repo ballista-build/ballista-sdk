@@ -2,6 +2,9 @@
 
 from typing import Any, NotRequired, TypedDict
 
+KUBERNETES_MIN_VERSION = 1.34
+"""The minimum version of Kubernetes that is supported."""
+
 # The standard kubernetes app labels
 METADATA_APP_DOMAIN = "app.kubernetes.io"
 METADATA_LABEL_APP_INSTANCE = f"{METADATA_APP_DOMAIN}/instance"

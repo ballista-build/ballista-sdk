@@ -13,3 +13,4 @@ wheels/
 generated
 
 .coverage
+ballista-test.kubeconfig

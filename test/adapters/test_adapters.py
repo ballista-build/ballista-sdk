@@ -4,22 +4,37 @@ from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.adapters.exceptions import ArtifactNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
 from ballista_sdk.adapters.infrastructure import ArtifactReference, ResolvedProvidedResource
 from ballista_sdk.adapters.resources.transports import RESTResourceProviderTransport
-from ballista_sdk.api.v1 import Bolt, Environment, ResourceRequirement, ServiceRequirement
+from ballista_sdk.api.v1 import Bolt, Environment, EnvironmentTier, ResourceRequirement, ServiceRequirement
+
+
+def test_get_development_environment(
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
+):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
+    name = "local"
+    title = "Local"
+    local_environment = infrastructure_adapter.get_development_environment(name, title)
+
+    assert local_environment is not None
+    assert local_environment.name == name
+    assert local_environment.tier == EnvironmentTier.DEVELOPMENT
+    assert local_environment.title == title
 
 
 async def test_transport_resource_provider(
-    environment: Environment,
-    infrastructure_adapter: InfrastructureAdapter,
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
     resolved_provided_resource: ResolvedProvidedResource,
 ):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     transport = await infrastructure_adapter.transport_resource_provider(environment, resolved_provided_resource)
 
     assert isinstance(transport, RESTResourceProviderTransport)
 
 
 async def test_resolve_artifact(
-    environment: Environment, infrastructure_adapter: InfrastructureAdapter, postgres_bolt: Bolt
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter], postgres_bolt: Bolt
 ):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     resolved_artifact = await infrastructure_adapter.resolve_artifact_reference(
         environment, ArtifactReference(project_name="postgres", artifact_name="server", version="18.1")
     )
@@ -28,8 +43,9 @@ async def test_resolve_artifact(
 
 
 async def test_resolve_artifact_not_found(
-    environment: Environment, infrastructure_adapter: InfrastructureAdapter, subtests: pytest.Subtests
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter], subtests: pytest.Subtests
 ):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     for artifact_reference in [
         ArtifactReference(project_name="other_project", artifact_name="server", version="18.1"),
         ArtifactReference(project_name="postgres", artifact_name="not_the_server", version="18.1"),
@@ -39,7 +55,8 @@ async def test_resolve_artifact_not_found(
             await infrastructure_adapter.resolve_artifact_reference(environment, artifact_reference)
 
 
-async def test_resolve_resource(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_resolve_resource(environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter]):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     requirement = ResourceRequirement.model_validate({"postgres": {"database": {"name": "my_database"}}})
     resolved = await infrastructure_adapter.resolve_resource_requirement(environment, requirement)
 
@@ -50,10 +67,10 @@ async def test_resolve_resource(environment: Environment, infrastructure_adapter
 
 
 async def test_resolve_resource_not_found(
-    environment: Environment,
-    infrastructure_adapter: InfrastructureAdapter,
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
     subtests: pytest.Subtests,
 ):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     for requirement in [
         ResourceRequirement.model_validate({"mysql": {"database": {"name": "my_database"}}}),
         ResourceRequirement.model_validate({"postgres": {"name": {"database": "my_name"}}}),
@@ -63,8 +80,9 @@ async def test_resolve_resource_not_found(
 
 
 async def test_resolve_service(
-    environment: Environment, infrastructure_adapter: InfrastructureAdapter, subtests: pytest.Subtests
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter], subtests: pytest.Subtests
 ):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     requirement = ServiceRequirement.model_validate({"postgres": {"server": "postgres"}})
     resolved = await infrastructure_adapter.resolve_service_requirement(environment, requirement)
 
@@ -83,8 +101,9 @@ async def test_resolve_service(
 
 
 async def test_resolve_service_not_found(
-    environment: Environment, infrastructure_adapter: InfrastructureAdapter, subtests: pytest.Subtests
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter], subtests: pytest.Subtests
 ):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     for requirement in [
         ServiceRequirement.model_validate({"mysql": {"server": "postgres"}}),
         ServiceRequirement.model_validate({"postgres": {"daemon": "postgres"}}),
@@ -94,19 +113,22 @@ async def test_resolve_service_not_found(
             await infrastructure_adapter.resolve_service_requirement(environment, requirement)
 
 
-async def test_list_artifacts(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_list_artifacts(environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter]):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     artifacts = list(await infrastructure_adapter.list_artifacts([environment]))
 
     assert artifacts
 
 
-async def test_list_bolts(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_list_bolts(environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter]):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     bolts = list(await infrastructure_adapter.list_bolts([environment]))
 
     assert bolts
 
 
-async def test_list_projects(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_list_projects(environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter]):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     projects = list(await infrastructure_adapter.list_projects([environment], project_names=["postgres"]))
 
     assert projects
@@ -116,7 +138,10 @@ async def test_list_projects(environment: Environment, infrastructure_adapter: I
         assert project.project_name == "postgres"
 
 
-async def test_list_provided_resources(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_list_provided_resources(
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
+):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     provided_resources = list(
         await infrastructure_adapter.list_provided_resources([environment], project_names=["postgres"])
     )
@@ -125,12 +150,16 @@ async def test_list_provided_resources(environment: Environment, infrastructure_
 
     for provided_resource in provided_resources:
         assert provided_resource is not None
+        assert provided_resource.provided_resource.name == "database"
         assert provided_resource.artifact_reference.project_name == "postgres"
         assert provided_resource.artifact_reference.artifact_name in {"server", "resource-providers"}
         assert provided_resource.artifact_reference.version == "18.1"
 
 
-async def test_list_provided_services(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_list_provided_services(
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
+):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     provided_services = list(
         await infrastructure_adapter.list_provided_services([environment], project_names=["postgres"])
     )
@@ -144,7 +173,8 @@ async def test_list_provided_services(environment: Environment, infrastructure_a
         assert provided_service.artifact_reference.version == "18.1"
 
 
-async def test_list_services(environment: Environment, infrastructure_adapter: InfrastructureAdapter):
+async def test_list_services(environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter]):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
     services = list(await infrastructure_adapter.list_services([environment], project_names=["postgres"]))
 
     assert services

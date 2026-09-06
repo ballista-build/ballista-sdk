@@ -8,7 +8,6 @@ from ballista_sdk.adapters.kubernetes.environments import KubernetesEnvironmentC
 from ballista_sdk.adapters.kubernetes.primitives import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
-    Environment,
     ExecutionParameters,
 )
 from ballista_sdk.bolts.v1 import BoltV1Factory
@@ -40,6 +39,9 @@ def simple_bolt_resources():
                 "apiVersion": "apps/v1",
                 "kind": "Deployment",
                 "metadata": {
+                    "annotations": {
+                        "ballista.build/artifact-json": '{"name":"api","execution":{"provides":{"healthchecks":{"ready":{"http":{"service":"http","path":"/healthz"}}},"services":[{"name":"http","http":80}]},"requires":{"configs":[{"name":"option-a","type":"string"}],"resources":[{"postgres":{"database":{"name":"testdatabase","name_alias":"BUG_DATABASE"}}}],"secrets":[{"name":"secret-a","type":"string"}],"volumes":[{"name":"volume-a","title":"Volume A","capacity":0.01,"path":"/var/volume-a","persistent":true}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                    },
                     "labels": {
                         "app.kubernetes.io/instance": "api-1",
                         "app.kubernetes.io/managed-by": "Ballista",
@@ -94,7 +96,7 @@ def simple_bolt_resources():
                                         {"secretRef": {"name": "simple-api", "optional": False}},
                                         # Shared configs and secrets are next
                                         {
-                                            "prefix": "POSTGRES_",
+                                            "prefix": "RESOURCE1_",
                                             "configMapRef": {
                                                 "name": "postgres-resources-database",
                                                 "optional": False,
@@ -226,7 +228,7 @@ def project_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"resource-providers","path":"/resources"}}}],"services":[{"name":"resource-providers","http":80}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "resource-providers-1",
@@ -272,17 +274,17 @@ def project_bolt_resources():
                             "containers": [
                                 {
                                     "env": [
-                                        {"name": "RESOURCE_PROVIDERS_SERVICE_PORT", "value": "80"},
+                                        {"name": "REST_SERVICE_PORT", "value": "8000"},
                                         {
-                                            "name": "RESOURCE_PROVIDERS_SERVICE_HOST",
+                                            "name": "REST_SERVICE_HOST",
                                             "value": "test.ballista.build",
                                         },
-                                        {"name": "RESOURCE_PROVIDERS_SERVICE_SECURE", "value": "false"},
-                                        {"name": "RESOURCE_PROVIDERS_SERVICE_PATH", "value": "/"},
+                                        {"name": "REST_SERVICE_SECURE", "value": "false"},
+                                        {"name": "REST_SERVICE_PATH", "value": "/"},
                                     ],
                                     "image": "hello-world:latest",
                                     "name": "resource-providers",
-                                    "ports": [{"containerPort": 80, "name": "resource-providers"}],
+                                    "ports": [{"containerPort": 8000, "name": "rest"}],
                                     "resources": {
                                         "limits": {
                                             "memory": "1.0Gi",
@@ -299,7 +301,7 @@ def project_bolt_resources():
                 "apiVersion": "v1",
                 "kind": "Service",
                 "metadata": {
-                    "annotations": {"ballista.build/service-json": '{"name":"resource-providers","http":80}'},
+                    "annotations": {"ballista.build/service-json": '{"name":"rest","http":8000}'},
                     "labels": {
                         "app.kubernetes.io/instance": "resource-providers-1",
                         "app.kubernetes.io/managed-by": "Ballista",
@@ -308,9 +310,9 @@ def project_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
-                        "ballista.build/service": "resource-providers",
+                        "ballista.build/service": "rest",
                     },
-                    "name": "project-resource-providers-resource-providers",
+                    "name": "project-resource-providers-rest",
                     "namespace": "test",
                 },
                 "spec": {
@@ -319,7 +321,7 @@ def project_bolt_resources():
                         "app.kubernetes.io/part-of": "project",
                         "ballista.build/environment": "test",
                     },
-                    "ports": [{"port": 80, "name": "resource-providers", "targetPort": "resource-providers"}],
+                    "ports": [{"port": 8000, "name": "rest", "targetPort": "rest"}],
                 },
             },
             {
@@ -334,9 +336,9 @@ def project_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
-                        "ballista.build/service": "resource-providers",
+                        "ballista.build/service": "rest",
                     },
-                    "name": "project-resource-providers-resource-providers",
+                    "name": "project-resource-providers-rest",
                     "namespace": "test",
                 },
                 "spec": {
@@ -348,8 +350,8 @@ def project_bolt_resources():
                                     {
                                         "backend": {
                                             "service": {
-                                                "name": "project-resource-providers-resource-providers",
-                                                "port": {"number": 80},
+                                                "name": "project-resource-providers-rest",
+                                                "port": {"number": 8000},
                                             }
                                         },
                                         "path": "/",
@@ -369,11 +371,12 @@ def project_bolt_resources():
 async def test_generate_resources(
     request,
     bolt: Bolt,
-    environment: Environment,
     environment_config: KubernetesEnvironmentConfig,
     kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
     execution_parameters: ExecutionParameters,
 ):
+    environment = kubernetes_api_adapter.get_development_environment("test", "Test Environment")
+
     bolt_name = request.node.callspec.params.get("bolt_yaml")
     expected_bolt_resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]] = (
         request.getfixturevalue(f"{bolt_name}_bolt_resources")

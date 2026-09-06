@@ -3,7 +3,6 @@ import yaml
 
 from ballista_sdk.adapters.infrastructure import ArtifactReference, ResolvedProvidedResource
 from ballista_sdk.api.v1 import (
-    Artifact,
     ArtifactTypeRequirement,
     Bolt,
     ComputeExecutionParameters,
@@ -137,115 +136,6 @@ def bolt_yaml(request) -> dict[str, str | dict]:
 
 
 @pytest.fixture(scope="session")
-def postgres_bolt() -> Bolt:
-    # Fake Postgres
-    postgres_probe = {"exec": {"commands": ["pg_isready -U $POSTGRES_USER"], "shell": True}}
-    server_artifact = Artifact.model_validate(
-        {
-            "execution": {
-                "provides": {
-                    "healthchecks": {"alive": postgres_probe, "ready": postgres_probe, "started": postgres_probe},
-                    "services": [{"name": "postgres", "tcp": 5432}],
-                },
-                "requires": {
-                    "secrets": [
-                        {
-                            "description": "Username for the default/root login.",
-                            "name": "root-username",
-                            "title": "Root Username",
-                            "type": "string",
-                        },
-                        {
-                            "description": "Password for the default/root login.",
-                            "name": "root-password",
-                            "title": "Root Password",
-                            "type": "string",
-                        },
-                    ],
-                    "volumes": [
-                        {
-                            "capacity": 0.1,
-                            "name": "data",
-                            "path": "/var/lib/postgresql/data",
-                            "persistent": True,
-                            "title": "PostgreSQL Data",
-                        }
-                    ],
-                },
-            },
-            "name": "server",
-            "type": {"docker_image": {"image": "postgres:18.1"}},
-        }
-    )
-    resource_providers_artifact = Artifact.model_validate(
-        {
-            "name": "resource-providers",
-            "execution": {
-                "provides": {
-                    "resources": [
-                        {
-                            "name": "database",
-                            "configs": [
-                                {
-                                    "description": "Host of Postgres server.",
-                                    "name": "host",
-                                    "shared": True,
-                                    "title": "Host",
-                                    "type": "string",
-                                },
-                                {
-                                    "description": "Port Postgres server listens on.",
-                                    "name": "port",
-                                    "shared": True,
-                                    "title": "Port",
-                                    "type": "uint32",
-                                },
-                            ],
-                            "description": "Postgres Database",
-                            "instance_id_fields": ["name"],
-                            "prefix": "POSTGRES",
-                            "requirements": {"properties": {"name": {"type": "string"}}, "required": ["name"]},
-                            "secrets": [
-                                {
-                                    "type": "string",
-                                    "description": "Name of Postgres database.",
-                                    "name": "name",
-                                    "shared": False,
-                                    "title": "Database Name",
-                                },
-                                {
-                                    "type": "string",
-                                    "description": "Login username to access database.",
-                                    "name": "username",
-                                    "shared": False,
-                                    "title": "Username",
-                                },
-                                {
-                                    "type": "string",
-                                    "description": "Login password to access database.",
-                                    "name": "password",
-                                    "shared": False,
-                                    "title": "Password",
-                                },
-                            ],
-                            "title": "Postgres Database",
-                            "transport": {"rest": {"path": "/resources", "service": "rest"}},
-                        },
-                    ],
-                    "services": [{"name": "rest", "http": 8000}],
-                },
-                "requires": {"services": [{"postgres": {"server": "postgres"}}]},
-            },
-            "type": {"docker_image": {"image": ""}},
-        }
-    )
-
-    return Bolt(
-        api_version="v1", artifacts=[server_artifact, resource_providers_artifact], project="postgres", version="18.1"
-    )
-
-
-@pytest.fixture(scope="session")
 def artifact_reference() -> ArtifactReference:
     return ArtifactReference(project_name="simple", artifact_name="api", version="1")
 
@@ -260,11 +150,6 @@ def resolved_provided_resource(postgres_bolt: Bolt) -> ResolvedProvidedResource:
             project_name=postgres_bolt.project, artifact_name=artifact.name, version=postgres_bolt.version
         ),
     )
-
-
-@pytest.fixture(scope="session")
-def environment() -> Environment:
-    return Environment(name="test", title="Test Environment", tier=EnvironmentTier.DEVELOPMENT)
 
 
 @pytest.fixture(scope="session")

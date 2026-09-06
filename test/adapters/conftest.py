@@ -3,39 +3,155 @@ import pytest
 from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.adapters.docker_compose import DockerComposeInfrastructureAdapter
 from ballista_sdk.adapters.kubernetes import KubernetesAPIInfrastructureAdapter
-from ballista_sdk.api.v1 import Bolt
+from ballista_sdk.api.v1 import Bolt, Environment
 
 
 @pytest.fixture(scope="session")
-def docker_compose_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
-    return DockerComposeInfrastructureAdapter(_bolts=fake_bolts)
+def postgres_bolt() -> Bolt:
+    postgres_probe = {"exec": {"commands": ["pg_isready -U $POSTGRES_USER"], "shell": True}}
+
+    return Bolt.model_validate(
+        {
+            "api_version": "v1",
+            "artifacts": [
+                {
+                    "execution": {
+                        "provides": {
+                            "healthchecks": {
+                                "alive": postgres_probe,
+                                "ready": postgres_probe,
+                                "started": postgres_probe,
+                            },
+                            "services": [{"name": "postgres", "tcp": 5432}],
+                        },
+                        "requires": {
+                            "secrets": [
+                                {
+                                    "description": "Username for the default/root login.",
+                                    "name": "root-username",
+                                    "title": "Root Username",
+                                    "type": "string",
+                                },
+                                {
+                                    "description": "Password for the default/root login.",
+                                    "name": "root-password",
+                                    "title": "Root Password",
+                                    "type": "string",
+                                },
+                            ],
+                            "volumes": [
+                                {
+                                    "capacity": 0.1,
+                                    "name": "data",
+                                    "path": "/var/lib/postgresql/data",
+                                    "persistent": True,
+                                    "title": "PostgreSQL Data",
+                                }
+                            ],
+                        },
+                    },
+                    "name": "server",
+                    "type": {"docker_image": {"image": "postgres:18.1"}},
+                },
+                {
+                    "name": "resource-providers",
+                    "execution": {
+                        "provides": {
+                            "resources": [
+                                {
+                                    "name": "database",
+                                    "configs": [
+                                        {
+                                            "description": "Host of Postgres server.",
+                                            "name": "host",
+                                            "shared": True,
+                                            "title": "Host",
+                                            "type": "string",
+                                        },
+                                        {
+                                            "description": "Port Postgres server listens on.",
+                                            "name": "port",
+                                            "shared": True,
+                                            "title": "Port",
+                                            "type": "uint32",
+                                        },
+                                    ],
+                                    "description": "Postgres Database",
+                                    "instance_id_fields": ["name"],
+                                    "prefix": "POSTGRES",
+                                    "requirements": {"properties": {"name": {"type": "string"}}, "required": ["name"]},
+                                    "secrets": [
+                                        {
+                                            "type": "string",
+                                            "description": "Name of Postgres database.",
+                                            "name": "name",
+                                            "shared": False,
+                                            "title": "Database Name",
+                                        },
+                                        {
+                                            "type": "string",
+                                            "description": "Login username to access database.",
+                                            "name": "username",
+                                            "shared": False,
+                                            "title": "Username",
+                                        },
+                                        {
+                                            "type": "string",
+                                            "description": "Login password to access database.",
+                                            "name": "password",
+                                            "shared": False,
+                                            "title": "Password",
+                                        },
+                                    ],
+                                    "title": "Postgres Database",
+                                    "transport": {"rest": {"path": "/resources", "service": "rest"}},
+                                },
+                            ],
+                            "services": [{"name": "rest", "http": 8000}],
+                        },
+                        "requires": {"services": [{"postgres": {"server": "postgres"}}]},
+                    },
+                    "type": {"docker_image": {"image": ""}},
+                },
+            ],
+            "project": "postgres",
+            "version": "18.1",
+        }
+    )
 
 
 @pytest.fixture(scope="session")
-def kubernetes_api_adapter(fake_bolts: list[Bolt]) -> InfrastructureAdapter:
+def expected_bolts(postgres_bolt: Bolt) -> list[Bolt]:
+    """Bolts that are expected to be available in environments."""
+
+    return [postgres_bolt]
+
+
+@pytest.fixture(scope="session")
+def docker_compose_adapter(expected_bolts: list[Bolt]) -> InfrastructureAdapter:
+    return DockerComposeInfrastructureAdapter(_bolts=expected_bolts)
+
+
+@pytest.fixture(scope="session")
+def kubernetes_api_adapter(expected_bolts: list[Bolt]) -> InfrastructureAdapter:
     # TODO: This needs Kubernetes running somewhere and we should have a way to boot strap the needed resources.
-    return KubernetesAPIInfrastructureAdapter()
+    return KubernetesAPIInfrastructureAdapter(_kubeconfig_file="ballista-test.kubeconfig")
 
 
 @pytest.fixture(
     params=[
-        pytest.param("docker_compose", marks=[pytest.mark.unit]),
-        pytest.param("kubernetes_api", marks=[pytest.mark.integration]),
-    ]
+        pytest.param("docker-compose", marks=[pytest.mark.unit]),
+        pytest.param("kubernetes-api", marks=[pytest.mark.integration]),
+    ],
+    scope="session",
 )
-def infrastructure_adapter(
-    request, docker_compose_adapter: InfrastructureAdapter, kubernetes_api_adapter: InfrastructureAdapter
-):
-    if request.param == "docker_compose":
-        return docker_compose_adapter
+def environment_with_infrastructure_adapter(
+    request, docker_compose_adapter: InfrastructureAdapter, kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter
+) -> tuple[Environment, InfrastructureAdapter]:
+    if request.param == "docker-compose":
+        adapter = docker_compose_adapter
+
     else:
-        return kubernetes_api_adapter
+        adapter = kubernetes_api_adapter
 
-
-@pytest.fixture(scope="session")
-def fake_bolts(
-    postgres_bolt: Bolt,
-) -> list[Bolt]:
-    """Creates mock ExecutableArtifact definitions for postgres and redis."""
-
-    return [postgres_bolt]
+    return adapter.get_development_environment(name="test", title="Test Environment"), adapter

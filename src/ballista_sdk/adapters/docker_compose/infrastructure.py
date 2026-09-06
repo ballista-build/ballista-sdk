@@ -37,6 +37,7 @@ from ballista_sdk.api.v1 import (
     ArtifactType,
     Bolt,
     Environment,
+    EnvironmentTier,
     ExecutionParameters,
     ResourceRequirement,
     ResourceStatus,
@@ -125,6 +126,9 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
     async def get_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
         return self.execution_parameters
+
+    def get_development_environment(self, name: str, title: str) -> Environment:
+        return Environment(name=name, tier=EnvironmentTier.DEVELOPMENT, title=title)
 
     async def interact(self, bolt: Bolt, environment: Environment):
         resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt)
