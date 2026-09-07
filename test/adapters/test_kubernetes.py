@@ -8,7 +8,6 @@ from ballista_sdk.adapters.kubernetes.environments import KubernetesAPIEnvironme
 from ballista_sdk.adapters.kubernetes.primitives import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
-    Environment,
     ExecutionParameters,
 )
 from ballista_sdk.bolts.v1 import BoltV1Factory

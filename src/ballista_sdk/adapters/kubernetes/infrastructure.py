@@ -275,7 +275,35 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         *,
         project_names: Collection[str] | None = None,
     ) -> list[BoltReference]:
-        return []
+        bolts = set()
+
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+        ]
+
+        if project_names:
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
+
+        for environment in environments:
+            api_client = await self._get_api_client(environment)
+
+            api = client.AppsV1Api(api_client)
+            deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
+
+            for deployment in deployments.items:
+                if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                    continue
+
+                project_name = deployment.metadata.labels.get(primitives.METADATA_LABEL_APP_PART_OF)
+                version = deployment.metadata.labels.get(primitives.METADATA_LABEL_APP_VERSION)
+                if not project_name or not version:
+                    continue
+
+                bolt = BoltReference(project_name=project_name, version=version)
+                bolts.add(bolt)
+
+        return list(bolts)
 
     async def list_environments(self) -> list[KubernetesAPIEnvironment]:
         environments = []
@@ -446,7 +474,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
 
         return provided_services
 
-    async def list_resources(
+    async def list_resource_requirements(
         self,
         environments: Collection[KubernetesAPIEnvironment],
         *,
@@ -458,7 +486,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
     ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
         return []
 
-    async def list_services(
+    async def list_service_requirements(
         self,
         environments: Collection[KubernetesAPIEnvironment],
         *,
@@ -469,7 +497,66 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
-        return []
+        services_required = []
+
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+        ]
+
+        if project_names:
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
+        if artifact_names:
+            labels.append(f"{primitives.METADATA_LABEL_APP_NAME} in ({','.join(artifact_names)})")
+
+        for environment in environments:
+            api_client = await self._get_api_client(environment)
+
+            api = client.AppsV1Api(api_client)
+            deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
+
+            for deployment in deployments.items:
+                if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                    continue
+
+                artifact_reference = _get_artifact_reference_from_metadata(deployment.metadata)
+                annotation = deployment.metadata.annotations.get(primitives.METADATA_ANNOTATION_ARTIFACT)
+                if not artifact_reference or not annotation:
+                    continue
+
+                try:
+                    artifact = Artifact.model_validate_json(annotation)
+                    if not artifact.execution or not artifact.execution.provides.resources:
+                        continue
+
+                    for service_requirement in artifact.execution.requires.services:
+                        if service_project_names and service_requirement.project_name not in service_project_names:
+                            continue
+
+                        if service_artifact_names and service_requirement.artifact_name not in service_artifact_names:
+                            continue
+
+                        if service_names and service_requirement.service_name not in service_names:
+                            continue
+
+                        if service_types and True:
+                            continue
+
+                        services_required.append(
+                            (
+                                artifact_reference,
+                                ProvidedServiceReference(
+                                    project_name=service_requirement.project_name,
+                                    artifact_name=service_requirement.artifact_name,
+                                    service_name=service_requirement.service_name,
+                                ),
+                                ServiceType.grpc,
+                            )
+                        )
+                except ValidationError:
+                    pass
+
+        return services_required
 
     async def resolve_artifact_reference(
         self, environment: KubernetesAPIEnvironment, artifact_reference: ArtifactReference

@@ -291,7 +291,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             self._bolts, project_names=project_names, artifact_names=artifact_names, service_names=service_names
         )
 
-    async def list_resources(
+    async def list_resource_requirements(
         self,
         environments: Collection[Environment],
         *,
@@ -302,7 +302,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         resource_statuses: Collection[ResourceStatus] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
         """List Resources in specified Environment."""
-        return BoltInspector.list_resources(
+        return BoltInspector.list_resource_requirements(
             self._bolts,
             project_names=project_names,
             artifact_names=artifact_names,
@@ -311,7 +311,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             resource_statuses=resource_statuses,
         )
 
-    async def list_services(
+    async def list_service_requirements(
         self,
         environments: Collection[Environment],
         *,
@@ -322,7 +322,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
-        return BoltInspector.list_services(
+        return BoltInspector.list_service_requirements(
             self._bolts,
             project_names=project_names,
             artifact_names=artifact_names,

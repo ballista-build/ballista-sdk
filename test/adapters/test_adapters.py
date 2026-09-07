@@ -173,17 +173,32 @@ async def test_list_provided_services(
         assert provided_service.artifact_reference.version == "18.1"
 
 
-async def test_list_services(environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter]):
+async def test_list_resource_requirements(
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
+):
     environment, infrastructure_adapter = environment_with_infrastructure_adapter
-    services = list(await infrastructure_adapter.list_services([environment], project_names=["postgres"]))
+    required_resources = list(
+        await infrastructure_adapter.list_resource_requirements([environment], project_names=["postgres"])
+    )
 
-    assert services
+    assert required_resources
+
+
+async def test_list_service_requirements(
+    environment_with_infrastructure_adapter: tuple[Environment, InfrastructureAdapter],
+):
+    environment, infrastructure_adapter = environment_with_infrastructure_adapter
+    required_services = list(
+        await infrastructure_adapter.list_service_requirements([environment], project_names=["postgres"])
+    )
+
+    assert required_services
 
     for (
         artifact_reference,
         provided_service_reference,
         service_type,
-    ) in services:
+    ) in required_services:
         assert artifact_reference and provided_service_reference and service_type
         assert artifact_reference.project_name in {"postgres"}
         assert artifact_reference.artifact_name in {"resource-providers"}

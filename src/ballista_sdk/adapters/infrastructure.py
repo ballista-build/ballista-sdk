@@ -82,7 +82,7 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         """List Services in the specified Environments."""
         ...
 
-    async def list_resources(
+    async def list_resource_requirements(
         self,
         environments: Collection[AdapterEnvironment],
         *,
@@ -92,10 +92,10 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         resource_names: Collection[str] | None = None,
         resource_statuses: Collection[ResourceStatus] | None = None,
     ) -> Iterable[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
-        """List Resources in-use by other Artifacts in the specified Environments."""
+        """List Resources required by other Artifacts in the specified Environments."""
         ...
 
-    async def list_services(
+    async def list_service_requirements(
         self,
         environments: Collection[AdapterEnvironment],
         *,
@@ -106,7 +106,7 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> Iterable[tuple[ArtifactReference, ProvidedServiceReference, str]]:
-        """List Services in-use by other Artifacts in the specified Environments."""
+        """List Services required by other Artifacts in the specified Environments."""
         ...
 
     async def resolve_resource_requirement(
@@ -233,7 +233,7 @@ class BoltInspector:
         ]
 
     @staticmethod
-    def list_resources(
+    def list_resource_requirements(
         bolts: Iterable[Bolt],
         *,
         project_names: Collection[str] | None = None,
@@ -242,7 +242,7 @@ class BoltInspector:
         resource_names: Collection[str] | None = None,
         resource_statuses: Collection[ResourceStatus] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
-        """List Resources with the providing ArtifactReference in the specified Bolts."""
+        """List required Resources with the ArtifactReference requiring it and the ProvidedResourceReference."""
         return [
             (
                 ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version),
@@ -264,7 +264,7 @@ class BoltInspector:
         ]
 
     @staticmethod
-    def list_services(
+    def list_service_requirements(
         bolts: Iterable[Bolt],
         *,
         project_names: Collection[str] | None = None,
@@ -274,7 +274,7 @@ class BoltInspector:
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
-        """List ProvidedServices with the providing ArtifactReference in the specified Bolts."""
+        """List required Services with the ArtifactReference requiring it and the ProvidedServiceReference."""
         return [
             (
                 ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version),
