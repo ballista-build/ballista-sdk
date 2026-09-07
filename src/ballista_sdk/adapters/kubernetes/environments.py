@@ -13,6 +13,9 @@ class KubernetesAPIEnvironment(Environment):
     kubeconfig_file: str | None
     """Path to a kubeconfig file."""
 
+    kubeconfig_context: str | None
+    """Context in a kubeconfig."""
+
 
 class KubernetesEnvironmentConfig(BaseModel):
     """Configuration for a Kubernetes environment."""
@@ -51,5 +54,7 @@ def get_environment_apiclient(environment: KubernetesAPIEnvironment) -> ApiClien
     """Get a Kubernetes APIClient for the specified KuberenetesAPIEnvironment."""
 
     return config.new_client_from_config(
-        config_file=environment.kubeconfig_file, persist_config=(environment.kubeconfig_file is None)
+        config_file=environment.kubeconfig_file,
+        context=environment.kubeconfig_context,
+        persist_config=(environment.kubeconfig_file is None),
     )

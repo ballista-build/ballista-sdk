@@ -153,6 +153,11 @@ def resolved_provided_resource(postgres_bolt: Bolt) -> ResolvedProvidedResource:
 
 
 @pytest.fixture(scope="session")
+def environment() -> Environment:
+    return Environment(name="test", tier=EnvironmentTier.DEVELOPMENT, title="Test Environment")
+
+
+@pytest.fixture(scope="session")
 def execution_parameters() -> ExecutionParameters:
     return ExecutionParameters(
         initial=DefaultExecutionParameters(

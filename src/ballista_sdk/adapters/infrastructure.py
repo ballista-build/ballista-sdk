@@ -29,7 +29,7 @@ from .resources.transports import ResourceProviderTransport
 from .settings import SettingsAdapter
 
 
-class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository, Protocol):
+class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[AdapterEnvironment], Protocol):
     """Infastructure adapter for executing Artifacts in Environments.
 
     InfrastructureAdapters encapsulate the following capabilities:

@@ -126,10 +126,10 @@ def bolt(
 async def test_generate_docker_compose(
     request,
     bolt: Bolt,
-    docker_compose_adapter: DockerComposeInfrastructureAdapter,
+    environment_with_docker_compose_adapter: tuple[Environment, DockerComposeInfrastructureAdapter],
     execution_parameters: ExecutionParameters,
 ):
-    environment = docker_compose_adapter.get_development_environment("test", "Test Environment")
+    environment, docker_compose_adapter = environment_with_docker_compose_adapter
     bolt_name = request.node.callspec.params.get("bolt_yaml")
     docker_compose_project = request.getfixturevalue(f"{bolt_name}_docker_compose_project")
 

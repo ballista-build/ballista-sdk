@@ -68,6 +68,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
     _kubeconfig_file: str | None = None
     """Kubeconfig file path. Kinda hokey but better than nothing."""
 
+    _kubeconfig_context: str | None = None
+
     @property
     def name(self) -> Literal["kubernetes-api"]:
         return "kubernetes-api"
@@ -216,7 +218,11 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         """Get a KubernetesAPIEnvironment suited for local development. Uses the default kubeconfig location and current context."""
 
         return KubernetesAPIEnvironment(
-            name=name, tier=EnvironmentTier.DEVELOPMENT, title=title, kubeconfig_file=self._kubeconfig_file
+            name=name,
+            tier=EnvironmentTier.DEVELOPMENT,
+            title=title,
+            kubeconfig_file=self._kubeconfig_file,
+            kubeconfig_context=self._kubeconfig_context,
         )
 
     async def interact(self, bolt: Bolt, environment: KubernetesAPIEnvironment):
@@ -273,34 +279,38 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
 
     async def list_environments(self) -> list[KubernetesAPIEnvironment]:
         environments = []
-        # Use the current kubeconfig context
-        _, current_context = config.list_kube_config_contexts(self._kubeconfig_file)
 
-        if current_context:
-            api_client = config.new_client_from_config(
-                config_file=self._kubeconfig_file,
-                context=current_context["name"],
-                persist_config=(self._kubeconfig_file is None),
+        api_client = config.new_client_from_config(
+            config_file=self._kubeconfig_file,
+            context=self._kubeconfig_context,
+            persist_config=(self._kubeconfig_file is None),
+        )
+
+        with api_client:
+            # TODO: We don't have an Environment type, so use Namespace with labels for now.
+            corev1_api = client.CoreV1Api(api_client=api_client)
+            namespace_response = corev1_api.list_namespace(
+                label_selector=f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}",
             )
 
-            with api_client:
-                # TODO: We don't have an Environment type, so use Namespace with labels for now.
-                corev1_api = client.CoreV1Api(api_client=api_client)
-                namespace_response = corev1_api.list_namespace(
-                    label_selector=f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}",
+            for namespace in namespace_response.items:
+                if not namespace.metadata or not namespace.metadata.labels:
+                    continue
+
+                environment_name = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
+                environment_tier = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)
+
+                if not environment_name or not environment_tier:
+                    continue
+
+                environments.append(
+                    KubernetesAPIEnvironment(
+                        name=environment_name,
+                        tier=EnvironmentTier(environment_tier),
+                        kubeconfig_file=self._kubeconfig_file,
+                        kubeconfig_context=self._kubeconfig_context,
+                    )
                 )
-
-                for namespace in namespace_response.items:
-                    if not namespace.metadata or not namespace.metadata.labels:
-                        continue
-
-                    environment_name = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
-                    environment_tier = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)
-
-                    if not environment_name or not environment_tier:
-                        continue
-
-                    environments.append(Environment(name=environment_name, tier=EnvironmentTier(environment_tier)))
 
         return environments
 

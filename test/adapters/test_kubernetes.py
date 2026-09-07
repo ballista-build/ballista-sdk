@@ -4,10 +4,11 @@ from ballista_sdk.adapters.infrastructure import resolve_artifact_requirements
 from ballista_sdk.adapters.kubernetes import (
     KubernetesAPIInfrastructureAdapter,
 )
-from ballista_sdk.adapters.kubernetes.environments import KubernetesEnvironmentConfig
+from ballista_sdk.adapters.kubernetes.environments import KubernetesAPIEnvironment, KubernetesEnvironmentConfig
 from ballista_sdk.adapters.kubernetes.primitives import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
+    Environment,
     ExecutionParameters,
 )
 from ballista_sdk.bolts.v1 import BoltV1Factory
@@ -372,10 +373,10 @@ async def test_generate_resources(
     request,
     bolt: Bolt,
     environment_config: KubernetesEnvironmentConfig,
-    kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
+    environment_with_kubernetes_api_adapter: tuple[KubernetesAPIEnvironment, KubernetesAPIInfrastructureAdapter],
     execution_parameters: ExecutionParameters,
 ):
-    environment = kubernetes_api_adapter.get_development_environment("test", "Test Environment")
+    environment, kubernetes_api_adapter = environment_with_kubernetes_api_adapter
 
     bolt_name = request.node.callspec.params.get("bolt_yaml")
     expected_bolt_resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]] = (

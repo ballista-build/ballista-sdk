@@ -6,7 +6,7 @@ from ballista_sdk.api.v1 import Artifact, ArtifactType, Bolt, Environment
 from .primitives import ArtifactReference, BoltReference, ProjectReference
 
 
-class BoltRepository(Protocol):
+class BoltRepository[AdapterEnvironment: Environment](Protocol):
     """Stores Bolts and Artifacts."""
 
     @property
@@ -14,7 +14,7 @@ class BoltRepository(Protocol):
         """Unique name of the adapter."""
         ...
 
-    async def deploy(self, bolt: Bolt, environment: Environment):
+    async def deploy(self, bolt: Bolt, environment: AdapterEnvironment):
         """Deploy a Bolt to the specified Environment.
 
         :raises BoltArtifactTypesUnavailable: No Artifacts had fulfilled ArtifactTypes.
@@ -23,7 +23,7 @@ class BoltRepository(Protocol):
 
     async def list_artifacts(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -33,28 +33,28 @@ class BoltRepository(Protocol):
         """List Artifacts from the specified Environments."""
         ...
 
-    async def list_artifact_types(self, environments: Collection[Environment]) -> Iterable[ArtifactType]:
+    async def list_artifact_types(self, environments: Collection[AdapterEnvironment]) -> Iterable[ArtifactType]:
         """List ArtifactTypes available in the specified Environments."""
         ...
 
     async def list_bolts(
-        self, environments: Collection[Environment], *, project_names: Collection[str] | None = None
+        self, environments: Collection[AdapterEnvironment], *, project_names: Collection[str] | None = None
     ) -> Iterable[BoltReference]:
         """List BoltReferences from the specified Environments."""
         ...
 
     async def list_projects(
-        self, environments: Collection[Environment], *, project_names: Collection[str] | None = None
+        self, environments: Collection[AdapterEnvironment], *, project_names: Collection[str] | None = None
     ) -> Iterable[ProjectReference]:
         """List ProjectReferences from the specified Environments."""
         ...
 
-    async def remove(self, bolt: Bolt, environment: Environment):
+    async def remove(self, bolt: Bolt, environment: AdapterEnvironment):
         """Remove a Bolt from the specified Environment."""
         ...
 
     async def resolve_artifact_reference(
-        self, environment: Environment, artifact_reference: ArtifactReference
+        self, environment: AdapterEnvironment, artifact_reference: ArtifactReference
     ) -> Artifact:
         """Resolves a reference to an Artifact in the specified Environment, returning the Artifact.
 
@@ -62,7 +62,7 @@ class BoltRepository(Protocol):
         """
         ...
 
-    async def resolve_bolt_reference(self, environment: Environment, bolt_reference: BoltReference) -> Bolt:
+    async def resolve_bolt_reference(self, environment: AdapterEnvironment, bolt_reference: BoltReference) -> Bolt:
         """Resolves a reference to a Bolt in the specified Environment, returning the Bolt.
 
         :raises UnknownBolt: Bolt cannot be found.

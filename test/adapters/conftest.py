@@ -3,6 +3,7 @@ import pytest
 from ballista_sdk.adapters import InfrastructureAdapter
 from ballista_sdk.adapters.docker_compose import DockerComposeInfrastructureAdapter
 from ballista_sdk.adapters.kubernetes import KubernetesAPIInfrastructureAdapter
+from ballista_sdk.adapters.kubernetes.environments import KubernetesAPIEnvironment
 from ballista_sdk.api.v1 import Bolt, Environment
 
 
@@ -128,14 +129,19 @@ def expected_bolts(postgres_bolt: Bolt) -> list[Bolt]:
 
 
 @pytest.fixture(scope="session")
-def docker_compose_adapter(expected_bolts: list[Bolt]) -> InfrastructureAdapter:
-    return DockerComposeInfrastructureAdapter(_bolts=expected_bolts)
+def environment_with_docker_compose_adapter(
+    expected_bolts: list[Bolt],
+) -> tuple[Environment, DockerComposeInfrastructureAdapter]:
+    adapter = DockerComposeInfrastructureAdapter(_bolts=expected_bolts)
+    return adapter.get_development_environment(name="test", title="Test Environment"), adapter
 
 
 @pytest.fixture(scope="session")
-def kubernetes_api_adapter(expected_bolts: list[Bolt]) -> InfrastructureAdapter:
-    # TODO: This needs Kubernetes running somewhere and we should have a way to boot strap the needed resources.
-    return KubernetesAPIInfrastructureAdapter(_kubeconfig_file="ballista-test.kubeconfig")
+def environment_with_kubernetes_api_adapter(
+    expected_bolts: list[Bolt],
+) -> tuple[KubernetesAPIEnvironment, KubernetesAPIInfrastructureAdapter]:
+    adapter = KubernetesAPIInfrastructureAdapter(_kubeconfig_file="ballista-test.kubeconfig")
+    return adapter.get_development_environment(name="test", title="Test Environment"), adapter
 
 
 @pytest.fixture(
@@ -146,12 +152,12 @@ def kubernetes_api_adapter(expected_bolts: list[Bolt]) -> InfrastructureAdapter:
     scope="session",
 )
 def environment_with_infrastructure_adapter(
-    request, docker_compose_adapter: InfrastructureAdapter, kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter
+    request,
+    environment_with_docker_compose_adapter: tuple[Environment, InfrastructureAdapter],
+    environment_with_kubernetes_api_adapter: tuple[Environment, InfrastructureAdapter],
 ) -> tuple[Environment, InfrastructureAdapter]:
     if request.param == "docker-compose":
-        adapter = docker_compose_adapter
+        return environment_with_docker_compose_adapter
 
     else:
-        adapter = kubernetes_api_adapter
-
-    return adapter.get_development_environment(name="test", title="Test Environment"), adapter
+        return environment_with_kubernetes_api_adapter
