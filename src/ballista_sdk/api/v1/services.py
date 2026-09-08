@@ -22,8 +22,8 @@ class ServiceType(StrEnum):
 
 
 class VirtualProvidedService(BaseModel):
-    """A static address for a ProvidedService, pretending to be executed in an Artifact."""
+    """A static IPv4 address for a ProvidedService, pretending to be executed in an Artifact."""
 
-    address: str
     artifact: str
+    ipv4_address: str
     service: ProvidedService

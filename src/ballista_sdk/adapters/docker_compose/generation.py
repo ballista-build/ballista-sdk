@@ -41,6 +41,7 @@ class DockerComposeService(BaseModel):
     develop: dict[str, Any] = {}
     environment: dict[str, Any] = {}
     env_file: list[dict] = []
+    extra_hosts: dict[str, str] = {}
     healthcheck: dict[str, Any] = {}
     image: str | None = None
     networks: dict[str, dict] = {}
@@ -199,6 +200,11 @@ class DockerComposeInfrastructureGenerator:
         compose_service = DockerComposeService(
             container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
         )
+
+        # Virtual Provided Services
+        extra_hosts = {vps.service.name: vps.ipv4_address for vps in bolt.provides.services}
+        if extra_hosts:
+            compose_service.extra_hosts = extra_hosts
 
         if compute_parameters := artifact_execution_parameters.compute:
             resource_max = {}

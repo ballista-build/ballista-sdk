@@ -121,6 +121,10 @@ artifacts:
                 services:
                   - name: "rest"
                     http: 8000
+            requires:
+                services:
+                 - postgres:
+                     server: postgres
         type:
             docker_image:
                 image: "hello-world:latest"

@@ -212,7 +212,24 @@ class BoltInspector:
         service_types: Collection[ServiceType] | None = None,
     ) -> list[ResolvedProvidedService]:
         """List ProvidedServices with the providing ArtifactReference in the specified Bolts."""
-        return [
+        bolt_provided_virtual_services = [
+            ResolvedProvidedService(
+                provided_service=vps.service,
+                artifact_reference=ArtifactReference(
+                    project_name=bolt.project,
+                    artifact_name=vps.artifact,
+                    version=bolt.version,
+                ),
+                host=vps.service.name,
+            )
+            for bolt in bolts
+            if not project_names or bolt.project in project_names
+            for vps in bolt.provides.services
+            if (not artifact_names or vps.artifact in artifact_names)
+            and (not service_names or vps.service.name in service_names)
+        ]
+
+        artifact_provided_services = [
             ResolvedProvidedService(
                 provided_service=service,
                 artifact_reference=ArtifactReference(
@@ -231,6 +248,8 @@ class BoltInspector:
             for service in artifact.execution.provides.services
             if not service_names or service.name in service_names
         ]
+
+        return bolt_provided_virtual_services + artifact_provided_services
 
     @staticmethod
     def list_resource_requirements(

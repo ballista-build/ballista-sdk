@@ -809,25 +809,27 @@ def _generate_virtual_services(
                 }
             ]
 
-            resources.extend(
-                [
-                    {
-                        "apiVersion": "v1",
-                        "kind": "Service",
-                        "metadata": metadata,
-                        "spec": {
-                            "ports": ports,
-                        },
-                    },
-                    {
-                        "apiVersion": "discovery.k8s.io/v1",
-                        "kind": "EndpointSlice",
-                        "metadata": metadata,
-                        "addressType": "FQDN",
+            # Add the service without types
+            resources.append(
+                {
+                    "apiVersion": "v1",
+                    "kind": "Service",
+                    "metadata": metadata,
+                    "spec": {
                         "ports": ports,
-                        "endpoints": {"addresses": address},
                     },
-                ]
+                }
+            )
+
+            resources.append(
+                {
+                    "apiVersion": "discovery.k8s.io/v1",
+                    "kind": "EndpointSlice",
+                    "metadata": metadata | {"name": metadata["name"] + "-ipv4"},
+                    "addressType": "IPv4",
+                    "ports": ports,
+                    "endpoints": {"addresses": vps.ipv4_address},
+                }
             )
 
     return resources
