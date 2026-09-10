@@ -6,9 +6,9 @@ from pydantic import BaseModel
 from ballista_sdk.adapters.primitives import (
     ArtifactReference,
     ProvidedResourceReference,
-    ProvidedResourceWithArtifactReference,
     ProvidedServiceReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from ballista_sdk.api.v1 import (
     Artifact,
@@ -41,6 +41,7 @@ class DockerComposeService(BaseModel):
     develop: dict[str, Any] = {}
     environment: dict[str, Any] = {}
     env_file: list[dict] = []
+    extra_hosts: dict[str, str] = {}
     healthcheck: dict[str, Any] = {}
     image: str | None = None
     networks: dict[str, dict] = {}
@@ -128,8 +129,8 @@ class DockerComposeInfrastructureGenerator:
         environment: Environment,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
-        resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-        service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+        resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+        service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
     ) -> DockerComposeProject:
         """Generate a docker compose project."""
 
@@ -188,8 +189,8 @@ class DockerComposeInfrastructureGenerator:
         artifact: Artifact,
         artifact_execution: ArtifactExecution,
         artifact_execution_parameters: ArtifactExecutionParameters,
-        resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-        service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+        resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+        service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
     ) -> DockerComposeService:
         """Generate a docker compose Service definition for an ExecutableArtifact."""
 
@@ -199,6 +200,11 @@ class DockerComposeInfrastructureGenerator:
         compose_service = DockerComposeService(
             container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
         )
+
+        # Virtual Provided Services
+        extra_hosts = {vps.service.name: vps.ipv4_address for vps in bolt.provides.services}
+        if extra_hosts:
+            compose_service.extra_hosts = extra_hosts
 
         if compute_parameters := artifact_execution_parameters.compute:
             resource_max = {}
@@ -258,7 +264,7 @@ class DockerComposeInfrastructureGenerator:
                 artifact_name=service_requirement.artifact_name,
                 service_name=service_requirement.service_name,
             )
-            provided_service, provider_artifact_reference = service_providers[provided_service_reference]
+            provided_service, provider_artifact_reference, host = service_providers[provided_service_reference]
 
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
@@ -268,7 +274,7 @@ class DockerComposeInfrastructureGenerator:
 
             env.update(
                 {
-                    f"{service_env_name}_HOST": provided_service.name,
+                    f"{service_env_name}_HOST": host,
                     f"{service_env_name}_PORT": provided_service.grpc or provided_service.http or provided_service.tcp,
                 }
             )

@@ -36,7 +36,7 @@ class ProvidedServiceReference(NamedTuple):
     service_name: str
 
 
-class ProvidedResourceWithArtifactReference(NamedTuple):
+class ResolvedProvidedResource(NamedTuple):
     """Provided Resource with reference to the providing Artifact."""
 
     provided_resource: ProvidedResource
@@ -49,11 +49,12 @@ class ProvidedResourceWithArtifactReference(NamedTuple):
         )
 
 
-class ProvidedServiceWithArtifactReference(NamedTuple):
-    """Provided Service with reference to the providing Artifact."""
+class ResolvedProvidedService(NamedTuple):
+    """Provided Service with reference to the providing Artifact and host."""
 
     provided_service: ProvidedService
     artifact_reference: ArtifactReference
+    host: str
 
     @property
     def provided_service_reference(self) -> ProvidedServiceReference:

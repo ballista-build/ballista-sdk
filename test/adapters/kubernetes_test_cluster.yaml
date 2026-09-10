@@ -1,0 +1,258 @@
+---
+apiVersion: v1
+kind: Namespace
+metadata:
+  annotations:
+    ballista.build/default-execution-parameters-json: '{"external_service":{"secure":true,"host":"ballista.build"}}'
+    ballista.build/environment-json: '{"name":"test","tier":"DEVELOPMENT","title":"Test Environment"}'
+  labels:
+    app.kubernetes.io/managed-by: Ballista
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+    kubernetes.io/metadata.name: test
+  name: test
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    ballista.build/artifact-json: '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"database","description":"PostgreSQL Database","title":"PostgreSQL Database","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]},"requires":{"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+  labels:
+    app.kubernetes.io/instance: resource-providers-18.1
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: resource-providers
+    app.kubernetes.io/part-of: postgres
+    app.kubernetes.io/version: "18.1"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+    ballista.build/resource: database
+  name: postgres-resource-providers
+  namespace: test
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: resource-providers
+      app.kubernetes.io/part-of: postgres
+      ballista.build/environment: test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: resource-providers-18.1
+        app.kubernetes.io/managed-by: Ballista
+        app.kubernetes.io/name: resource-providers
+        app.kubernetes.io/part-of: postgres
+        app.kubernetes.io/version: "18.1"
+        ballista.build/environment: test
+        ballista.build/environment-tier: development
+        ballista.build/resource: database
+      name: postgres-resource-providers
+      namespace: test
+    spec:
+      containers:
+        - env:
+            - name: REST_PROVIDERS_SERVICE_PORT
+              value: "80"
+            - name: REST_PROVIDERS_SERVICE_HOST
+              value: localhost
+          envFrom:
+            - secretRef:
+                name: postgres-resource-providers
+                optional: false
+          image: ghcr.io/ballista-build/postgres-resource-providers:18.1
+          imagePullPolicy: Always
+          name: resource-providers
+          ports:
+            - containerPort: 8000
+              name: rest
+              protocol: TCP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    ballista.build/artifact-json: '{"name":"server","execution":{"provides":{"healthchecks":{"alive":{"exec":{"commands":["pg_isready -U $POSTGRES_USER"],"shell":true}},"ready":{"exec":{"commands":["pg_isready -U $POSTGRES_USER"],"shell":true}},"started":{"exec":{"commands":["pg_isready -U $POSTGRES_USER"],"shell":true}}},"services":[{"name":"postgres","tcp":5432}]},"requires":{"secrets":[{"name":"root-username","description":"Username for the default/root login.","title":"Root Username","type":"string"},{"name":"root-password","description":"Password for the default/root login.","title":"Root Password","type":"string"}],"volumes":[{"name":"data","title":"PostgreSQL Data","capacity":0.1,"path":"/var/lib/postgresql/data","persistent":true}]}},"type":{"docker_image":{"image":"postgres:18.1"}}}'
+    ballista.build/default-execution-parameters-json: '{"compute":{"max_cpu":0.5,"min_memory":0.25}}'
+  labels:
+    app.kubernetes.io/instance: server-18.1
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: server
+    app.kubernetes.io/part-of: postgres
+    app.kubernetes.io/version: "18.1"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+  name: postgres-server
+  namespace: test
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: server
+      app.kubernetes.io/part-of: postgres
+      ballista.build/environment: test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: server-18.1
+        app.kubernetes.io/managed-by: Ballista
+        app.kubernetes.io/name: server
+        app.kubernetes.io/part-of: postgres
+        app.kubernetes.io/version: "18.1"
+        ballista.build/environment: test
+        ballista.build/environment-tier: development
+      name: postgres-server
+      namespace: test
+    spec:
+      containers:
+        - env:
+            - name: POSTGRES_SERVICE_PORT
+              value: "5432"
+            - name: POSTGRES_SERVICE_HOST
+              value: localhost
+          envFrom:
+            - secretRef:
+                name: postgres-server
+                optional: false
+          image: postgres:18.1
+          imagePullPolicy: IfNotPresent
+          livenessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          name: server
+          ports:
+            - containerPort: 5432
+              name: postgres
+              protocol: TCP
+          readinessProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          resources:
+            requests:
+              memory: 0.25Gi
+            limits:
+              cpu: 0.5
+          startupProbe:
+            exec:
+              command:
+                - sh
+                - -c
+                - pg_isready -U $POSTGRES_USER
+            failureThreshold: 3
+            periodSeconds: 10
+            successThreshold: 1
+            timeoutSeconds: 1
+          volumeMounts:
+            - mountPath: /var/lib/postgresql
+              name: data
+      volumes:
+        - name: data
+          persistentVolumeClaim:
+            claimName: postgres-server-data
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  labels:
+    app.kubernetes.io/instance: server-18.1
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: server
+    app.kubernetes.io/part-of: postgres
+    app.kubernetes.io/version: "18.1"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+  name: postgres-server-data
+  namespace: test
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 1G
+  storageClassName: standard
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-server
+  namespace: test
+stringData:
+  POSTGRES_PASSWORD: pguser
+  POSTGRES_USER: pgpassword
+type: Opaque
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-resource-providers
+  namespace: test
+stringData:
+  POSTGRES_HOST: postgres-server-postgres
+  POSTGRES_PASSWORD: pgpassword
+  POSTGRES_PORT: "5432"
+  POSTGRES_USER: pguser
+type: Opaque
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    ballista.build/service-json: '{"name":"rest","tcp":8000}'
+  labels:
+    app.kubernetes.io/instance: resource-providers-18.1
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: resource-providers
+    app.kubernetes.io/part-of: postgres
+    app.kubernetes.io/version: "18.1"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+    ballista.build/service: rest
+  name: postgres-resource-providers-rest
+  namespace: test
+spec:
+  ports:
+    - name: rest
+      port: 8000
+      targetPort: rest
+  selector:
+    app.kubernetes.io/name: resource-providers
+    app.kubernetes.io/part-of: postgres
+    ballista.build/environment: local
+---
+apiVersion: v1
+kind: Service
+metadata:
+  annotations:
+    ballista.build/service-json: '{"name":"postgres","tcp":5432}'
+  labels:
+    app.kubernetes.io/instance: server-18.1
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: server
+    app.kubernetes.io/part-of: postgres
+    app.kubernetes.io/version: "18.1"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+    ballista.build/service: postgres
+  name: postgres-server-postgres
+  namespace: test
+spec:
+  ports:
+    - name: postgres
+      port: 5432
+      targetPort: postgres
+  selector:
+    app.kubernetes.io/name: server
+    app.kubernetes.io/part-of: postgres
+    ballista.build/environment: test
+---

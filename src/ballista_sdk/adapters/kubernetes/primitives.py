@@ -2,6 +2,9 @@
 
 from typing import Any, NotRequired, TypedDict
 
+KUBERNETES_MIN_VERSION = 1.34
+"""The minimum version of Kubernetes that is supported."""
+
 # The standard kubernetes app labels
 METADATA_APP_DOMAIN = "app.kubernetes.io"
 METADATA_LABEL_APP_INSTANCE = f"{METADATA_APP_DOMAIN}/instance"
@@ -21,6 +24,7 @@ METADATA_LABEL_SERVICE = f"{METADATA_BALLISTA_DOMAIN}/service"
 # These are for stuffing JSON into annotations because we're monsters
 METADATA_ANNOTATION_ARTIFACT = f"{METADATA_BALLISTA_DOMAIN}/artifact-json"
 METADATA_ANNOTATION_DEFAULT_EXECUTION_PARAMETERS = f"{METADATA_BALLISTA_DOMAIN}/default-execution-parameters-json"
+METADATA_ANNOTATION_ENVIRONMENT = f"{METADATA_BALLISTA_DOMAIN}/environment-json"
 METADATA_ANNOTATION_EXTERNALIZED_SERVICE = f"{METADATA_BALLISTA_DOMAIN}/externalized-service-json"
 METADATA_ANNOTATION_RESOURCE = f"{METADATA_BALLISTA_DOMAIN}/resource-json"
 METADATA_ANNOTATION_SERVICE = f"{METADATA_BALLISTA_DOMAIN}/service-json"

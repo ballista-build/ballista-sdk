@@ -4,6 +4,7 @@ import pytest
 from kubernetes import client as kubernetes_client
 
 from ballista_sdk.adapters.docker_compose.settings import DockerComposeSettingsAdapter
+from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.adapters.kubernetes.settings import (
     KubernetesAPIConfigsAdapter,
     KubernetesAPISecretsAdapter,
@@ -59,38 +60,46 @@ class MockKubernetesSecretsAdapter(KubernetesAPISecretsAdapter):
 
 @pytest.fixture(
     params=[
-        pytest.param("docker_compose", marks=[pytest.mark.unit]),
-        pytest.param("mock_kubernetes_config_map", marks=[pytest.mark.unit]),
-        pytest.param("kubernetes_config_map", marks=[pytest.mark.integration]),
+        pytest.param("docker-compose", marks=[pytest.mark.unit]),
+        pytest.param("mock-kubernetes-config-map", marks=[pytest.mark.unit]),
+        pytest.param("kubernetes-config-map", marks=[pytest.mark.integration]),
     ]
 )
-def configs_adapters(request) -> SettingsAdapter:
+def environment_with_configs_adapters(
+    request,
+    environment_with_docker_compose_adapter: tuple[Environment, InfrastructureAdapter],
+    environment_with_kubernetes_api_adapter: tuple[Environment, InfrastructureAdapter],
+) -> tuple[Environment, SettingsAdapter]:
     match request.param:
-        case "docker_compose":
-            return DockerComposeSettingsAdapter()
-        case "mock_kubernetes_config_map":
-            return MockKubernetesConfigsAdapter()
-        case "kubernetes_config_map":
-            return KubernetesAPIConfigsAdapter()
+        case "docker-compose":
+            return environment_with_docker_compose_adapter[0], DockerComposeSettingsAdapter()
+        case "mock-kubernetes-config-map":
+            return environment_with_kubernetes_api_adapter[0], MockKubernetesConfigsAdapter()
+        case "kubernetes-config-map":
+            return environment_with_kubernetes_api_adapter[0], KubernetesAPIConfigsAdapter()
 
     raise ValueError()
 
 
 @pytest.fixture(
     params=[
-        pytest.param("docker_compose", marks=[pytest.mark.unit]),
-        pytest.param("mock_kubernetes_secret", marks=[pytest.mark.unit]),
-        pytest.param("kubernetes_secret", marks=[pytest.mark.integration]),
+        pytest.param("docker-compose", marks=[pytest.mark.unit]),
+        pytest.param("mock-kubernetes-secret", marks=[pytest.mark.unit]),
+        pytest.param("kubernetes-secret", marks=[pytest.mark.integration]),
     ]
 )
-def secrets_adapters(request) -> SettingsAdapter:
+def environment_with_secrets_adapters(
+    request,
+    environment_with_docker_compose_adapter: tuple[Environment, InfrastructureAdapter],
+    environment_with_kubernetes_api_adapter: tuple[Environment, InfrastructureAdapter],
+) -> tuple[Environment, SettingsAdapter]:
     match request.param:
-        case "docker_compose":
-            return DockerComposeSettingsAdapter()
-        case "mock_kubernetes_secret":
-            return MockKubernetesSecretsAdapter()
-        case "kubernetes_secret":
-            return KubernetesAPISecretsAdapter()
+        case "docker-compose":
+            return environment_with_docker_compose_adapter[0], DockerComposeSettingsAdapter()
+        case "mock-kubernetes-secret":
+            return environment_with_kubernetes_api_adapter[0], MockKubernetesSecretsAdapter()
+        case "kubernetes-secret":
+            return environment_with_kubernetes_api_adapter[0], KubernetesAPISecretsAdapter()
 
     raise ValueError()
 
@@ -162,10 +171,10 @@ def _test_setting(
 
 def test_configs(
     sample_settings: list[tuple[str, SettingDataType, SettingValue]],
-    configs_adapters: SettingsAdapter,
-    environment: Environment,
+    environment_with_secrets_adapters: tuple[Environment, SettingsAdapter],
     subtests: pytest.Subtests,
 ):
+    environment, configs_adapters = environment_with_secrets_adapters
     artifact = ArtifactReference("ephemeral", "agasi", "1.2.3")
     provided_resource = ProvidedResourceReference("ephemeral", "resource")
 
@@ -201,10 +210,10 @@ def test_configs(
 
 def test_secrets(
     sample_settings: list[tuple[str, SettingDataType, SettingValue]],
-    secrets_adapters: SettingsAdapter,
-    environment: Environment,
+    environment_with_secrets_adapters: tuple[Environment, SettingsAdapter],
     subtests: pytest.Subtests,
 ):
+    environment, secrets_adapters = environment_with_secrets_adapters
     artifact = ArtifactReference("ephemeral", "agasi", "1.2.3")
     provided_resource = ProvidedResourceReference("ephemeral", "resource")
 

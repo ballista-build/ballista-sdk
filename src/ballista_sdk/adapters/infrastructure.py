@@ -20,16 +20,16 @@ from .primitives import (
     BoltReference,
     ProjectReference,
     ProvidedResourceReference,
-    ProvidedResourceWithArtifactReference,
     ProvidedServiceReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from .repository import BoltRepository
 from .resources.transports import ResourceProviderTransport
 from .settings import SettingsAdapter
 
 
-class InfrastructureAdapter(BoltRepository, Protocol):
+class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[AdapterEnvironment], Protocol):
     """Infastructure adapter for executing Artifacts in Environments.
 
     InfrastructureAdapters encapsulate the following capabilities:
@@ -47,40 +47,44 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         """Settings adapter specifically to manage Secrets."""
         ...
 
-    async def get_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
+    async def get_execution_parameters(self, bolt: Bolt, environment: AdapterEnvironment) -> ExecutionParameters:
         """Returns the ExecutionParameters used when deploying a specified Bolt and Environment."""
         ...
 
-    async def interact(self, bolt: Bolt, environment: Environment):
+    def get_development_environment(self, name: str, title: str) -> AdapterEnvironment:
+        """Get an Environment instance suited for development."""
+        ...
+
+    async def interact(self, bolt: Bolt, environment: AdapterEnvironment):
         """Start an interactive development session that automatically builds, deploys, and tears down the Bolt."""
         ...
 
     async def list_provided_resources(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> Iterable[ProvidedResourceWithArtifactReference]:
+    ) -> Iterable[ResolvedProvidedResource]:
         """List available Resources with the providing ArtifactReference in the specified Environments."""
         ...
 
     async def list_provided_services(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> Iterable[ProvidedServiceWithArtifactReference]:
+    ) -> Iterable[ResolvedProvidedService]:
         """List Services in the specified Environments."""
         ...
 
-    async def list_resources(
+    async def list_resource_requirements(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -88,12 +92,12 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         resource_names: Collection[str] | None = None,
         resource_statuses: Collection[ResourceStatus] | None = None,
     ) -> Iterable[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
-        """List Resources in-use by other Artifacts in the specified Environments."""
+        """List Resources required by other Artifacts in the specified Environments."""
         ...
 
-    async def list_services(
+    async def list_service_requirements(
         self,
-        environments: Collection[Environment],
+        environments: Collection[AdapterEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -102,23 +106,23 @@ class InfrastructureAdapter(BoltRepository, Protocol):
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> Iterable[tuple[ArtifactReference, ProvidedServiceReference, str]]:
-        """List Services in-use by other Artifacts in the specified Environments."""
+        """List Services required by other Artifacts in the specified Environments."""
         ...
 
     async def resolve_resource_requirement(
-        self, environment: Environment, resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+        self, environment: AdapterEnvironment, resource_requirement: ResourceRequirement
+    ) -> ResolvedProvidedResource:
         """Resolves a `ResourceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedResource` with an ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
     async def resolve_service_requirement(
-        self, environment: Environment, service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
-        """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an ArtifactReference. Raises UnknownService if dependency cannot be met."""
+        self, environment: AdapterEnvironment, service_requirement: ServiceRequirement
+    ) -> ResolvedProvidedService:
+        """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an `ArtifactReference` and address to reach it. Raises UnknownService if dependency cannot be met."""
         ...
 
     async def transport_resource_provider(
-        self, environment: Environment, provided_resource_with_artifact: ProvidedResourceWithArtifactReference
+        self, environment: AdapterEnvironment, provided_resource_with_artifact: ResolvedProvidedResource
     ) -> ResourceProviderTransport:
         """Transports a Resource Provider communication that is accessible to the adapter."""
         ...
@@ -177,10 +181,10 @@ class BoltInspector:
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> list[ProvidedResourceWithArtifactReference]:
+    ) -> list[ResolvedProvidedResource]:
         """List ProvidedResources with the providing ArtifactReference in the specified Bolts."""
         return [
-            ProvidedResourceWithArtifactReference(
+            ResolvedProvidedResource(
                 provided_resource=resource,
                 artifact_reference=ArtifactReference(
                     project_name=bolt.project,
@@ -206,16 +210,34 @@ class BoltInspector:
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[ProvidedServiceWithArtifactReference]:
+    ) -> list[ResolvedProvidedService]:
         """List ProvidedServices with the providing ArtifactReference in the specified Bolts."""
-        return [
-            ProvidedServiceWithArtifactReference(
+        bolt_provided_virtual_services = [
+            ResolvedProvidedService(
+                provided_service=vps.service,
+                artifact_reference=ArtifactReference(
+                    project_name=bolt.project,
+                    artifact_name=vps.artifact,
+                    version=bolt.version,
+                ),
+                host=vps.service.name,
+            )
+            for bolt in bolts
+            if not project_names or bolt.project in project_names
+            for vps in bolt.provides.services
+            if (not artifact_names or vps.artifact in artifact_names)
+            and (not service_names or vps.service.name in service_names)
+        ]
+
+        artifact_provided_services = [
+            ResolvedProvidedService(
                 provided_service=service,
                 artifact_reference=ArtifactReference(
                     project_name=bolt.project,
                     artifact_name=artifact.name,
                     version=bolt.version,
                 ),
+                host=service.name,
             )
             for bolt in bolts
             if not project_names or bolt.project in project_names
@@ -227,8 +249,10 @@ class BoltInspector:
             if not service_names or service.name in service_names
         ]
 
+        return bolt_provided_virtual_services + artifact_provided_services
+
     @staticmethod
-    def list_resources(
+    def list_resource_requirements(
         bolts: Iterable[Bolt],
         *,
         project_names: Collection[str] | None = None,
@@ -237,7 +261,7 @@ class BoltInspector:
         resource_names: Collection[str] | None = None,
         resource_statuses: Collection[ResourceStatus] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
-        """List Resources with the providing ArtifactReference in the specified Bolts."""
+        """List required Resources with the ArtifactReference requiring it and the ProvidedResourceReference."""
         return [
             (
                 ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version),
@@ -259,7 +283,7 @@ class BoltInspector:
         ]
 
     @staticmethod
-    def list_services(
+    def list_service_requirements(
         bolts: Iterable[Bolt],
         *,
         project_names: Collection[str] | None = None,
@@ -269,7 +293,7 @@ class BoltInspector:
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
-        """List ProvidedServices with the providing ArtifactReference in the specified Bolts."""
+        """List required Services with the ArtifactReference requiring it and the ProvidedServiceReference."""
         return [
             (
                 ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version),
@@ -316,7 +340,7 @@ class BoltInspector:
     @classmethod
     def resolve_resource_requirement(
         cls, bolts: Iterable[Bolt], resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+    ) -> ResolvedProvidedResource:
         """Resolves a `ResourceRequirement` in the specified Environment, returning a Resource with the providing ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         for match in cls.list_provided_resources(
             bolts,
@@ -334,7 +358,7 @@ class BoltInspector:
     @classmethod
     def resolve_service_requirement(
         cls, bolts: Iterable[Bolt], service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
+    ) -> ResolvedProvidedService:
         """Resolves a `ServiceRequirement` in the specified `Environment`, returning a Service with the providing ArtifactReference. Raises UnknownService if dependency cannot be met."""
         for match in cls.list_provided_services(
             bolts,
@@ -356,11 +380,11 @@ class BoltInspector:
 async def resolve_artifact_requirements(
     adapter: InfrastructureAdapter, environment: Environment, bolt: Bolt
 ) -> tuple[
-    dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference],
-    dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference],
+    dict[ProvidedResourceReference, ResolvedProvidedResource],
+    dict[ProvidedServiceReference, ResolvedProvidedService],
 ]:
-    resource_providers: dict[ProvidedResourceReference, ProvidedResourceWithArtifactReference] = {}
-    service_providers: dict[ProvidedServiceReference, ProvidedServiceWithArtifactReference] = {}
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource] = {}
+    service_providers: dict[ProvidedServiceReference, ResolvedProvidedService] = {}
 
     for artifact in bolt.artifacts:
         if not artifact.execution:

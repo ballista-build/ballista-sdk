@@ -4,6 +4,11 @@ from pydantic import BaseModel, Field
 
 from .artifacts import Artifact
 from .common import BaseNamedModel
+from .services import VirtualProvidedService
+
+
+class BoltProvides(BaseModel, frozen=True):
+    services: Annotated[list[VirtualProvidedService], Field(description="Virtual services")] = []
 
 
 class Bolt(BaseModel, frozen=True):
@@ -15,6 +20,7 @@ class Bolt(BaseModel, frozen=True):
     ] = "v1"
     artifacts: Annotated[list[Artifact], Field(description="List of artifacts.")]
     project: Annotated[str, Field(description="Project name.")]
+    provides: Annotated[BoltProvides, Field(default_factory=BoltProvides)]
     version: Annotated[
         str,
         Field(

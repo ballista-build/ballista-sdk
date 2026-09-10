@@ -22,9 +22,9 @@ from ballista_sdk.adapters.primitives import (
     BoltReference,
     ProjectReference,
     ProvidedResourceReference,
-    ProvidedResourceWithArtifactReference,
     ProvidedServiceReference,
-    ProvidedServiceWithArtifactReference,
+    ResolvedProvidedResource,
+    ResolvedProvidedService,
 )
 from ballista_sdk.adapters.resources.transports import (
     ResourceProviderTransport,
@@ -47,7 +47,7 @@ from ballista_sdk.api.v1 import (
 )
 
 from . import primitives
-from .environments import get_environment_config, get_kubernetes_client
+from .environments import KubernetesAPIEnvironment, get_environment_apiclient, get_environment_config
 from .generation import (
     KubernetesInfrastructureAdapter,
     generate_bolt_kubernetes_namespace,
@@ -59,16 +59,16 @@ LOGGER = logging.getLogger("ballista")
 
 
 @dataclass
-class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
+class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[KubernetesAPIEnvironment]):
     """KubernetesInfrastructureAdapter that communicates directly via the Kubernetes API."""
-
-    _bolts: list[Bolt] = field(default_factory=list)
 
     _configs_adapter: KubernetesAPIConfigsAdapter = field(default_factory=KubernetesAPIConfigsAdapter, init=False)
     _secrets_adapter: KubernetesAPISecretsAdapter = field(default_factory=KubernetesAPISecretsAdapter, init=False)
 
-    _use_gateway: bool = field(default=False, init=False)
-    """Use Gateway API instead of Ingress."""
+    _kubeconfig_file: str | None = None
+    """Kubeconfig file path. Kinda hokey but better than nothing."""
+
+    _kubeconfig_context: str | None = None
 
     @property
     def name(self) -> Literal["kubernetes-api"]:
@@ -82,10 +82,10 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     def secrets_adapter(self) -> KubernetesAPISecretsAdapter:
         return self._secrets_adapter
 
-    async def _get_api_client(self, environment: Environment) -> ApiClient:
-        return get_kubernetes_client(environment)
+    async def _get_api_client(self, environment: KubernetesAPIEnvironment) -> ApiClient:
+        return get_environment_apiclient(environment)
 
-    async def deploy(self, bolt: Bolt, environment: Environment):
+    async def deploy(self, bolt: Bolt, environment: KubernetesAPIEnvironment):
         resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt)
 
         environment_config = get_environment_config(environment)
@@ -116,7 +116,9 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             except Exception:
                 LOGGER.exception("Error applying resource.")
 
-    async def determine_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
+    async def determine_execution_parameters(
+        self, bolt: Bolt, environment: KubernetesAPIEnvironment
+    ) -> ExecutionParameters:
         api_client = await self._get_api_client(environment)
         corev1_api = client.CoreV1Api(api_client=api_client)
         appsv1_api = client.AppsV1Api(api_client=api_client)
@@ -134,7 +136,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             ]
         )
 
-        # Environment parameters are on namespaces
+        # Environment parameters are on Namespaces
         namespace_response = corev1_api.list_namespace(label_selector=environment_label_selector)
         for namespace in namespace_response.items:
             if not namespace.metadata or not namespace.metadata.labels or not namespace.metadata.annotations:
@@ -212,12 +214,23 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         # Volumes are stuffed in ???
         return execution_parameters
 
-    async def interact(self, bolt: Bolt, environment: Environment):
+    def get_development_environment(self, name: str, title: str) -> KubernetesAPIEnvironment:
+        """Get a KubernetesAPIEnvironment suited for local development. Uses the default kubeconfig location and current context."""
+
+        return KubernetesAPIEnvironment(
+            name=name,
+            tier=EnvironmentTier.DEVELOPMENT,
+            title=title,
+            kubeconfig_file=self._kubeconfig_file,
+            kubeconfig_context=self._kubeconfig_context,
+        )
+
+    async def interact(self, bolt: Bolt, environment: KubernetesAPIEnvironment):
         raise NotImplementedError("No interactive session support.")
 
     async def list_artifacts(
         self,
-        environments: Collection[Environment],
+        environments: Collection[KubernetesAPIEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -253,48 +266,92 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         return artifacts
 
-    async def list_artifact_types(self, environments: Collection[Environment]) -> list[ArtifactType]:
+    async def list_artifact_types(self, environments: Collection[KubernetesAPIEnvironment]) -> list[ArtifactType]:
         return [ArtifactType(name="docker_image", title="Docker Image")]
 
     async def list_bolts(
         self,
-        environments: Collection[Environment],
+        environments: Collection[KubernetesAPIEnvironment],
         *,
         project_names: Collection[str] | None = None,
     ) -> list[BoltReference]:
-        return []
+        bolts = set()
 
-    async def list_environments(self) -> list[Environment]:
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+        ]
+
+        if project_names:
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
+
+        for environment in environments:
+            api_client = await self._get_api_client(environment)
+
+            api = client.AppsV1Api(api_client)
+            deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
+
+            for deployment in deployments.items:
+                if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                    continue
+
+                project_name = deployment.metadata.labels.get(primitives.METADATA_LABEL_APP_PART_OF)
+                version = deployment.metadata.labels.get(primitives.METADATA_LABEL_APP_VERSION)
+                if not project_name or not version:
+                    continue
+
+                bolt = BoltReference(project_name=project_name, version=version)
+                bolts.add(bolt)
+
+        return list(bolts)
+
+    async def list_environments(self) -> list[KubernetesAPIEnvironment]:
         environments = []
-        # Use the current kubeconfig context
-        _, current_context = config.list_kube_config_contexts()
 
-        if current_context:
-            api_client = config.new_client_from_config(context=current_context["name"])
+        api_client = config.new_client_from_config(
+            config_file=self._kubeconfig_file,
+            context=self._kubeconfig_context,
+            persist_config=(self._kubeconfig_file is None),
+        )
 
-            with api_client:
-                # TODO: We don't have an Environment type, so use Namespace with labels for now.
-                corev1_api = client.CoreV1Api(api_client=api_client)
-                namespace_response = corev1_api.list_namespace(
-                    label_selector=f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}",
-                )
+        with api_client:
+            # TODO: We don't have an Environment type, so use Namespace with labels for now.
+            corev1_api = client.CoreV1Api(api_client=api_client)
+            namespace_response = corev1_api.list_namespace(
+                label_selector=f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY},{primitives.METADATA_LABEL_ENVIRONMENT},{primitives.METADATA_LABEL_ENVIRONMENT_TIER}",
+            )
 
-                for namespace in namespace_response.items:
-                    if not namespace.metadata or not namespace.metadata.labels:
-                        continue
+            for namespace in namespace_response.items:
+                if not namespace.metadata or not namespace.metadata.labels or not namespace.metadata.annotations:
+                    continue
 
-                    environment_name = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
-                    environment_tier = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)
+                environment_name = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
+                environment_tier = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)
+                annotation = namespace.metadata.annotations.get(primitives.METADATA_ANNOTATION_ENVIRONMENT)
 
-                    if not environment_name or not environment_tier:
-                        continue
+                if not environment_name or not environment_tier or not annotation:
+                    continue
 
-                    environments.append(Environment(name=environment_name, tier=EnvironmentTier(environment_tier)))
+                try:
+                    environment = Environment.model_validate_json(annotation)
+
+                    environments.append(
+                        KubernetesAPIEnvironment(
+                            name=environment.name,
+                            tier=environment.tier,
+                            title=environment.title,
+                            kubeconfig_file=self._kubeconfig_file,
+                            kubeconfig_context=self._kubeconfig_context,
+                        )
+                    )
+
+                except ValidationError:
+                    raise
 
         return environments
 
     async def list_projects(
-        self, environments: Collection[Environment], *, project_names: Collection[str] | None = None
+        self, environments: Collection[KubernetesAPIEnvironment], *, project_names: Collection[str] | None = None
     ) -> list[ProjectReference]:
         projects: set[ProjectReference] = set()
         for environment in environments:
@@ -322,12 +379,12 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
     async def list_provided_resources(
         self,
-        environments: Collection[Environment],
+        environments: Collection[KubernetesAPIEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         resource_names: Collection[str] | None = None,
-    ) -> list[ProvidedResourceWithArtifactReference]:
+    ) -> list[ResolvedProvidedResource]:
         """List Provided Resources and the providing ArtifactIDReference in the specified Environment."""
         provided_resources = []
 
@@ -365,7 +422,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
                     for provided_resource in artifact.execution.provides.resources:
                         if not resource_names or provided_resource.name in resource_names:
                             provided_resources.append(
-                                ProvidedResourceWithArtifactReference(
+                                ResolvedProvidedResource(
                                     provided_resource=provided_resource, artifact_reference=artifact_reference
                                 )
                             )
@@ -376,13 +433,13 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
     async def list_provided_services(
         self,
-        environments: Collection[Environment],
+        environments: Collection[KubernetesAPIEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[ProvidedServiceWithArtifactReference]:
+    ) -> list[ResolvedProvidedService]:
         provided_services = []
 
         labels = [
@@ -414,9 +471,10 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
                 try:
                     provided_service = ProvidedService.model_validate_json(annotation)
+                    host = f"{service.metadata.name}.{service.metadata.namespace}.svc.cluster.local"
                     provided_services.append(
-                        ProvidedServiceWithArtifactReference(
-                            provided_service=provided_service, artifact_reference=artifact_reference
+                        ResolvedProvidedService(
+                            provided_service=provided_service, artifact_reference=artifact_reference, host=host
                         )
                     )
                 except ValidationError:
@@ -424,9 +482,9 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         return provided_services
 
-    async def list_resources(
+    async def list_resource_requirements(
         self,
-        environments: Collection[Environment],
+        environments: Collection[KubernetesAPIEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -436,9 +494,9 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
     ) -> list[tuple[ArtifactReference, ProvidedResourceReference, ResourceStatus]]:
         return []
 
-    async def list_services(
+    async def list_service_requirements(
         self,
-        environments: Collection[Environment],
+        environments: Collection[KubernetesAPIEnvironment],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -447,10 +505,69 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
     ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
-        return []
+        services_required = []
+
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT} in ({','.join([environment.name for environment in environments])})",
+        ]
+
+        if project_names:
+            labels.append(f"{primitives.METADATA_LABEL_APP_PART_OF} in ({','.join(project_names)})")
+        if artifact_names:
+            labels.append(f"{primitives.METADATA_LABEL_APP_NAME} in ({','.join(artifact_names)})")
+
+        for environment in environments:
+            api_client = await self._get_api_client(environment)
+
+            api = client.AppsV1Api(api_client)
+            deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
+
+            for deployment in deployments.items:
+                if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                    continue
+
+                artifact_reference = _get_artifact_reference_from_metadata(deployment.metadata)
+                annotation = deployment.metadata.annotations.get(primitives.METADATA_ANNOTATION_ARTIFACT)
+                if not artifact_reference or not annotation:
+                    continue
+
+                try:
+                    artifact = Artifact.model_validate_json(annotation)
+                    if not artifact.execution or not artifact.execution.provides.resources:
+                        continue
+
+                    for service_requirement in artifact.execution.requires.services:
+                        if service_project_names and service_requirement.project_name not in service_project_names:
+                            continue
+
+                        if service_artifact_names and service_requirement.artifact_name not in service_artifact_names:
+                            continue
+
+                        if service_names and service_requirement.service_name not in service_names:
+                            continue
+
+                        if service_types and True:
+                            continue
+
+                        services_required.append(
+                            (
+                                artifact_reference,
+                                ProvidedServiceReference(
+                                    project_name=service_requirement.project_name,
+                                    artifact_name=service_requirement.artifact_name,
+                                    service_name=service_requirement.service_name,
+                                ),
+                                ServiceType.grpc,
+                            )
+                        )
+                except ValidationError:
+                    pass
+
+        return services_required
 
     async def resolve_artifact_reference(
-        self, environment: Environment, artifact_reference: ArtifactReference
+        self, environment: KubernetesAPIEnvironment, artifact_reference: ArtifactReference
     ) -> Artifact:
         labels = [
             f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
@@ -483,12 +600,37 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
 
         raise ArtifactNotFound(artifact_reference)
 
-    async def resolve_bolt_reference(self, environment: Environment, bolt_reference: BoltReference) -> Bolt:
+    async def resolve_service_address(
+        self, environment: KubernetesAPIEnvironment, service_reference: ProvidedServiceReference
+    ) -> str:
+        """Get the host to connect to a ProvidedService."""
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}",
+            f"{primitives.METADATA_LABEL_APP_PART_OF}={service_reference.project_name}",
+            f"{primitives.METADATA_LABEL_APP_NAME}={service_reference.artifact_name}",
+            f"{primitives.METADATA_LABEL_SERVICE}={service_reference.service_name}",
+        ]
+
+        api_client = await self._get_api_client(environment)
+        api = client.CoreV1Api(api_client)
+
+        for service in api.list_service_for_all_namespaces(label_selector=",".join(labels)).items:
+            if not service.metadata or not service.metadata.labels or not service.spec or not service.spec.ports:
+                continue
+
+            return f"{service.metadata.name}.{service.metadata.namespace}.svc.cluster.local"
+
+        raise ProvidedServiceNotFound(service_reference)
+
+    async def resolve_bolt_reference(
+        self, environment: KubernetesAPIEnvironment, bolt_reference: BoltReference
+    ) -> Bolt:
         raise BoltNotFound(bolt_reference)
 
     async def resolve_resource_requirement(
-        self, environment: Environment, resource_requirement: ResourceRequirement
-    ) -> ProvidedResourceWithArtifactReference:
+        self, environment: KubernetesAPIEnvironment, resource_requirement: ResourceRequirement
+    ) -> ResolvedProvidedResource:
         requirement_project_name = resource_requirement.project_name
         requirement_resource_name = resource_requirement.resource_name
 
@@ -497,8 +639,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             project_names=[requirement_project_name],
             resource_names=[requirement_resource_name],
         )
-        for provided_resource_with_provider_artifact in provided_resources:
-            return provided_resource_with_provider_artifact
+        for resolved_provided_resource in provided_resources:
+            return resolved_provided_resource
 
         raise ProvidedResourceNotFound(
             ProvidedResourceReference(
@@ -508,8 +650,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
         )
 
     async def resolve_service_requirement(
-        self, environment: Environment, service_requirement: ServiceRequirement
-    ) -> ProvidedServiceWithArtifactReference:
+        self, environment: KubernetesAPIEnvironment, service_requirement: ServiceRequirement
+    ) -> ResolvedProvidedService:
         requirement_project_name = service_requirement.project_name
         requirement_artifact_name = service_requirement.artifact_name
         requirement_service_name = service_requirement.service_name
@@ -520,8 +662,8 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             artifact_names=[requirement_artifact_name],
             service_names=[requirement_service_name],
         )
-        for provided_resource_with_provider_artifact in provided_resources:
-            return provided_resource_with_provider_artifact
+        for resolved_provided_resource in provided_resources:
+            return resolved_provided_resource
 
         raise ProvidedServiceNotFound(
             ProvidedServiceReference(
@@ -531,13 +673,13 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             )
         )
 
-    async def remove(self, bolt: Bolt, environment: Environment):
+    async def remove(self, bolt: Bolt, environment: KubernetesAPIEnvironment):
         pass
 
     async def transport_resource_provider(
         self,
-        environment: Environment,
-        provided_resource_with_artifact: ProvidedResourceWithArtifactReference,
+        environment: KubernetesAPIEnvironment,
+        provided_resource_with_artifact: ResolvedProvidedResource,
         bolt: Bolt | None = None,
     ) -> ResourceProviderTransport:
         resource = provided_resource_with_artifact.provided_resource
@@ -547,30 +689,37 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             artifact = await self.resolve_artifact_reference(environment, artifact_reference)
 
             if rest_transport := resource.transport.rest:
-                port = None
+                service_host = None
+                service_port = None
 
                 if artifact.execution and artifact.execution.provides:
                     for service in artifact.execution.provides.services:
                         if service.name == rest_transport.service and service.http:
-                            port = service.http
+                            service_host = await self.resolve_service_address(
+                                environment,
+                                ProvidedServiceReference(
+                                    project_name=artifact_reference.project_name,
+                                    artifact_name=artifact_reference.artifact_name,
+                                    service_name=rest_transport.service,
+                                ),
+                            )
+                            service_port = service.http
                             break
 
-                if port is None:
+                if service_host is None or service_port is None:
                     raise ValueError("BAD SERVICE REFERENCE")
-
-                ref_name = f"{artifact_reference.project_name}-{artifact_reference.artifact_name}"
 
                 return RESTResourceProviderTransport(
                     ProvidedResourceReference(
                         project_name=artifact_reference.project_name,
                         resource_name=resource.name,
                     ),
-                    f"{ref_name}:{port}{rest_transport.path}",
+                    f"{service_host}:{service_port}{rest_transport.path}",
                 )
 
         raise ValueError()
 
-    def _ensure_namespace_exists(self, environment: Environment, api_client: ApiClient, namespace: str):
+    def _ensure_namespace_exists(self, environment: KubernetesAPIEnvironment, api_client: ApiClient, namespace: str):
         """Ensure the specified Environment has a properly setup Kubernetes Namespace."""
 
         api = client.CoreV1Api(api_client)
@@ -584,6 +733,11 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter):
             api.create_namespace(
                 client.V1Namespace(
                     metadata=client.V1ObjectMeta(
+                        annotations={
+                            primitives.METADATA_ANNOTATION_ENVIRONMENT: environment.model_dump_json(
+                                include={"name", "tier", "title"}
+                            )
+                        },
                         labels=labels,
                         name=namespace,
                     )
