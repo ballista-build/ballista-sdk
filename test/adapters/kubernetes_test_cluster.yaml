@@ -2,6 +2,9 @@
 apiVersion: v1
 kind: Namespace
 metadata:
+  annotations:
+    ballista.build/default-execution-parameters-json: '{"external_service":{"secure":true,"host":"ballista.build"}}'
+    ballista.build/environment-json: '{"name":"test","tier":"DEVELOPMENT","title":"Test Environment"}'
   labels:
     app.kubernetes.io/managed-by: Ballista
     ballista.build/environment: test
@@ -68,6 +71,7 @@ kind: Deployment
 metadata:
   annotations:
     ballista.build/artifact-json: '{"name":"server","execution":{"provides":{"healthchecks":{"alive":{"exec":{"commands":["pg_isready -U $POSTGRES_USER"],"shell":true}},"ready":{"exec":{"commands":["pg_isready -U $POSTGRES_USER"],"shell":true}},"started":{"exec":{"commands":["pg_isready -U $POSTGRES_USER"],"shell":true}}},"services":[{"name":"postgres","tcp":5432}]},"requires":{"secrets":[{"name":"root-username","description":"Username for the default/root login.","title":"Root Username","type":"string"},{"name":"root-password","description":"Password for the default/root login.","title":"Root Password","type":"string"}],"volumes":[{"name":"data","title":"PostgreSQL Data","capacity":0.1,"path":"/var/lib/postgresql/data","persistent":true}]}},"type":{"docker_image":{"image":"postgres:18.1"}}}'
+    ballista.build/default-execution-parameters-json: '{"compute":{"max_cpu":0.5,"min_memory":0.25}}'
   labels:
     app.kubernetes.io/instance: server-18.1
     app.kubernetes.io/managed-by: Ballista
@@ -134,6 +138,11 @@ spec:
             periodSeconds: 10
             successThreshold: 1
             timeoutSeconds: 1
+          resources:
+            requests:
+              memory: 0.25Gi
+            limits:
+              cpu: 0.5
           startupProbe:
             exec:
               command:

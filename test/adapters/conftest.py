@@ -137,11 +137,17 @@ def environment_with_docker_compose_adapter(
 
 
 @pytest.fixture(scope="session")
+def kubernetes_api_adapter(expected_bolts: list[Bolt]) -> KubernetesAPIInfrastructureAdapter:
+    return KubernetesAPIInfrastructureAdapter(_kubeconfig_file="ballista-test.kubeconfig")
+
+
+@pytest.fixture(scope="session")
 def environment_with_kubernetes_api_adapter(
-    expected_bolts: list[Bolt],
+    kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
 ) -> tuple[KubernetesAPIEnvironment, KubernetesAPIInfrastructureAdapter]:
-    adapter = KubernetesAPIInfrastructureAdapter(_kubeconfig_file="ballista-test.kubeconfig")
-    return adapter.get_development_environment(name="test", title="Test Environment"), adapter
+    return kubernetes_api_adapter.get_development_environment(
+        name="test", title="Test Environment"
+    ), kubernetes_api_adapter
 
 
 @pytest.fixture(

@@ -136,7 +136,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
             ]
         )
 
-        # Environment parameters are on namespaces
+        # Environment parameters are on Namespaces
         namespace_response = corev1_api.list_namespace(label_selector=environment_label_selector)
         for namespace in namespace_response.items:
             if not namespace.metadata or not namespace.metadata.labels or not namespace.metadata.annotations:
@@ -322,23 +322,31 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
             )
 
             for namespace in namespace_response.items:
-                if not namespace.metadata or not namespace.metadata.labels:
+                if not namespace.metadata or not namespace.metadata.labels or not namespace.metadata.annotations:
                     continue
 
                 environment_name = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT)
                 environment_tier = namespace.metadata.labels.get(primitives.METADATA_LABEL_ENVIRONMENT_TIER)
+                annotation = namespace.metadata.annotations.get(primitives.METADATA_ANNOTATION_ENVIRONMENT)
 
-                if not environment_name or not environment_tier:
+                if not environment_name or not environment_tier or not annotation:
                     continue
 
-                environments.append(
-                    KubernetesAPIEnvironment(
-                        name=environment_name,
-                        tier=EnvironmentTier(environment_tier),
-                        kubeconfig_file=self._kubeconfig_file,
-                        kubeconfig_context=self._kubeconfig_context,
+                try:
+                    environment = Environment.model_validate_json(annotation)
+
+                    environments.append(
+                        KubernetesAPIEnvironment(
+                            name=environment.name,
+                            tier=environment.tier,
+                            title=environment.title,
+                            kubeconfig_file=self._kubeconfig_file,
+                            kubeconfig_context=self._kubeconfig_context,
+                        )
                     )
-                )
+
+                except ValidationError:
+                    raise
 
         return environments
 
@@ -725,6 +733,11 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
             api.create_namespace(
                 client.V1Namespace(
                     metadata=client.V1ObjectMeta(
+                        annotations={
+                            primitives.METADATA_ANNOTATION_ENVIRONMENT: environment.model_dump_json(
+                                include={"name", "tier", "title"}
+                            )
+                        },
                         labels=labels,
                         name=namespace,
                     )

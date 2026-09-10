@@ -8,6 +8,7 @@ from ballista_sdk.adapters.kubernetes.environments import KubernetesAPIEnvironme
 from ballista_sdk.adapters.kubernetes.primitives import KubernetesResource
 from ballista_sdk.api.v1 import (
     Bolt,
+    EnvironmentTier,
     ExecutionParameters,
 )
 from ballista_sdk.bolts.v1 import BoltV1Factory
@@ -395,3 +396,38 @@ async def test_generate_resources(
         service_providers=service_providers,
     )
     assert bolt_resources == expected_bolt_resources
+
+
+@pytest.mark.integration
+async def test_determine_execution_parameters(
+    bolt: Bolt,
+    environment_with_kubernetes_api_adapter: tuple[KubernetesAPIEnvironment, KubernetesAPIInfrastructureAdapter],
+):
+    environment, kubernetes_api_adapter = environment_with_kubernetes_api_adapter
+
+    execution_parameters = await kubernetes_api_adapter.determine_execution_parameters(bolt, environment)
+
+    expected_execution_parameters = ExecutionParameters.model_validate(
+        {"environments": {"test": {"external_service": {"host": "ballista.build", "secure": True}}}}
+    )
+
+    assert execution_parameters.model_dump() == expected_execution_parameters.model_dump()
+
+
+@pytest.mark.integration
+async def test_list_environments(
+    kubernetes_api_adapter: KubernetesAPIInfrastructureAdapter,
+):
+    environments = await kubernetes_api_adapter.list_environments()
+
+    expected_environments = [
+        KubernetesAPIEnvironment(
+            name="test",
+            tier=EnvironmentTier.DEVELOPMENT,
+            title="Test Environment",
+            kubeconfig_file="ballista-test.kubeconfig",
+            kubeconfig_context=None,
+        )
+    ]
+
+    assert environments == expected_environments
