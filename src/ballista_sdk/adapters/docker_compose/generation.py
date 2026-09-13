@@ -18,8 +18,8 @@ from ballista_sdk.api.v1 import (
     Environment,
     ExecutionParameters,
     HealthcheckProbe,
+    ProvidedResourceSetting,
     ProvidedService,
-    ResourceSetting,
     Setting,
 )
 
@@ -110,7 +110,7 @@ class DockerComposeInfrastructureGenerator:
         service: DockerComposeService,
         artifact_reference: ArtifactReference,
         provided_resource_reference: ProvidedResourceReference,
-        resource_setting: ResourceSetting,
+        resource_setting: ProvidedResourceSetting,
         prefix: str,
         instance: list[str],
     ):

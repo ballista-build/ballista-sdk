@@ -22,8 +22,8 @@ from ballista_sdk.api.v1 import (
     Environment,
     ExecutionParameters,
     HealthcheckProbe,
+    ProvidedResourceSetting,
     ProvidedService,
-    ResourceSetting,
     Setting,
     VolumeExecutionParameters,
     VolumeRequirement,
@@ -192,7 +192,7 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
         self,
         container_spec: dict,
         artifact_reference: ArtifactReference,
-        setting: ResourceSetting,
+        setting: ProvidedResourceSetting,
         prefix: str,
         instance: list[str],
     ):

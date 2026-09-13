@@ -14,8 +14,8 @@ from ballista_sdk.adapters.settings import SettingsAdapter
 from ballista_sdk.api.v1 import (
     ConfigRequirement,
     Environment,
-    ResourceConfig,
-    ResourceSecret,
+    ProvidedResourceConfig,
+    ProvidedResourceSecret,
     SecretRequirement,
     SettingDataType,
     SettingValue,
@@ -194,11 +194,13 @@ def test_configs(
 
         resource_config = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceConfig(name=name, description=f"{name} description", title=f"{name} Title", type=type),
+            setting=ProvidedResourceConfig(
+                name=name, description=f"{name} description", title=f"{name} Title", type=type
+            ),
         )
         known_resource_config = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceConfig(name="known", type=SettingDataType.STRING),
+            setting=ProvidedResourceConfig(name="known", type=SettingDataType.STRING),
         )
         with subtests.test(type="resource", name=name):
             with configs_adapters as ca:
@@ -231,11 +233,13 @@ def test_secrets(
 
         resource_secret = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceSecret(name=name, description=f"{name} description", title=f"{name} Title", type=type),
+            setting=ProvidedResourceSecret(
+                name=name, description=f"{name} description", title=f"{name} Title", type=type
+            ),
         )
         known_resource_secret = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceSecret(name="known", type=SettingDataType.STRING),
+            setting=ProvidedResourceSecret(name="known", type=SettingDataType.STRING),
         )
         with subtests.test(type="resource", name=name):
             with secrets_adapters as sa:

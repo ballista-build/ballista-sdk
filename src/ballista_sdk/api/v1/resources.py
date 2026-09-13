@@ -9,15 +9,15 @@ from .services import ServiceRequirement
 from .settings import Config, Secret
 
 
-class ProvidedConfig(Config):
+class ProvidedResourceConfig(Config):
     pass
 
 
-class ProvidedSecret(Secret):
+class ProvidedResourceSecret(Secret):
     pass
 
 
-ProvidedSetting = ProvidedConfig | ProvidedSecret
+ProvidedResourceSetting = ProvidedResourceConfig | ProvidedResourceSecret
 
 
 class ProvidedResourceRequirementSchema(Schema, frozen=True):
@@ -68,7 +68,7 @@ class ProvidedResource(BaseNamedModel):
     """Resource available to use as an Artifact requirement."""
 
     configs: Annotated[
-        list[ProvidedConfig],
+        list[ProvidedResourceConfig],
         Field(description="Configs that are provisioned and provided to the Artifact."),
     ] = []
     instance_id_fields: Annotated[
@@ -89,7 +89,7 @@ class ProvidedResource(BaseNamedModel):
         ),
     ]
     secrets: Annotated[
-        list[ProvidedSecret],
+        list[ProvidedResourceSecret],
         Field(description="Secrets that are provisioned and provided to the Artifact"),
     ] = []
     transport: Annotated[
@@ -128,7 +128,7 @@ DATATYPE_MAP = {
 
 
 def _schema_to_model(
-    prefix: str, schema: Schema, settings: list[ProvidedSetting], model_name: str
+    prefix: str, schema: Schema, settings: list[ProvidedResourceSetting], model_name: str
 ) -> type[ResourceRequirementRequirement]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
