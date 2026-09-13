@@ -605,7 +605,7 @@ def _generate_deployment(
     resource_names = [provided_resource.name for provided_resource in artifact_execution.provides.resources]
     if resource_names:
         # ARGH
-        metadata["labels"][primitives.METADATA_LABEL_RESOURCE] = "true"
+        metadata["labels"][primitives.METADATA_LABEL_RESOURCES] = "true"
 
     pod_template = {
         "metadata": metadata,

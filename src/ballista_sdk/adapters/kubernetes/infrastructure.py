@@ -405,7 +405,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         if artifact_names:
             labels.append(f"{primitives.METADATA_LABEL_APP_NAME} in ({','.join(artifact_names)})")
         # Always look for any resource as we can't attach individual Resources until we get CRDs
-        labels.append(primitives.METADATA_LABEL_RESOURCE)
+        labels.append(primitives.METADATA_LABEL_RESOURCES)
 
         for environment in environments:
             api_client = await self._get_api_client(environment)

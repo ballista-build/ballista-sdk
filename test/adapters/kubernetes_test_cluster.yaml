@@ -25,7 +25,7 @@ metadata:
     app.kubernetes.io/version: "18.1"
     ballista.build/environment: test
     ballista.build/environment-tier: development
-    ballista.build/resource: database
+    ballista.build/resources: "true"
   name: postgres-resource-providers
   namespace: test
 spec:
@@ -44,7 +44,7 @@ spec:
         app.kubernetes.io/version: "18.1"
         ballista.build/environment: test
         ballista.build/environment-tier: development
-        ballista.build/resource: database
+        ballista.build/resources: "true"
       name: postgres-resource-providers
       namespace: test
     spec:
