@@ -61,24 +61,9 @@ def postgres_bolt() -> Bolt:
                             "resources": [
                                 {
                                     "name": "database",
-                                    "configs": [
-                                        {
-                                            "description": "Host of Postgres server.",
-                                            "name": "host",
-                                            "shared": True,
-                                            "title": "Host",
-                                            "type": "string",
-                                        },
-                                        {
-                                            "description": "Port Postgres server listens on.",
-                                            "name": "port",
-                                            "shared": True,
-                                            "title": "Port",
-                                            "type": "uint32",
-                                        },
-                                    ],
                                     "description": "Postgres Database",
                                     "instance_id_fields": ["name"],
+                                    "linked": {"services": [{"postgres": {"server": "postgres"}}]},
                                     "prefix": "POSTGRES",
                                     "requirements": {"properties": {"name": {"type": "string"}}, "required": ["name"]},
                                     "secrets": [
@@ -86,24 +71,22 @@ def postgres_bolt() -> Bolt:
                                             "type": "string",
                                             "description": "Name of Postgres database.",
                                             "name": "name",
-                                            "shared": False,
                                             "title": "Database Name",
                                         },
                                         {
                                             "type": "string",
                                             "description": "Login username to access database.",
                                             "name": "username",
-                                            "shared": False,
                                             "title": "Username",
                                         },
                                         {
                                             "type": "string",
                                             "description": "Login password to access database.",
                                             "name": "password",
-                                            "shared": False,
                                             "title": "Password",
                                         },
                                     ],
+                                    "services": [{"postgres": {"server": "postgres"}}],
                                     "title": "Postgres Database",
                                     "transport": {"rest": {"path": "/resources", "service": "rest"}},
                                 },

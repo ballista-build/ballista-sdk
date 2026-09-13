@@ -194,13 +194,11 @@ def test_configs(
 
         resource_config = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceConfig(
-                name=name, description=f"{name} description", title=f"{name} Title", type=type, shared=True
-            ),
+            setting=ResourceConfig(name=name, description=f"{name} description", title=f"{name} Title", type=type),
         )
         known_resource_config = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceConfig(name="known", type=SettingDataType.STRING, shared=True),
+            setting=ResourceConfig(name="known", type=SettingDataType.STRING),
         )
         with subtests.test(type="resource", name=name):
             with configs_adapters as ca:
@@ -233,13 +231,11 @@ def test_secrets(
 
         resource_secret = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceSecret(
-                name=name, description=f"{name} description", title=f"{name} Title", type=type, shared=True
-            ),
+            setting=ResourceSecret(name=name, description=f"{name} description", title=f"{name} Title", type=type),
         )
         known_resource_secret = BoundSetting(
             provided_resource=provided_resource,
-            setting=ResourceSecret(name="known", type=SettingDataType.STRING, shared=True),
+            setting=ResourceSecret(name="known", type=SettingDataType.STRING),
         )
         with subtests.test(type="resource", name=name):
             with secrets_adapters as sa:

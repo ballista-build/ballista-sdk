@@ -171,8 +171,6 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
         reference = {"name": ref_name, "optional": not required}
 
         env: dict[str, dict | str] = {ref_type: reference}
-        if prefix:
-            env["prefix"] = prefix + "_"
 
         if "envFrom" not in container_spec:
             container_spec["envFrom"] = [env]
@@ -194,26 +192,19 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
         self,
         container_spec: dict,
         artifact_reference: ArtifactReference,
-        resource_reference: ProvidedResourceReference,
-        resource_setting: ResourceSetting,
+        setting: ResourceSetting,
         prefix: str,
         instance: list[str],
     ):
         """Add an Artifact and Resource-specific setting into a PodSpec container."""
 
-        if resource_setting.shared:
-            # Shared setting means we reference it into the artifact.
-            self._add_setting_reference(
-                container_spec,
-                generate_resource_settings_refname(resource_reference),
-                resource_setting.sensitive,
-                True,
-                prefix,
-            )
-
-        else:
-            # Unique settings are added as normal Artifact settings.
-            self.add_artifact_setting(container_spec, artifact_reference, resource_setting)
+        self._add_setting_reference(
+            container_spec,
+            generate_artifact_settings_refname(artifact_reference),
+            setting.sensitive,
+            setting.sensitive,
+            prefix,
+        )
 
     def generate_bolt_resources(
         self,
@@ -461,11 +452,35 @@ def _generate_deployment(
         ]
 
         [
-            adapter.add_resource_setting(
-                container, artifact_reference, provided_resource_reference, s, requirement_prefix, requirement_instance
-            )
+            adapter.add_resource_setting(container, artifact_reference, s, requirement_prefix, requirement_instance)
             for s in provided_resource.configs + provided_resource.secrets
         ]
+
+        for service_requirement in provided_resource.linked.services:
+            provided_service_reference = ProvidedServiceReference(
+                service_requirement.project_name, service_requirement.artifact_name, service_requirement.service_name
+            )
+            provided_service, provider_artifact_reference, provided_service_host = service_providers[
+                provided_service_reference
+            ]
+            port_service = provided_service.grpc or provided_service.http or provided_service.tcp
+            if not port_service:
+                # WTF is it?
+                continue
+
+            service_env_name = requirement_prefix
+            # TODO: Alias support
+            host_key = f"{service_env_name}_HOST"
+            port_key = f"{service_env_name}_PORT"
+            secure_key = f"{service_env_name}_SECURE"
+
+            env.update(
+                {
+                    host_key: provided_service_host,
+                    port_key: str(port_service),
+                    secure_key: "true" if provided_service.secure else "false",
+                }
+            )
 
     # Required Services
     for service_requirement in artifact_execution.requires.services:
@@ -475,13 +490,26 @@ def _generate_deployment(
         provided_service, provider_artifact_reference, provided_service_host = service_providers[
             provided_service_reference
         ]
+        port_service = provided_service.grpc or provided_service.http or provided_service.tcp
+        if not port_service:
+            # WTF is it?
+            continue
 
         service_env_name = f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}-{provided_service.name}".upper().replace(
             "-", "_"
         )
-        env[f"{service_env_name}_HOST"] = provided_service_host
-        env[f"{service_env_name}_PORT"] = str(provided_service.grpc or provided_service.http or provided_service.tcp)
-        env[f"{service_env_name}_SECURE"] = "true" if provided_service.secure else "false"
+        # TODO: Alias support
+        host_key = f"{service_env_name}_HOST"
+        port_key = f"{service_env_name}_PORT"
+        secure_key = f"{service_env_name}_SECURE"
+
+        env.update(
+            {
+                host_key: provided_service_host,
+                port_key: str(port_service),
+                secure_key: "true" if provided_service.secure else "false",
+            }
+        )
 
     # Provided Services
     services_added = {}

@@ -5,22 +5,19 @@ from openapi_pydantic import DataType, Schema
 from pydantic import BaseModel, Field, create_model
 
 from .common import BaseNamedModel, BaseOneOfModel
+from .services import ServiceRequirement
 from .settings import Config, Secret
 
 
-class BaseResourceSetting(BaseModel):
-    shared: Annotated[bool, Field(description="Indicates if value is shared across artifacts.")]
-
-
-class ResourceConfig(BaseResourceSetting, Config):
+class ProvidedConfig(Config):
     pass
 
 
-class ResourceSecret(BaseResourceSetting, Secret):
+class ProvidedSecret(Secret):
     pass
 
 
-ResourceSetting = ResourceConfig | ResourceSecret
+ProvidedSetting = ProvidedConfig | ProvidedSecret
 
 
 class ProvidedResourceRequirementSchema(Schema, frozen=True):
@@ -52,14 +49,28 @@ class ProvidedResourceTransportMethod(BaseOneOfModel):
     # tcp: Annotated[actions.TCPAction | None, Field()] = None
 
 
+class ProvidedResourceLinkedItems(BaseModel):
+    configs: Annotated[
+        list[str], Field(description="Configs that are linked from the Resource Provider to the Artifact.")
+    ] = []
+    secrets: Annotated[
+        list[str], Field(description="Secrets that are linked from the Resource Provider to the Artifact.")
+    ] = []
+    services: Annotated[
+        list[ServiceRequirement],
+        Field(
+            description="Services that are given along with the Resource. Treated like ServiceRequirements for the artifact."
+        ),
+    ] = []
+
+
 class ProvidedResource(BaseNamedModel):
     """Resource available to use as an Artifact requirement."""
 
     configs: Annotated[
-        list[ResourceConfig],
-        Field(description="Configs that are received by Artifact."),
+        list[ProvidedConfig],
+        Field(description="Configs that are provisioned and provided to the Artifact."),
     ] = []
-    # TODO: Is this still needed?
     instance_id_fields: Annotated[
         list[str],
         Field(
@@ -67,6 +78,7 @@ class ProvidedResource(BaseNamedModel):
             title="instance_id Fields",
         ),
     ] = []
+    linked: Annotated[ProvidedResourceLinkedItems, Field(default_factory=ProvidedResourceLinkedItems)]
     prefix: Annotated[str, Field(description="Default prefix of values received by Artifact.")]
     requirements: Annotated[
         ProvidedResourceRequirementSchema,
@@ -76,7 +88,10 @@ class ProvidedResource(BaseNamedModel):
             description="OpenAPI Schema representing requirements for a resource.",
         ),
     ]
-    secrets: Annotated[list[ResourceSecret], Field(description="Secrets that are received by Artifact")] = []
+    secrets: Annotated[
+        list[ProvidedSecret],
+        Field(description="Secrets that are provisioned and provided to the Artifact"),
+    ] = []
     transport: Annotated[
         ProvidedResourceTransportMethod | None,
         Field(
@@ -93,6 +108,16 @@ class ProvidedResource(BaseNamedModel):
         )
 
 
+class VirtualProvidedResource(BaseModel):
+    """A static IPv4 address for a ProvidedResource, pretending to be executed in an Artifact.
+
+    The ProvidedResource.transport is required."""
+
+    artifact: str
+    ipv4_address: str
+    resource: ProvidedResource
+
+
 DATATYPE_MAP = {
     DataType.BOOLEAN: bool,
     DataType.INTEGER: int,
@@ -103,7 +128,7 @@ DATATYPE_MAP = {
 
 
 def _schema_to_model(
-    prefix: str, schema: Schema, settings: list[ResourceSetting], model_name: str
+    prefix: str, schema: Schema, settings: list[ProvidedSetting], model_name: str
 ) -> type[ResourceRequirementRequirement]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
@@ -210,3 +235,35 @@ class ResourceAccess(StrEnum):
     """Resource can be read from and written to."""
     OWNER = auto()
     """Resource can be read from, written to, altered, and removed."""
+
+
+class ResourceRequirement(BaseOneOfModel):
+    model_config = {"extra": "allow"}
+
+    __pydantic_extra__: dict[str, dict[str, ResourceRequirementRequirement]]
+
+    @property
+    def prefix(self) -> None:
+        return None
+
+    @property
+    def project_name(self) -> str:
+        return self.which()
+
+    @property
+    def resource_name(self) -> str:
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__.values():
+                for v in f:
+                    return v
+
+        raise Exception(self.__pydantic_extra__)
+
+    @property
+    def resource_requirement(self) -> ResourceRequirementRequirement:
+        if self.__pydantic_extra__:
+            for f in self.__pydantic_extra__.values():
+                for v in f.values():
+                    return v
+
+        raise Exception("WTF")

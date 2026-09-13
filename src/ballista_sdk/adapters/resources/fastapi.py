@@ -42,6 +42,7 @@ DepArtifact = Annotated[ArtifactReference, Depends(_get_artifact_reference)]
 
 
 # Map a ResourceProvider to a FastAPI APIRouter implementing the Ballista Resource Provider REST API
+# TODO: Update this to use PEP 747 TypeForm!
 def resource_provider_to_apirouter[Requirement: ResourceRequirement](
     resource_name: str,
     resource_requirement_type: type[Requirement],

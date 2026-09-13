@@ -72,7 +72,9 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
             docker_compose_dict = docker_compose_project.model_dump(exclude_none=True, exclude_unset=True)
-            yaml.dump(docker_compose_dict, stream=f, encoding="utf-8")
+            raw_yaml = yaml.dump(docker_compose_dict, indent=2)
+            print(raw_yaml)
+            yaml.dump(docker_compose_dict, stream=f, encoding="utf-8", indent=2)
 
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
             subprocess.run(args)
@@ -89,36 +91,6 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             resource_providers=resource_providers,
             service_providers=service_providers,
         )
-
-        # TODO: Move this so it's handled entirely by docker compose
-        artifact_resources: list[tuple[ArtifactReference, ResourceRequirement, Environment]] = []
-        for artifact in bolt.artifacts:
-            if artifact.execution and artifact.execution.requires.resources:
-                artifact_reference = ArtifactReference(
-                    project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
-                )
-                artifact_resources.extend(
-                    [(artifact_reference, r, environment) for r in artifact.execution.requires.resources]
-                )
-
-        if artifact_resources:
-            # We need to start the docker compose with only the "depends" profile so we can check resources
-            self._call_compose(docker_compose_project, ["--profile", "depend", "up", "--build"])
-
-            for artifact, project_resource_requirement, environment in artifact_resources:
-                provided_resource_with_artifact = await self.resolve_resource_requirement(
-                    environment, project_resource_requirement
-                )
-                requirement_model = provided_resource_with_artifact.provided_resource.get_requirements_model(
-                    provided_resource_with_artifact.artifact_reference.project_name
-                )
-                resource_requirement_data = project_resource_requirement.resource_requirement.model_dump()
-
-                resource_requirement = requirement_model.model_validate(resource_requirement_data)
-
-                await self._create_or_update_resource(
-                    environment, artifact, provided_resource_with_artifact, resource_requirement
-                )
 
         commands = ["up", "--detach", "--remove-orphans"]
 
@@ -142,36 +114,6 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             resource_providers=resource_providers,
             service_providers=service_providers,
         )
-
-        # TODO: Move this so it's handled entirely by docker compose
-        artifact_resources: list[tuple[ArtifactReference, ResourceRequirement, Environment]] = []
-        for artifact in bolt.artifacts:
-            if artifact.execution and artifact.execution.requires.resources:
-                artifact_reference = ArtifactReference(
-                    project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
-                )
-                artifact_resources.extend(
-                    [(artifact_reference, r, environment) for r in artifact.execution.requires.resources]
-                )
-
-        if artifact_resources:
-            # We need to start the docker compose with only the "depends" profile so we can check resources
-            self._call_compose(docker_compose_project, ["--profile", "depend", "up", "--build"])
-
-            for artifact, project_resource_requirement, environment in artifact_resources:
-                provided_resource_with_artifact = await self.resolve_resource_requirement(
-                    environment, project_resource_requirement
-                )
-                requirement_model = provided_resource_with_artifact.provided_resource.get_requirements_model(
-                    provided_resource_with_artifact.artifact_reference.project_name
-                )
-                resource_requirement_data = project_resource_requirement.resource_requirement.model_dump()
-
-                resource_requirement = requirement_model.model_validate(resource_requirement_data)
-
-                await self._create_or_update_resource(
-                    environment, artifact, provided_resource_with_artifact, resource_requirement
-                )
 
         commands = ["up", "--build", "--watch", "--remove-orphans"]
 
@@ -394,12 +336,12 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         self._call_compose(docker_compose_project, ["down"])
 
     async def transport_resource_provider(
-        self, environment: Environment, provided_resource_with_artifact: ResolvedProvidedResource
+        self, environment: Environment, resolved_provided_resource: ResolvedProvidedResource
     ) -> ResourceProviderTransport:
-        resource = provided_resource_with_artifact.provided_resource
+        resource = resolved_provided_resource.provided_resource
 
         if resource.transport:
-            artifact_reference = provided_resource_with_artifact.artifact_reference
+            artifact_reference = resolved_provided_resource.artifact_reference
             artifact = await self.resolve_artifact_reference(environment, artifact_reference)
 
             if rest_transport := resource.transport.rest:

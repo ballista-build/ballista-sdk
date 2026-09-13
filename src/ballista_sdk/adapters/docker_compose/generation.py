@@ -39,7 +39,7 @@ class DockerComposeService(BaseModel):
     depends_on: dict[str, dict[str, str]] = {}
     deploy: dict[str, Any] = {}
     develop: dict[str, Any] = {}
-    environment: dict[str, Any] = {}
+    environment: dict[str, str] = {}
     env_file: list[dict] = []
     extra_hosts: dict[str, str] = {}
     healthcheck: dict[str, Any] = {}
@@ -114,15 +114,7 @@ class DockerComposeInfrastructureGenerator:
         prefix: str,
         instance: list[str],
     ):
-        if resource_setting.shared:
-            self._add_envfile(
-                service,
-                generate_resource_setting_envfile_filename(provided_resource_reference, resource_setting.sensitive),
-                True,
-            )
-
-        else:
-            self.add_artifact_setting(service, artifact_reference, resource_setting)
+        self.add_artifact_setting(service, artifact_reference, resource_setting)
 
     def generate_docker_compose_project_from_bolt(
         self,
@@ -223,7 +215,7 @@ class DockerComposeInfrastructureGenerator:
 
         env = {}
 
-        # Artifact configs
+        # Artifact configs and secrets
         settings = artifact_execution.requires.configs + artifact_execution.requires.secrets
 
         [self.add_artifact_setting(compose_service, artifact_reference, setting) for setting in settings]
@@ -256,7 +248,37 @@ class DockerComposeInfrastructureGenerator:
                 for setting in provided_resource.configs + provided_resource.secrets
             ]
 
-        # TODO: Hoist these out so they can be provider services
+            # Attach any services the Provided Resource links
+            for service_requirement in provided_resource.linked.services:
+                provided_service_reference = ProvidedServiceReference(
+                    project_name=service_requirement.project_name,
+                    artifact_name=service_requirement.artifact_name,
+                    service_name=service_requirement.service_name,
+                )
+                provided_service, provider_artifact_reference, host = service_providers[provided_service_reference]
+                port_service = provided_service.grpc or provided_service.http or provided_service.tcp
+                if not port_service:
+                    # WTF is it?
+                    continue
+
+                depends_keys.add(
+                    f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}"
+                )
+
+                service_env_name = provided_resource.prefix
+                # TODO: Alias support
+                host_key = f"{service_env_name}_HOST"
+                port_key = f"{service_env_name}_PORT"
+                secure_key = f"{service_env_name}_SECURE"
+
+                env.update(
+                    {
+                        host_key: host,
+                        port_key: str(port_service),
+                        secure_key: "true" if provided_service.secure else "false",
+                    }
+                )
+
         # Service Requirements
         for service_requirement in artifact_execution.requires.services:
             provided_service_reference = ProvidedServiceReference(
@@ -265,6 +287,10 @@ class DockerComposeInfrastructureGenerator:
                 service_name=service_requirement.service_name,
             )
             provided_service, provider_artifact_reference, host = service_providers[provided_service_reference]
+            port_service = provided_service.grpc or provided_service.http or provided_service.tcp
+            if not port_service:
+                # WTF is it?
+                continue
 
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
@@ -275,14 +301,15 @@ class DockerComposeInfrastructureGenerator:
             env.update(
                 {
                     f"{service_env_name}_HOST": host,
-                    f"{service_env_name}_PORT": provided_service.grpc or provided_service.http or provided_service.tcp,
+                    f"{service_env_name}_PORT": str(port_service),
+                    f"{service_env_name}_SECURE": "true" if provided_service.secure else "false",
                 }
             )
 
         compose_service.depends_on = {key: {"condition": "service_healthy"} for key in depends_keys}
 
         # Provided Services
-        services_added = {}
+        services_provided = {}
         compose_service.ports = ports = []
         for service in artifact_execution.provides.services:
             port_service = service.grpc or service.http or service.tcp
@@ -290,7 +317,7 @@ class DockerComposeInfrastructureGenerator:
                 # WTF is it, then? Needs a better abstraction.
                 continue
 
-            services_added[service.name] = service
+            services_provided[service.name] = service
 
             key = service.name.upper().replace("-", "_") + "_SERVICE"
             host = "localhost"
@@ -316,7 +343,7 @@ class DockerComposeInfrastructureGenerator:
                     {
                         "name": service.name,
                         "published": str(external_service_parameters.port or port_service),
-                        "target": port_service,
+                        "target": str(port_service),
                     }
                 )
 
@@ -329,7 +356,7 @@ class DockerComposeInfrastructureGenerator:
         if healthchecks := artifact_execution.provides.healthchecks:
             # Docker Compose only supports a single healthcheck
             if probe := (healthchecks.ready or healthchecks.alive or healthchecks.started):
-                compose_service.healthcheck = _generate_healthcheck(probe, services_added)
+                compose_service.healthcheck = _generate_healthcheck(probe, services_provided)
 
         # Building
         if build := artifact.build:

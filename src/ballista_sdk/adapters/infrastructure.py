@@ -122,7 +122,7 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         ...
 
     async def transport_resource_provider(
-        self, environment: AdapterEnvironment, provided_resource_with_artifact: ResolvedProvidedResource
+        self, environment: AdapterEnvironment, resolved_provided_resource: ResolvedProvidedResource
     ) -> ResourceProviderTransport:
         """Transports a Resource Provider communication that is accessible to the adapter."""
         ...
@@ -390,6 +390,7 @@ async def resolve_artifact_requirements(
         if not artifact.execution:
             continue
 
+        resource_service_requirements = []
         for resource_requirement in artifact.execution.requires.resources:
             provided_resource_reference = ProvidedResourceReference(
                 project_name=resource_requirement.project_name,
@@ -406,7 +407,10 @@ async def resolve_artifact_requirements(
 
                 resource_providers[provided_resource_reference] = resolution
 
-        for service_requirement in artifact.execution.requires.services:
+                # Add any linked services to our requirements
+                resource_service_requirements.extend(resolution.provided_resource.linked.services)
+
+        for service_requirement in resource_service_requirements + artifact.execution.requires.services:
             provided_service_reference = ProvidedServiceReference(
                 project_name=service_requirement.project_name,
                 artifact_name=service_requirement.artifact_name,

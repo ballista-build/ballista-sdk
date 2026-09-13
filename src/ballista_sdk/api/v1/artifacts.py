@@ -1,11 +1,11 @@
-from typing import Annotated, ClassVar
+from typing import Annotated
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, Field
 
 from .common import BaseNamedModel, BaseOneOfModel
 from .healthchecks import ProvidedHealthchecks
-from .resources import ProvidedResource, ResourceRequirementRequirement
-from .services import ProvidedService
+from .resources import ProvidedResource, ResourceRequirement
+from .services import ProvidedService, ServiceRequirement
 from .settings import Config, Secret
 
 
@@ -40,81 +40,14 @@ class BuildParameters(BaseModel):
 ## Configs
 ##
 class ConfigRequirement(Config):
-    shared: ClassVar[bool] = False
-
-
-##
-## Resources
-##
-class ResourceRequirement(BaseOneOfModel):
-    model_config = ConfigDict(extra="allow")
-
-    __pydantic_extra__: dict[str, dict[str, ResourceRequirementRequirement]]
-
-    @property
-    def prefix(self) -> None:
-        return None
-
-    @property
-    def project_name(self) -> str:
-        return self.which()
-
-    @property
-    def resource_name(self) -> str:
-        if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f:
-                    return v
-
-        raise Exception(self.__pydantic_extra__)
-
-    @property
-    def resource_requirement(self) -> ResourceRequirementRequirement:
-        if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f.values():
-                    return v
-
-        raise Exception("WTF")
+    pass
 
 
 ##
 ## Secrets
 ##
 class SecretRequirement(Secret):
-    shared: ClassVar[bool] = False
-
-
-##
-## Services
-##
-class ServiceRequirement(BaseOneOfModel):
-    model_config = ConfigDict(extra="allow")
-
-    __pydantic_extra__: dict[str, dict[str, str]]
-    """Project Name -> Artifact Name -> Service Name"""
-
-    @property
-    def project_name(self) -> str:
-        return self.which()
-
-    @property
-    def artifact_name(self) -> str:
-        if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f:
-                    return v
-
-        raise Exception(self.__pydantic_extra__)
-
-    @property
-    def service_name(self) -> str:
-        if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f.values():
-                    return v
-
-        raise Exception(self.__pydantic_extra__)
+    pass
 
 
 ##

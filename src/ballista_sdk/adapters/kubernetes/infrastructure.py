@@ -404,6 +404,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
             api_client = await self._get_api_client(environment)
             api = client.AppsV1Api(api_client)
 
+            # TODO: To support VirtualProvidedResources, we will need a different place to store the information for Resources.
             for deployment in api.list_deployment_for_all_namespaces(label_selector=",".join(labels)).items:
                 if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
                     continue
@@ -679,13 +680,13 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
     async def transport_resource_provider(
         self,
         environment: KubernetesAPIEnvironment,
-        provided_resource_with_artifact: ResolvedProvidedResource,
+        resolved_provided_resource: ResolvedProvidedResource,
         bolt: Bolt | None = None,
     ) -> ResourceProviderTransport:
-        resource = provided_resource_with_artifact.provided_resource
+        resource = resolved_provided_resource.provided_resource
 
         if resource.transport:
-            artifact_reference = provided_resource_with_artifact.artifact_reference
+            artifact_reference = resolved_provided_resource.artifact_reference
             artifact = await self.resolve_artifact_reference(environment, artifact_reference)
 
             if rest_transport := resource.transport.rest:
