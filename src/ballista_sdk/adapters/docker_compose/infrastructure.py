@@ -72,8 +72,6 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
             docker_compose_dict = docker_compose_project.model_dump(exclude_none=True, exclude_unset=True)
-            raw_yaml = yaml.dump(docker_compose_dict, indent=2)
-            print(raw_yaml)
             yaml.dump(docker_compose_dict, stream=f, encoding="utf-8", indent=2)
 
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
