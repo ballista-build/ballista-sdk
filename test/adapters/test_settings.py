@@ -5,6 +5,7 @@ from kubernetes import client as kubernetes_client
 
 from ballista_sdk.adapters.docker_compose.settings import DockerComposeSettingsAdapter
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
+from ballista_sdk.adapters.kubernetes.environments import KubernetesAPIEnvironment
 from ballista_sdk.adapters.kubernetes.settings import (
     KubernetesAPIConfigsAdapter,
     KubernetesAPISecretsAdapter,
@@ -24,16 +25,18 @@ from ballista_sdk.api.v1 import (
 
 @dataclass
 class MockKubernetesConfigsAdapter(KubernetesAPIConfigsAdapter):
-    _persisted: dict[tuple[Environment, str, str], kubernetes_client.V1ConfigMap] = field(default_factory=dict)
+    _persisted: dict[tuple[KubernetesAPIEnvironment, str, str], kubernetes_client.V1ConfigMap] = field(
+        default_factory=dict
+    )
 
     def _read_object(
-        self, environment: Environment, namespace: str, ref_name: str
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
     ) -> kubernetes_client.V1ConfigMap | None:
         if obj := self._persisted.get((environment, namespace, ref_name)):
             return obj
 
     def _write_object(
-        self, environment: Environment, namespace: str, ref_name: str, obj: kubernetes_client.V1ConfigMap
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: kubernetes_client.V1ConfigMap
     ):
         cache_key = (environment, namespace, ref_name)
 
@@ -43,15 +46,19 @@ class MockKubernetesConfigsAdapter(KubernetesAPIConfigsAdapter):
 
 @dataclass
 class MockKubernetesSecretsAdapter(KubernetesAPISecretsAdapter):
-    _persisted: dict[tuple[Environment, str, str], kubernetes_client.V1Secret] = field(default_factory=dict)
+    _persisted: dict[tuple[KubernetesAPIEnvironment, str, str], kubernetes_client.V1Secret] = field(
+        default_factory=dict
+    )
 
     def _read_object(
-        self, environment: Environment, namespace: str, ref_name: str
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
     ) -> kubernetes_client.V1Secret | None:
         if obj := self._persisted.get((environment, namespace, ref_name)):
             return obj
 
-    def _write_object(self, environment: Environment, namespace: str, ref_name: str, obj: kubernetes_client.V1Secret):
+    def _write_object(
+        self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: kubernetes_client.V1Secret
+    ):
         cache_key = (environment, namespace, ref_name)
 
         self._persisted[cache_key] = obj

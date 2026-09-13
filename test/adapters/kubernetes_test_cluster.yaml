@@ -171,6 +171,56 @@ spec:
           persistentVolumeClaim:
             claimName: postgres-server-data
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    ballista.build/artifact-json: '{"name":"api","execution":{"requires":{"resources":[{"postgres":{"database":{"name":"mine"}}}],"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+  labels:
+    app.kubernetes.io/instance: api-1.0.0
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: test-app
+    app.kubernetes.io/version: "1.0.0"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+  name: test-app-api
+  namespace: test
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/part-of: test-app
+      ballista.build/environment: test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: api-1.0.0
+        app.kubernetes.io/managed-by: Ballista
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: test-app
+        app.kubernetes.io/version: "1.0.0"
+        ballista.build/environment: test
+        ballista.build/environment-tier: development
+      name: test-app-api
+      namespace: test
+    spec:
+      containers:
+        - env:
+            - name: POSTGRES_SERVER_POSTGRES_HOST
+              value: "postgres-server-postgres.test.svc.cluster.local"
+            - name: POSTGRES_SERVER_POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_SERVER_POSTGRES_SECURE
+              value: "false"
+          envFrom:
+            - secretRef:
+                name: postgres-resource-providers
+                optional: false
+          image: hello-world:latest
+          imagePullPolicy: Always
+          name: api
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:

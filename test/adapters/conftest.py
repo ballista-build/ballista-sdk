@@ -105,10 +105,34 @@ def postgres_bolt() -> Bolt:
 
 
 @pytest.fixture(scope="session")
-def expected_bolts(postgres_bolt: Bolt) -> list[Bolt]:
+def pg_test_app() -> Bolt:
+    """A Bolt that requires a Postgres Database resource and service."""
+    return Bolt.model_validate(
+        {
+            "api_version": "v1",
+            "artifacts": [
+                {
+                    "name": "api",
+                    "execution": {
+                        "requires": {
+                            "resources": [{"postgres": {"database": {"name": "mine"}}}],
+                            "services": [{"postgres": {"server": "postgres"}}],
+                        }
+                    },
+                    "type": {"docker_image": {"image": "hello-world:latest"}},
+                }
+            ],
+            "project": "test-app",
+            "version": "1.0.0",
+        }
+    )
+
+
+@pytest.fixture(scope="session")
+def expected_bolts(postgres_bolt: Bolt, pg_test_app: Bolt) -> list[Bolt]:
     """Bolts that are expected to be available in environments."""
 
-    return [postgres_bolt]
+    return [postgres_bolt, pg_test_app]
 
 
 @pytest.fixture(scope="session")

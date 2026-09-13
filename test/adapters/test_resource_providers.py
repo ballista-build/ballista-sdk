@@ -109,8 +109,8 @@ class MockResourceProvider(ResourceProvider):
     # Resource Access
     async def get_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> ResourceAccess | None:
-        pass
+    ) -> ResourceAccess:
+        return ResourceAccess.NONE
 
     async def grant_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
