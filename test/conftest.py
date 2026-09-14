@@ -53,22 +53,25 @@ artifacts:
                     http: 80
             requires:
                 configs:
-                    - name: "option-a"
-                      type: "string"
+                      - name: "option-a"
+                        type: "string"
                 resources:
-                    - postgres:
-                        database:
-                            name: "testdatabase"
-                            name_alias: "BUG_DATABASE"
+                      - postgres:
+                            database:
+                                name: "testdatabase"
+                                name-alias: "ALIASED_DATABASE"
+                                host-alias: "RENAMED_HOST"
+                                port-alias: "OTHER_PORT"
+                                secure-alias: "RETITLED_SECURE"
                 secrets:
-                    - name: "secret-a"
-                      type: "string"
+                      - name: "secret-a"
+                        type: "string"
                 volumes:
-                    - name: "volume-a"
-                      capacity: 0.01
-                      path: "/var/volume-a"
-                      persistent: True
-                      title: "Volume A"
+                      - name: "volume-a"
+                        capacity: 0.01
+                        path: "/var/volume-a"
+                        persistent: True
+                        title: "Volume A"
         type:
             docker_image:
                 image: "hello-world:latest"
@@ -96,7 +99,11 @@ artifacts:
             requires:
                 services:
                   - small-app:
-                        backend: "api"
+                        backend:
+                            api:
+                                host-alias: ALIASED_HOST
+                                port-alias: ALIASED_PORT
+                                secure-alias: ALIASED_SECURE
         type:
             docker_image:
                 image: "hello-world:latest"

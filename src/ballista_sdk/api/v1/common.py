@@ -6,12 +6,12 @@ from pydantic import BaseModel, ConfigDict, Field
 
 class BaseOneOfModel(BaseModel, json_schema_extra={"maxProperties": 1, "minProperties": 1}):
     def which(self) -> str:
-        for f in self.model_fields_set:
-            return f
+        for field_name in self.model_fields_set:
+            return field_name
 
         if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__:
-                return f
+            for field_name in self.__pydantic_extra__:
+                return field_name
 
         raise Exception("BAD")
 

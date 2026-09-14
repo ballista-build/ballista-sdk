@@ -32,7 +32,7 @@ class VirtualProvidedService(BaseModel):
 class ServiceRequirement(BaseOneOfModel):
     model_config = {"extra": "allow"}
 
-    __pydantic_extra__: dict[str, dict[str, str]]
+    __pydantic_extra__: dict[str, dict[str, dict[str, dict[str, str]] | str]]
     """Project Name -> Artifact Name -> Service Name"""
 
     @property
@@ -42,17 +42,37 @@ class ServiceRequirement(BaseOneOfModel):
     @property
     def artifact_name(self) -> str:
         if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f:
-                    return v
+            for artifacts in self.__pydantic_extra__.values():
+                for artifact_name in artifacts:
+                    return artifact_name
 
-        raise Exception(self.__pydantic_extra__)
+        raise ValueError(self.__pydantic_extra__)
 
     @property
     def service_name(self) -> str:
         if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f.values():
-                    return v
+            for artifacts in self.__pydantic_extra__.values():
+                for services in artifacts.values():
+                    if isinstance(services, dict):
+                        for service_name in services:
+                            return service_name
+                        raise ValueError(self.__pydantic_extra__)
 
-        raise Exception(self.__pydantic_extra__)
+                    return services
+
+        raise ValueError(self.__pydantic_extra__)
+
+    @property
+    def service_requirement(self) -> dict[str, str]:
+        if self.__pydantic_extra__:
+            for artifacts in self.__pydantic_extra__.values():
+                for services in artifacts.values():
+                    if isinstance(services, dict):
+                        for service in services.values():
+                            return service
+
+                        raise ValueError(self.__pydantic_extra__)
+
+                    return {}
+
+        raise ValueError(self.__pydantic_extra__)

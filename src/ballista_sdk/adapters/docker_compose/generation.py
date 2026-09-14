@@ -20,6 +20,7 @@ from ballista_sdk.api.v1 import (
     HealthcheckProbe,
     ProvidedResourceSetting,
     ProvidedService,
+    ServiceRequirement,
     Setting,
 )
 
@@ -104,17 +105,6 @@ class DockerComposeInfrastructureGenerator:
             generate_artifact_setting_envfile_filename(artifact_reference, setting.sensitive),
             setting.sensitive,
         )
-
-    def add_resource_setting(
-        self,
-        service: DockerComposeService,
-        artifact_reference: ArtifactReference,
-        provided_resource_reference: ProvidedResourceReference,
-        resource_setting: ProvidedResourceSetting,
-        prefix: str,
-        instance: list[str],
-    ):
-        self.add_artifact_setting(service, artifact_reference, resource_setting)
 
     def generate_docker_compose_project_from_bolt(
         self,
@@ -215,13 +205,10 @@ class DockerComposeInfrastructureGenerator:
 
         env = {}
 
-        # Artifact configs and secrets
-        settings = artifact_execution.requires.configs + artifact_execution.requires.secrets
-
-        [self.add_artifact_setting(compose_service, artifact_reference, setting) for setting in settings]
-
         # TODO: Hoist these out so they can be provider services
         # Resource Requirements
+        resource_settings = []
+        resource_service_requirements = []
         depends_keys = set()
         for resource_requirement in artifact_execution.requires.resources:
             provided_resource_reference = ProvidedResourceReference(
@@ -229,82 +216,72 @@ class DockerComposeInfrastructureGenerator:
             )
             provided_resource, provider_artifact_reference = resource_providers[provided_resource_reference]
 
+            resource_settings.extend(provided_resource.configs)
+            resource_settings.extend(provided_resource.secrets)
+
+            requirement_prefix = resource_requirement.prefix or provided_resource.prefix
+            resource_requirement_requirement = resource_requirement.resource_requirement
+            aliased_data = resource_requirement_requirement.__pydantic_extra__ or {}
+
+            # Re-alias the linked services
+            resource_service_requirements.extend(
+                [
+                    ServiceRequirement.model_validate(
+                        {
+                            service_requirement.project_name: {
+                                service_requirement.artifact_name: {
+                                    service_requirement.service_name: {
+                                        "host-alias": aliased_data.get("host-alias", f"{requirement_prefix}_HOST"),
+                                        "port-alias": aliased_data.get("port-alias", f"{requirement_prefix}_PORT"),
+                                        "secure-alias": aliased_data.get(
+                                            "secure-alias", f"{requirement_prefix}_SECURE"
+                                        ),
+                                    }
+                                }
+                            }
+                        }
+                    )
+                    for service_requirement in provided_resource.linked.services
+                ]
+            )
+
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
-            resource_requirement_requirement = resource_requirement.resource_requirement
-            requirement_instance = [
-                getattr(resource_requirement_requirement, f) for f in provided_resource.instance_id_fields
-            ]
+        [
+            self.add_artifact_setting(compose_service, artifact_reference, s)
+            for s in artifact_execution.requires.configs + artifact_execution.requires.secrets + resource_settings
+        ]
 
-            [
-                self.add_resource_setting(
-                    compose_service,
-                    artifact_reference,
-                    provided_resource_reference,
-                    setting,
-                    provided_resource.prefix,
-                    requirement_instance,
-                )
-                for setting in provided_resource.configs + provided_resource.secrets
-            ]
-
-            # Attach any services the Provided Resource links
-            for service_requirement in provided_resource.linked.services:
-                provided_service_reference = ProvidedServiceReference(
-                    project_name=service_requirement.project_name,
-                    artifact_name=service_requirement.artifact_name,
-                    service_name=service_requirement.service_name,
-                )
-                provided_service, provider_artifact_reference, host = service_providers[provided_service_reference]
-                port_service = provided_service.grpc or provided_service.http or provided_service.tcp
-                if not port_service:
-                    # WTF is it?
-                    continue
-
-                depends_keys.add(
-                    f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}"
-                )
-
-                service_env_name = provided_resource.prefix
-                # TODO: Alias support
-                host_key = f"{service_env_name}_HOST"
-                port_key = f"{service_env_name}_PORT"
-                secure_key = f"{service_env_name}_SECURE"
-
-                env.update(
-                    {
-                        host_key: host,
-                        port_key: str(port_service),
-                        secure_key: "true" if provided_service.secure else "false",
-                    }
-                )
-
-        # Service Requirements
-        for service_requirement in artifact_execution.requires.services:
+        # Required Services
+        for service_requirement in artifact_execution.requires.services + resource_service_requirements:
             provided_service_reference = ProvidedServiceReference(
-                project_name=service_requirement.project_name,
-                artifact_name=service_requirement.artifact_name,
-                service_name=service_requirement.service_name,
+                service_requirement.project_name, service_requirement.artifact_name, service_requirement.service_name
             )
-            provided_service, provider_artifact_reference, host = service_providers[provided_service_reference]
+            provided_service, provider_artifact_reference, provided_service_host = service_providers[
+                provided_service_reference
+            ]
             port_service = provided_service.grpc or provided_service.http or provided_service.tcp
             if not port_service:
                 # WTF is it?
                 continue
 
-            depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
-
             service_env_name = f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}-{provided_service.name}".upper().replace(
                 "-", "_"
             )
+            service_requirement_requirement = service_requirement.service_requirement
+            host_key = service_requirement_requirement.get("host-alias", f"{service_env_name}_HOST")
+            port_key = service_requirement_requirement.get("port-alias", f"{service_env_name}_PORT")
+            secure_key = service_requirement_requirement.get("secure-alias", f"{service_env_name}_SECURE")
 
             env.update(
                 {
-                    f"{service_env_name}_HOST": host,
-                    f"{service_env_name}_PORT": str(port_service),
-                    f"{service_env_name}_SECURE": "true" if provided_service.secure else "false",
+                    host_key: provided_service_host,
+                    port_key: str(port_service),
+                    secure_key: "true" if provided_service.secure else "false",
                 }
             )
+
+            depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
         compose_service.depends_on = {key: {"condition": "service_healthy"} for key in depends_keys}
 

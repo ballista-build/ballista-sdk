@@ -240,7 +240,7 @@ class ResourceAccess(StrEnum):
 class ResourceRequirement(BaseOneOfModel):
     model_config = {"extra": "allow"}
 
-    __pydantic_extra__: dict[str, dict[str, ResourceRequirementRequirement]]
+    __pydantic_extra__: dict[str, str | dict[str, ResourceRequirementRequirement]]
 
     @property
     def prefix(self) -> None:
@@ -253,17 +253,27 @@ class ResourceRequirement(BaseOneOfModel):
     @property
     def resource_name(self) -> str:
         if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f:
-                    return v
+            for resources in self.__pydantic_extra__.values():
+                if isinstance(resources, dict):
+                    for resource_name in resources:
+                        return resource_name
+
+                    raise ValueError(self.__pydantic_extra__)
+
+                return resources
 
         raise Exception(self.__pydantic_extra__)
 
     @property
     def resource_requirement(self) -> ResourceRequirementRequirement:
         if self.__pydantic_extra__:
-            for f in self.__pydantic_extra__.values():
-                for v in f.values():
-                    return v
+            for resources in self.__pydantic_extra__.values():
+                if isinstance(resources, dict):
+                    for resource_requirement in resources.values():
+                        return resource_requirement
 
-        raise Exception("WTF")
+                    raise ValueError(self.__pydantic_extra__)
+
+                return ResourceRequirementRequirement()
+
+        raise Exception(self.__pydantic_extra__)

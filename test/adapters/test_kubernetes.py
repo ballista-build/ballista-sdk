@@ -41,7 +41,7 @@ def simple_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"api","execution":{"provides":{"healthchecks":{"alive":{"http":{"service":"http","path":"/healthz"}},"ready":{"http":{"service":"http","path":"/healthz"}},"started":{"http":{"service":"http","path":"/healthz"}}},"services":[{"name":"http","http":80}]},"requires":{"configs":[{"name":"option-a","type":"string"}],"resources":[{"postgres":{"database":{"name":"testdatabase","name_alias":"BUG_DATABASE"}}}],"secrets":[{"name":"secret-a","type":"string"}],"volumes":[{"name":"volume-a","title":"Volume A","capacity":0.01,"path":"/var/volume-a","persistent":true}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"api","execution":{"provides":{"healthchecks":{"alive":{"http":{"service":"http","path":"/healthz"}},"ready":{"http":{"service":"http","path":"/healthz"}},"started":{"http":{"service":"http","path":"/healthz"}}},"services":[{"name":"http","http":80}]},"requires":{"configs":[{"name":"option-a","type":"string"}],"resources":[{"postgres":{"database":{"name":"testdatabase","name-alias":"ALIASED_DATABASE","host-alias":"RENAMED_HOST","port-alias":"OTHER_PORT","secure-alias":"RETITLED_SECURE"}}}],"secrets":[{"name":"secret-a","type":"string"}],"volumes":[{"name":"volume-a","title":"Volume A","capacity":0.01,"path":"/var/volume-a","persistent":true}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "api-1",
@@ -86,11 +86,11 @@ def simple_bolt_resources():
                                 {
                                     "env": [
                                         {
-                                            "name": "POSTGRES_HOST",
+                                            "name": "RENAMED_HOST",
                                             "value": "postgres-server-postgres.test.svc.cluster.local",
                                         },
-                                        {"name": "POSTGRES_PORT", "value": "5432"},
-                                        {"name": "POSTGRES_SECURE", "value": "false"},
+                                        {"name": "OTHER_PORT", "value": "5432"},
+                                        {"name": "RETITLED_SECURE", "value": "false"},
                                         {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                         {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
                                         {"name": "HTTP_SERVICE_SECURE", "value": "false"},
@@ -363,7 +363,7 @@ def small_app_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"ui","execution":{"provides":{"services":[{"name":"http","http":80}]},"requires":{"services":[{"small-app":{"backend":"api"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"ui","execution":{"provides":{"services":[{"name":"http","http":80}]},"requires":{"services":[{"small-app":{"backend":{"api":{"host-alias":"ALIASED_HOST","port-alias":"ALIASED_PORT","secure-alias":"ALIASED_SECURE"}}}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "ui-1.2.3",
@@ -407,9 +407,9 @@ def small_app_bolt_resources():
                             "containers": [
                                 {
                                     "env": [
-                                        {"name": "SMALL_APP_BACKEND_API_HOST", "value": "api"},
-                                        {"name": "SMALL_APP_BACKEND_API_PORT", "value": "8000"},
-                                        {"name": "SMALL_APP_BACKEND_API_SECURE", "value": "false"},
+                                        {"name": "ALIASED_HOST", "value": "api"},
+                                        {"name": "ALIASED_PORT", "value": "8000"},
+                                        {"name": "ALIASED_SECURE", "value": "false"},
                                         {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                         {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
                                         {"name": "HTTP_SERVICE_SECURE", "value": "false"},
@@ -600,7 +600,7 @@ def resource_provider_bolt_resources():
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
-                        "ballista.build/resource": "true",
+                        "ballista.build/resources": "true",
                     },
                     "name": "resource-provider-resource",
                     "namespace": "test",
@@ -627,7 +627,7 @@ def resource_provider_bolt_resources():
                                 "app.kubernetes.io/version": "1",
                                 "ballista.build/environment": "test",
                                 "ballista.build/environment-tier": "development",
-                                "ballista.build/resource": "true",
+                                "ballista.build/resources": "true",
                             },
                             "name": "resource-provider-resource",
                             "namespace": "test",

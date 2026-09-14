@@ -22,8 +22,8 @@ from ballista_sdk.api.v1 import (
     Environment,
     ExecutionParameters,
     HealthcheckProbe,
-    ProvidedResourceSetting,
     ProvidedService,
+    ServiceRequirement,
     Setting,
     VolumeExecutionParameters,
     VolumeRequirement,
@@ -164,9 +164,7 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
         cls._generators.append(method)
         return method
 
-    def _add_setting_reference(
-        self, container_spec: dict, ref_name: str, sensitive: bool, required: bool, prefix: str | None
-    ):
+    def _add_setting_reference(self, container_spec: dict, ref_name: str, sensitive: bool, required: bool):
         ref_type = "secretRef" if sensitive else "configMapRef"
         reference = {"name": ref_name, "optional": not required}
 
@@ -177,33 +175,11 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
         elif env not in container_spec["envFrom"]:
             container_spec["envFrom"].append(env)
 
-    def add_artifact_setting(self, container_spec: dict, artifact_reference: ArtifactReference, setting: Setting):
+    def add_artifact_setting(self, container: dict, artifact_reference: ArtifactReference, setting: Setting):
         """Add an Artifact-specific setting into a PodSpec container."""
 
         self._add_setting_reference(
-            container_spec,
-            generate_artifact_settings_refname(artifact_reference),
-            setting.sensitive,
-            setting.sensitive,
-            None,
-        )
-
-    def add_resource_setting(
-        self,
-        container_spec: dict,
-        artifact_reference: ArtifactReference,
-        setting: ProvidedResourceSetting,
-        prefix: str,
-        instance: list[str],
-    ):
-        """Add an Artifact and Resource-specific setting into a PodSpec container."""
-
-        self._add_setting_reference(
-            container_spec,
-            generate_artifact_settings_refname(artifact_reference),
-            setting.sensitive,
-            setting.sensitive,
-            prefix,
+            container, generate_artifact_settings_refname(artifact_reference), setting.sensitive, setting.sensitive
         )
 
     def generate_bolt_resources(
@@ -433,57 +409,49 @@ def _generate_deployment(
     if pod_resources["requests"] or pod_resources["limits"]:
         container["resources"] = pod_resources
 
-    # Artifact configs and secrets
-    [
-        adapter.add_artifact_setting(container, artifact_reference, s)
-        for s in artifact_execution.requires.configs + artifact_execution.requires.secrets
-    ]
-
     # Required Resources
+    resource_settings = []
+    resource_service_requirements = []
     for resource_requirement in artifact_execution.requires.resources:
         provided_resource_reference = ProvidedResourceReference(
             resource_requirement.project_name, resource_requirement.resource_name
         )
         provided_resource, provider_artifact_reference = resource_providers[provided_resource_reference]
 
+        resource_settings.extend(provided_resource.configs)
+        resource_settings.extend(provided_resource.secrets)
+
         requirement_prefix = resource_requirement.prefix or provided_resource.prefix
-        requirement_instance = [
-            getattr(resource_requirement.resource_requirement, f) for f in provided_resource.instance_id_fields
-        ]
+        resource_requirement_requirement = resource_requirement.resource_requirement
+        aliased_data = resource_requirement_requirement.__pydantic_extra__ or {}
 
-        [
-            adapter.add_resource_setting(container, artifact_reference, s, requirement_prefix, requirement_instance)
-            for s in provided_resource.configs + provided_resource.secrets
-        ]
-
-        for service_requirement in provided_resource.linked.services:
-            provided_service_reference = ProvidedServiceReference(
-                service_requirement.project_name, service_requirement.artifact_name, service_requirement.service_name
-            )
-            provided_service, provider_artifact_reference, provided_service_host = service_providers[
-                provided_service_reference
+        # Re-alias the linked services
+        resource_service_requirements.extend(
+            [
+                ServiceRequirement.model_validate(
+                    {
+                        service_requirement.project_name: {
+                            service_requirement.artifact_name: {
+                                service_requirement.service_name: {
+                                    "host-alias": aliased_data.get("host-alias", f"{requirement_prefix}_HOST"),
+                                    "port-alias": aliased_data.get("port-alias", f"{requirement_prefix}_PORT"),
+                                    "secure-alias": aliased_data.get("secure-alias", f"{requirement_prefix}_SECURE"),
+                                }
+                            }
+                        }
+                    }
+                )
+                for service_requirement in provided_resource.linked.services
             ]
-            port_service = provided_service.grpc or provided_service.http or provided_service.tcp
-            if not port_service:
-                # WTF is it?
-                continue
+        )
 
-            service_env_name = requirement_prefix
-            # TODO: Alias support
-            host_key = f"{service_env_name}_HOST"
-            port_key = f"{service_env_name}_PORT"
-            secure_key = f"{service_env_name}_SECURE"
-
-            env.update(
-                {
-                    host_key: provided_service_host,
-                    port_key: str(port_service),
-                    secure_key: "true" if provided_service.secure else "false",
-                }
-            )
+    [
+        adapter.add_artifact_setting(container, artifact_reference, s)
+        for s in artifact_execution.requires.configs + artifact_execution.requires.secrets + resource_settings
+    ]
 
     # Required Services
-    for service_requirement in artifact_execution.requires.services:
+    for service_requirement in artifact_execution.requires.services + resource_service_requirements:
         provided_service_reference = ProvidedServiceReference(
             service_requirement.project_name, service_requirement.artifact_name, service_requirement.service_name
         )
@@ -498,10 +466,10 @@ def _generate_deployment(
         service_env_name = f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}-{provided_service.name}".upper().replace(
             "-", "_"
         )
-        # TODO: Alias support
-        host_key = f"{service_env_name}_HOST"
-        port_key = f"{service_env_name}_PORT"
-        secure_key = f"{service_env_name}_SECURE"
+        service_requirement_requirement = service_requirement.service_requirement
+        host_key = service_requirement_requirement.get("host-alias", f"{service_env_name}_HOST")
+        port_key = service_requirement_requirement.get("port-alias", f"{service_env_name}_PORT")
+        secure_key = service_requirement_requirement.get("secure-alias", f"{service_env_name}_SECURE")
 
         env.update(
             {
