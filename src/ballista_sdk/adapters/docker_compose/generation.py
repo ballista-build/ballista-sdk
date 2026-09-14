@@ -142,6 +142,29 @@ class DockerComposeInfrastructureGenerator:
                 service_providers=service_providers,
             )
 
+            # Create a "provider service" entry for every Resource Requirement
+            for req in artifact_execution.requires.resources:
+                _, resource_provider_artifact_reference = resource_providers[
+                    ProvidedResourceReference(project_name=req.project_name, resource_name=req.resource_name)
+                ]
+
+                provider_service_name = f"ballista-resource-{req.project_name}-{req.resource_name}"
+                compose_project.services[provider_service_name] = DockerComposeService(
+                    depends_on={
+                        f"{resource_provider_artifact_reference.project_name}-{resource_provider_artifact_reference.artifact_name}": {
+                            "condition": "service_healthy"
+                        }
+                    },
+                    provider={
+                        "type": "ballista-resource",
+                        "options": {
+                            "project_name": req.project_name,
+                            "resource_name": req.resource_name,
+                            "requirement": req.resource_requirement.model_dump(mode="json"),
+                        },
+                    },
+                )
+
             for service in artifact_execution.provides.services:
                 external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
                 if external_service_parameters and external_service_parameters.host is not None:
@@ -245,6 +268,14 @@ class DockerComposeInfrastructureGenerator:
             )
 
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
+
+            # Use compose provider stuff
+            provider_service = (
+                f"ballista-resource-{resource_requirement.project_name}-{resource_requirement.resource_name}"
+            )
+            if resource_requirement_instance := provided_resource.get_requirement_instance(resource_requirement):
+                provider_service += f"-{resource_requirement_instance}"
+            depends_keys.add(provider_service)
 
         [
             self.add_artifact_setting(compose_service, artifact_reference, s)

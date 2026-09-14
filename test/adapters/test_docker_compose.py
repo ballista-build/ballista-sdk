@@ -143,11 +143,31 @@ def resource_provider_docker_compose_project():
             "project-resource-provider": {"internal": True, "name": "project-resource-provider"},
         },
         services={
+            "ballista-resource-resource-provider-resource": DockerComposeService(
+                depends_on={
+                    "resource-provider-resource": {"condition": "service_healthy"},
+                },
+                provider={
+                    "type": "ballista-resource",
+                    "options": {
+                        "project_name": "resource-provider",
+                        "resource_name": "resource",
+                        "requirement": {
+                            "host-alias": "DIFFERENT_HOST",
+                            "name": "mine",
+                            "name-alias": "DIFFERENT_NAME",
+                            "port-alias": "DIFFERENT_PORT",
+                            "secure-alias": "DIFFERENT_SECURE",
+                        },
+                    },
+                },
+            ),
             "resource-provider-dependent": DockerComposeService(
                 container_name="resource-provider-dependent",
                 depends_on={
                     "postgres-server": {"condition": "service_healthy"},
                     "resource-provider-resource": {"condition": "service_healthy"},
+                    "ballista-resource-resource-provider-resource": {"condition": "service_healthy"},
                 },
                 deploy={
                     "resources": {
