@@ -261,7 +261,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         service_artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
+    ) -> list[tuple[ArtifactReference, ProvidedServiceReference]]:
         return BoltInspector.list_service_requirements(
             self._bolts,
             project_names=project_names,

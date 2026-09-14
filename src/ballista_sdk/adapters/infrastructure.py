@@ -105,7 +105,7 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         service_artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> Iterable[tuple[ArtifactReference, ProvidedServiceReference, str]]:
+    ) -> Iterable[tuple[ArtifactReference, ProvidedServiceReference]]:
         """List Services required by other Artifacts in the specified Environments."""
         ...
 
@@ -292,7 +292,7 @@ class BoltInspector:
         service_artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
+    ) -> list[tuple[ArtifactReference, ProvidedServiceReference]]:
         """List required Services with the ArtifactReference requiring it and the ProvidedServiceReference."""
         return [
             (
@@ -302,7 +302,6 @@ class BoltInspector:
                     artifact_name=service_requirement.artifact_name,
                     service_name=service_requirement.service_name,
                 ),
-                ServiceType.http,
             )
             for bolt in bolts
             if not project_names or bolt.project in project_names

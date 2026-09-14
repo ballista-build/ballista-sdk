@@ -18,7 +18,6 @@ from ballista_sdk.api.v1 import (
     Environment,
     ExecutionParameters,
     HealthcheckProbe,
-    ProvidedResourceSetting,
     ProvidedService,
     ServiceRequirement,
     Setting,

@@ -564,7 +564,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         service_artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
-    ) -> list[tuple[ArtifactReference, ProvidedServiceReference, ServiceType]]:
+    ) -> list[tuple[ArtifactReference, ProvidedServiceReference]]:
         services_required = []
 
         labels = [
@@ -618,7 +618,6 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
                                     artifact_name=service_requirement.artifact_name,
                                     service_name=service_requirement.service_name,
                                 ),
-                                ServiceType.grpc,
                             )
                         )
                 except ValidationError:

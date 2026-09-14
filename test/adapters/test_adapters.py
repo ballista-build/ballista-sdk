@@ -206,9 +206,8 @@ async def test_list_service_requirements(
     for (
         artifact_reference,
         provided_service_reference,
-        service_type,
     ) in required_services:
-        assert artifact_reference and provided_service_reference and service_type
+        assert artifact_reference and provided_service_reference
         assert artifact_reference.project_name in {"test-app"}
         assert artifact_reference.artifact_name in {"api"}
         assert artifact_reference.version == "1.0.0"

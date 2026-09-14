@@ -6,6 +6,12 @@ from pydantic import BaseModel, Field
 from .common import BaseNamedModel, BaseOneOfModel
 
 
+class ServiceType(StrEnum):
+    GRPC = "grpc"
+    HTTP = "http"
+    TCP = "tcp"
+
+
 class ProvidedService(BaseNamedModel):
     """A network-connected port with unique identifier that is provided by an Artifact."""
 
@@ -14,11 +20,23 @@ class ProvidedService(BaseNamedModel):
     secure: Annotated[bool, Field(description="Indicates a secure connection is expected.")] = False
     tcp: Annotated[int | None, Field()] = None
 
+    @property
+    def service_port(self) -> int:
+        if port := self.grpc or self.http or self.tcp:
+            return port
 
-class ServiceType(StrEnum):
-    grpc = "grpc"
-    http = "http"
-    tcp = "tcp"
+        raise ValueError()
+
+    @property
+    def service_type(self) -> ServiceType:
+        if self.grpc:
+            return ServiceType.GRPC
+        elif self.http:
+            return ServiceType.HTTP
+        elif self.tcp:
+            return ServiceType.TCP
+
+        raise ValueError()
 
 
 class VirtualProvidedService(BaseModel):
