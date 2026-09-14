@@ -61,24 +61,9 @@ def postgres_bolt() -> Bolt:
                             "resources": [
                                 {
                                     "name": "database",
-                                    "configs": [
-                                        {
-                                            "description": "Host of Postgres server.",
-                                            "name": "host",
-                                            "shared": True,
-                                            "title": "Host",
-                                            "type": "string",
-                                        },
-                                        {
-                                            "description": "Port Postgres server listens on.",
-                                            "name": "port",
-                                            "shared": True,
-                                            "title": "Port",
-                                            "type": "uint32",
-                                        },
-                                    ],
                                     "description": "Postgres Database",
                                     "instance_id_fields": ["name"],
+                                    "linked": {"services": [{"postgres": {"server": "postgres"}}]},
                                     "prefix": "POSTGRES",
                                     "requirements": {"properties": {"name": {"type": "string"}}, "required": ["name"]},
                                     "secrets": [
@@ -86,24 +71,22 @@ def postgres_bolt() -> Bolt:
                                             "type": "string",
                                             "description": "Name of Postgres database.",
                                             "name": "name",
-                                            "shared": False,
                                             "title": "Database Name",
                                         },
                                         {
                                             "type": "string",
                                             "description": "Login username to access database.",
                                             "name": "username",
-                                            "shared": False,
                                             "title": "Username",
                                         },
                                         {
                                             "type": "string",
                                             "description": "Login password to access database.",
                                             "name": "password",
-                                            "shared": False,
                                             "title": "Password",
                                         },
                                     ],
+                                    "services": [{"postgres": {"server": "postgres"}}],
                                     "title": "Postgres Database",
                                     "transport": {"rest": {"path": "/resources", "service": "rest"}},
                                 },
@@ -122,10 +105,34 @@ def postgres_bolt() -> Bolt:
 
 
 @pytest.fixture(scope="session")
-def expected_bolts(postgres_bolt: Bolt) -> list[Bolt]:
+def pg_test_app() -> Bolt:
+    """A Bolt that requires a Postgres Database resource and service."""
+    return Bolt.model_validate(
+        {
+            "api_version": "v1",
+            "artifacts": [
+                {
+                    "name": "api",
+                    "execution": {
+                        "requires": {
+                            "resources": [{"postgres": {"database": {"name": "mine"}}}],
+                            "services": [{"postgres": {"server": "postgres"}}],
+                        }
+                    },
+                    "type": {"docker_image": {"image": "hello-world:latest"}},
+                }
+            ],
+            "project": "test-app",
+            "version": "1.0.0",
+        }
+    )
+
+
+@pytest.fixture(scope="session")
+def expected_bolts(postgres_bolt: Bolt, pg_test_app: Bolt) -> list[Bolt]:
     """Bolts that are expected to be available in environments."""
 
-    return [postgres_bolt]
+    return [postgres_bolt, pg_test_app]
 
 
 @pytest.fixture(scope="session")

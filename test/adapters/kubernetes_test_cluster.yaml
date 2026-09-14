@@ -4,7 +4,7 @@ kind: Namespace
 metadata:
   annotations:
     ballista.build/default-execution-parameters-json: '{"external_service":{"secure":true,"host":"ballista.build"}}'
-    ballista.build/environment-json: '{"name":"test","tier":"DEVELOPMENT","title":"Test Environment"}'
+    ballista.build/environment-json: '{"name":"test","tier":"development","title":"Test Environment"}'
   labels:
     app.kubernetes.io/managed-by: Ballista
     ballista.build/environment: test
@@ -16,7 +16,7 @@ apiVersion: apps/v1
 kind: Deployment
 metadata:
   annotations:
-    ballista.build/artifact-json: '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"database","description":"PostgreSQL Database","title":"PostgreSQL Database","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]},"requires":{"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+    ballista.build/artifact-json: '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"database","description":"PostgreSQL Database","title":"PostgreSQL Database","instance_id_fields":["name"],"linked":{"services":[{"postgres":{"server":"postgres"}}]},"prefix":"POSTGRES","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string"},{"name":"username","description":"Login username to access database","title":"Username","type":"string"},{"name":"password","description":"Login password to access database","title":"Password","type":"string"}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]},"requires":{"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
   labels:
     app.kubernetes.io/instance: resource-providers-18.1
     app.kubernetes.io/managed-by: Ballista
@@ -25,7 +25,7 @@ metadata:
     app.kubernetes.io/version: "18.1"
     ballista.build/environment: test
     ballista.build/environment-tier: development
-    ballista.build/resource: database
+    ballista.build/resources: "true"
   name: postgres-resource-providers
   namespace: test
 spec:
@@ -44,16 +44,26 @@ spec:
         app.kubernetes.io/version: "18.1"
         ballista.build/environment: test
         ballista.build/environment-tier: development
-        ballista.build/resource: database
+        ballista.build/resources: "true"
       name: postgres-resource-providers
       namespace: test
     spec:
       containers:
         - env:
+            - name: POSTGRES_SERVER_POSTGRES_HOST
+              value: "postgres-server-postgres.test.svc.cluster.local"
+            - name: POSTGRES_SERVER_POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_SERVER_POSTGRES_SECURE
+              value: "false"
+            - name: REST_PROVIDERS_SERVICE_HOST
+              value: "localhost"
+            - name: REST_PROVIDERS_SERVICE_PATH
+              value: "/"
             - name: REST_PROVIDERS_SERVICE_PORT
               value: "80"
-            - name: REST_PROVIDERS_SERVICE_HOST
-              value: localhost
+            - name: REST_PROVIDERS_SERVICE_SECURE
+              value: "false"
           envFrom:
             - secretRef:
                 name: postgres-resource-providers
@@ -161,6 +171,56 @@ spec:
           persistentVolumeClaim:
             claimName: postgres-server-data
 ---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  annotations:
+    ballista.build/artifact-json: '{"name":"api","execution":{"requires":{"resources":[{"postgres":{"database":{"name":"mine"}}}],"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+  labels:
+    app.kubernetes.io/instance: api-1.0.0
+    app.kubernetes.io/managed-by: Ballista
+    app.kubernetes.io/name: api
+    app.kubernetes.io/part-of: test-app
+    app.kubernetes.io/version: "1.0.0"
+    ballista.build/environment: test
+    ballista.build/environment-tier: development
+  name: test-app-api
+  namespace: test
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: api
+      app.kubernetes.io/part-of: test-app
+      ballista.build/environment: test
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/instance: api-1.0.0
+        app.kubernetes.io/managed-by: Ballista
+        app.kubernetes.io/name: api
+        app.kubernetes.io/part-of: test-app
+        app.kubernetes.io/version: "1.0.0"
+        ballista.build/environment: test
+        ballista.build/environment-tier: development
+      name: test-app-api
+      namespace: test
+    spec:
+      containers:
+        - env:
+            - name: POSTGRES_SERVER_POSTGRES_HOST
+              value: "postgres-server-postgres.test.svc.cluster.local"
+            - name: POSTGRES_SERVER_POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_SERVER_POSTGRES_SECURE
+              value: "false"
+          envFrom:
+            - secretRef:
+                name: postgres-resource-providers
+                optional: false
+          image: hello-world:latest
+          imagePullPolicy: Always
+          name: api
+---
 apiVersion: v1
 kind: PersistentVolumeClaim
 metadata:
@@ -228,7 +288,7 @@ spec:
   selector:
     app.kubernetes.io/name: resource-providers
     app.kubernetes.io/part-of: postgres
-    ballista.build/environment: local
+    ballista.build/environment: test
 ---
 apiVersion: v1
 kind: Service

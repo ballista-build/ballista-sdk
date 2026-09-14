@@ -41,7 +41,7 @@ def simple_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"api","execution":{"provides":{"healthchecks":{"ready":{"http":{"service":"http","path":"/healthz"}}},"services":[{"name":"http","http":80}]},"requires":{"configs":[{"name":"option-a","type":"string"}],"resources":[{"postgres":{"database":{"name":"testdatabase","name_alias":"BUG_DATABASE"}}}],"secrets":[{"name":"secret-a","type":"string"}],"volumes":[{"name":"volume-a","title":"Volume A","capacity":0.01,"path":"/var/volume-a","persistent":true}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"api","execution":{"provides":{"healthchecks":{"alive":{"http":{"service":"http","path":"/healthz"}},"ready":{"http":{"service":"http","path":"/healthz"}},"started":{"http":{"service":"http","path":"/healthz"}}},"services":[{"name":"http","http":80}]},"requires":{"configs":[{"name":"option-a","type":"string"}],"resources":[{"postgres":{"database":{"name":"testdatabase","name-alias":"ALIASED_DATABASE","host-alias":"RENAMED_HOST","port-alias":"OTHER_PORT","secure-alias":"RETITLED_SECURE"}}}],"secrets":[{"name":"secret-a","type":"string"}],"volumes":[{"name":"volume-a","title":"Volume A","capacity":0.01,"path":"/var/volume-a","persistent":true}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "api-1",
@@ -85,6 +85,12 @@ def simple_bolt_resources():
                             "containers": [
                                 {
                                     "env": [
+                                        {
+                                            "name": "RENAMED_HOST",
+                                            "value": "postgres-server-postgres.test.svc.cluster.local",
+                                        },
+                                        {"name": "OTHER_PORT", "value": "5432"},
+                                        {"name": "RETITLED_SECURE", "value": "false"},
                                         {"name": "HTTP_SERVICE_PORT", "value": "80"},
                                         {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
                                         {"name": "HTTP_SERVICE_SECURE", "value": "false"},
@@ -95,16 +101,9 @@ def simple_bolt_resources():
                                         {"configMapRef": {"name": "simple-api", "optional": True}},
                                         # Service secrets are either first or second
                                         {"secretRef": {"name": "simple-api", "optional": False}},
-                                        # Shared configs and secrets are next
-                                        {
-                                            "prefix": "RESOURCE1_",
-                                            "configMapRef": {
-                                                "name": "postgres-resources-database",
-                                                "optional": False,
-                                            },
-                                        },
                                     ],
                                     "image": "hello-world:latest",
+                                    "livenessProbe": {"httpGet": {"path": "/healthz", "port": "http"}},
                                     "name": "api",
                                     "ports": [{"containerPort": 80, "name": "http"}],
                                     "readinessProbe": {"httpGet": {"path": "/healthz", "port": "http"}},
@@ -114,6 +113,7 @@ def simple_bolt_resources():
                                         },
                                         "requests": {"cpu": "250m", "memory": "0.1Gi"},
                                     },
+                                    "startupProbe": {"httpGet": {"path": "/healthz", "port": "http"}},
                                     "volumeMounts": [
                                         {
                                             "mountPath": "/var/volume-a",
@@ -221,34 +221,33 @@ def simple_bolt_resources():
 
 
 @pytest.fixture(scope="session")
-def project_bolt_resources():
+def small_app_bolt_resources():
     return [], {
-        "resource-providers": [
+        "backend": [
             {
                 "apiVersion": "apps/v1",
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"resource-providers","execution":{"provides":{"resources":[{"name":"project-resource1","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"host","description":"Host of Database server.","title":"Host","type":"string","shared":true},{"name":"port","description":"Port Database server listens on.","title":"Port","type":"uint32","shared":true}],"instance_id_fields":["name"],"prefix":"RESOURCE1","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of database","title":"Database","type":"string","shared":false},{"name":"username","description":"Login username to access database","title":"Username","type":"string","shared":false},{"name":"password","description":"Login password to access database","title":"Password","type":"string","shared":false}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"backend","execution":{"provides":{"services":[{"name":"api","http":8000}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}',
                     },
                     "labels": {
-                        "app.kubernetes.io/instance": "resource-providers-1",
+                        "app.kubernetes.io/instance": "backend-1.2.3",
                         "app.kubernetes.io/managed-by": "Ballista",
-                        "app.kubernetes.io/name": "resource-providers",
-                        "app.kubernetes.io/part-of": "project",
-                        "app.kubernetes.io/version": "1",
+                        "app.kubernetes.io/name": "backend",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "app.kubernetes.io/version": "1.2.3",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
-                        "ballista.build/resource": "true",
                     },
-                    "name": "project-resource-providers",
+                    "name": "small-app-backend",
                     "namespace": "test",
                 },
                 "spec": {
                     "selector": {
                         "matchLabels": {
-                            "app.kubernetes.io/name": "resource-providers",
-                            "app.kubernetes.io/part-of": "project",
+                            "app.kubernetes.io/name": "backend",
+                            "app.kubernetes.io/part-of": "small-app",
                             "ballista.build/environment": "test",
                         }
                     },
@@ -259,22 +258,390 @@ def project_bolt_resources():
                     "template": {
                         "metadata": {
                             "labels": {
-                                "app.kubernetes.io/instance": "resource-providers-1",
+                                "app.kubernetes.io/instance": "backend-1.2.3",
                                 "app.kubernetes.io/managed-by": "Ballista",
-                                "app.kubernetes.io/name": "resource-providers",
-                                "app.kubernetes.io/part-of": "project",
-                                "app.kubernetes.io/version": "1",
+                                "app.kubernetes.io/name": "backend",
+                                "app.kubernetes.io/part-of": "small-app",
+                                "app.kubernetes.io/version": "1.2.3",
                                 "ballista.build/environment": "test",
                                 "ballista.build/environment-tier": "development",
-                                "ballista.build/resource": "true",
                             },
-                            "name": "project-resource-providers",
+                            "name": "small-app-backend",
                             "namespace": "test",
                         },
                         "spec": {
                             "containers": [
                                 {
                                     "env": [
+                                        {"name": "API_SERVICE_PORT", "value": "8000"},
+                                        {"name": "API_SERVICE_HOST", "value": "test.ballista.build"},
+                                        {"name": "API_SERVICE_SECURE", "value": "false"},
+                                        {"name": "API_SERVICE_PATH", "value": "/"},
+                                    ],
+                                    "image": "hello-world:latest",
+                                    "name": "backend",
+                                    "ports": [{"containerPort": 8000, "name": "api"}],
+                                    "resources": {
+                                        "limits": {
+                                            "memory": "1.0Gi",
+                                        },
+                                        "requests": {"cpu": "250m", "memory": "0.1Gi"},
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                },
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {"ballista.build/service-json": '{"name":"api","http":8000}'},
+                    "labels": {
+                        "app.kubernetes.io/instance": "backend-1.2.3",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "backend",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "app.kubernetes.io/version": "1.2.3",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "api",
+                    },
+                    "name": "small-app-backend-api",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "selector": {
+                        "app.kubernetes.io/name": "backend",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "ballista.build/environment": "test",
+                    },
+                    "ports": [{"port": 8000, "name": "api", "targetPort": "api"}],
+                },
+            },
+            {
+                "apiVersion": "networking.k8s.io/v1",
+                "kind": "Ingress",
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/instance": "backend-1.2.3",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "backend",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "app.kubernetes.io/version": "1.2.3",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "api",
+                    },
+                    "name": "small-app-backend-api",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "rules": [
+                        {
+                            "host": "test.ballista.build",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "backend": {
+                                            "service": {"name": "small-app-backend-api", "port": {"number": 8000}}
+                                        },
+                                        "path": "/",
+                                        "pathType": "Prefix",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            },
+        ],
+        "ui": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "annotations": {
+                        "ballista.build/artifact-json": '{"name":"ui","execution":{"provides":{"services":[{"name":"http","http":80}]},"requires":{"services":[{"small-app":{"backend":{"api":{"host-alias":"ALIASED_HOST","port-alias":"ALIASED_PORT","secure-alias":"ALIASED_SECURE"}}}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                    },
+                    "labels": {
+                        "app.kubernetes.io/instance": "ui-1.2.3",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "ui",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "app.kubernetes.io/version": "1.2.3",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                    },
+                    "name": "small-app-ui",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "selector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/name": "ui",
+                            "app.kubernetes.io/part-of": "small-app",
+                            "ballista.build/environment": "test",
+                        }
+                    },
+                    "strategy": {
+                        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+                        "type": "RollingUpdate",
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app.kubernetes.io/instance": "ui-1.2.3",
+                                "app.kubernetes.io/managed-by": "Ballista",
+                                "app.kubernetes.io/name": "ui",
+                                "app.kubernetes.io/part-of": "small-app",
+                                "app.kubernetes.io/version": "1.2.3",
+                                "ballista.build/environment": "test",
+                                "ballista.build/environment-tier": "development",
+                            },
+                            "name": "small-app-ui",
+                            "namespace": "test",
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "env": [
+                                        {"name": "ALIASED_HOST", "value": "api"},
+                                        {"name": "ALIASED_PORT", "value": "8000"},
+                                        {"name": "ALIASED_SECURE", "value": "false"},
+                                        {"name": "HTTP_SERVICE_PORT", "value": "80"},
+                                        {"name": "HTTP_SERVICE_HOST", "value": "test.ballista.build"},
+                                        {"name": "HTTP_SERVICE_SECURE", "value": "false"},
+                                        {"name": "HTTP_SERVICE_PATH", "value": "/"},
+                                    ],
+                                    "image": "hello-world:latest",
+                                    "name": "ui",
+                                    "ports": [{"containerPort": 80, "name": "http"}],
+                                    "resources": {
+                                        "limits": {
+                                            "memory": "1.0Gi",
+                                        },
+                                        "requests": {"cpu": "250m", "memory": "0.1Gi"},
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                },
+            },
+            {
+                "apiVersion": "v1",
+                "kind": "Service",
+                "metadata": {
+                    "annotations": {"ballista.build/service-json": '{"name":"http","http":80}'},
+                    "labels": {
+                        "app.kubernetes.io/instance": "ui-1.2.3",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "ui",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "app.kubernetes.io/version": "1.2.3",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "http",
+                    },
+                    "name": "small-app-ui-http",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "selector": {
+                        "app.kubernetes.io/name": "ui",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "ballista.build/environment": "test",
+                    },
+                    "ports": [{"port": 80, "name": "http", "targetPort": "http"}],
+                },
+            },
+            {
+                "apiVersion": "networking.k8s.io/v1",
+                "kind": "Ingress",
+                "metadata": {
+                    "labels": {
+                        "app.kubernetes.io/instance": "ui-1.2.3",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "ui",
+                        "app.kubernetes.io/part-of": "small-app",
+                        "app.kubernetes.io/version": "1.2.3",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                        "ballista.build/service": "http",
+                    },
+                    "name": "small-app-ui-http",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "rules": [
+                        {
+                            "host": "test.ballista.build",
+                            "http": {
+                                "paths": [
+                                    {
+                                        "backend": {"service": {"name": "small-app-ui-http", "port": {"number": 80}}},
+                                        "path": "/",
+                                        "pathType": "Prefix",
+                                    }
+                                ]
+                            },
+                        }
+                    ]
+                },
+            },
+        ],
+    }
+
+
+@pytest.fixture(scope="session")
+def resource_provider_bolt_resources():
+    return [], {
+        "dependent": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "annotations": {
+                        "ballista.build/artifact-json": '{"name":"dependent","execution":{"requires":{"resources":[{"resource-provider":{"resource":{"name":"mine","name-alias":"DIFFERENT_NAME","host-alias":"DIFFERENT_HOST","port-alias":"DIFFERENT_PORT","secure-alias":"DIFFERENT_SECURE"}}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                    },
+                    "labels": {
+                        "app.kubernetes.io/instance": "dependent-1",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "dependent",
+                        "app.kubernetes.io/part-of": "resource-provider",
+                        "app.kubernetes.io/version": "1",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                    },
+                    "name": "resource-provider-dependent",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "selector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/name": "dependent",
+                            "app.kubernetes.io/part-of": "resource-provider",
+                            "ballista.build/environment": "test",
+                        }
+                    },
+                    "strategy": {
+                        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+                        "type": "RollingUpdate",
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app.kubernetes.io/instance": "dependent-1",
+                                "app.kubernetes.io/managed-by": "Ballista",
+                                "app.kubernetes.io/name": "dependent",
+                                "app.kubernetes.io/part-of": "resource-provider",
+                                "app.kubernetes.io/version": "1",
+                                "ballista.build/environment": "test",
+                                "ballista.build/environment-tier": "development",
+                            },
+                            "name": "resource-provider-dependent",
+                            "namespace": "test",
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "env": [
+                                        {
+                                            "name": "DIFFERENT_HOST",
+                                            "value": "postgres-server-postgres.test.svc.cluster.local",
+                                        },
+                                        {"name": "DIFFERENT_PORT", "value": "5432"},
+                                        {"name": "DIFFERENT_SECURE", "value": "false"},
+                                    ],
+                                    "envFrom": [
+                                        {
+                                            "configMapRef": {
+                                                "name": "resource-provider-dependent",
+                                                "optional": True,
+                                            },
+                                        },
+                                        {
+                                            "secretRef": {
+                                                "name": "resource-provider-dependent",
+                                                "optional": False,
+                                            },
+                                        },
+                                    ],
+                                    "image": "hello-world:latest",
+                                    "name": "dependent",
+                                    "resources": {
+                                        "limits": {
+                                            "memory": "1.0Gi",
+                                        },
+                                        "requests": {"cpu": "250m", "memory": "0.1Gi"},
+                                    },
+                                }
+                            ],
+                        },
+                    },
+                },
+            }
+        ],
+        "resource": [
+            {
+                "apiVersion": "apps/v1",
+                "kind": "Deployment",
+                "metadata": {
+                    "annotations": {
+                        "ballista.build/artifact-json": '{"name":"resource","execution":{"provides":{"resources":[{"name":"resource","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"test-string","description":"Test string config.","title":"Test String","type":"string"}],"instance_id_fields":["name"],"linked":{"configs":["test-uint32"],"secrets":["test-bool"],"services":[{"postgres":{"server":"postgres"}}]},"prefix":"RESOURCE","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of resource","title":"Name","type":"string"}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]},"requires":{"configs":[{"name":"test-uint32","description":"Test unsigned int and linked config.","title":"Test Number","type":"uint32"}],"secrets":[{"name":"test-bool","description":"Test bool and linked secret.","title":"Test Bool","type":"bool"}],"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                    },
+                    "labels": {
+                        "app.kubernetes.io/instance": "resource-1",
+                        "app.kubernetes.io/managed-by": "Ballista",
+                        "app.kubernetes.io/name": "resource",
+                        "app.kubernetes.io/part-of": "resource-provider",
+                        "app.kubernetes.io/version": "1",
+                        "ballista.build/environment": "test",
+                        "ballista.build/environment-tier": "development",
+                        "ballista.build/resources": "true",
+                    },
+                    "name": "resource-provider-resource",
+                    "namespace": "test",
+                },
+                "spec": {
+                    "selector": {
+                        "matchLabels": {
+                            "app.kubernetes.io/name": "resource",
+                            "app.kubernetes.io/part-of": "resource-provider",
+                            "ballista.build/environment": "test",
+                        }
+                    },
+                    "strategy": {
+                        "rollingUpdate": {"maxSurge": "25%", "maxUnavailable": "25%"},
+                        "type": "RollingUpdate",
+                    },
+                    "template": {
+                        "metadata": {
+                            "labels": {
+                                "app.kubernetes.io/instance": "resource-1",
+                                "app.kubernetes.io/managed-by": "Ballista",
+                                "app.kubernetes.io/name": "resource",
+                                "app.kubernetes.io/part-of": "resource-provider",
+                                "app.kubernetes.io/version": "1",
+                                "ballista.build/environment": "test",
+                                "ballista.build/environment-tier": "development",
+                                "ballista.build/resources": "true",
+                            },
+                            "name": "resource-provider-resource",
+                            "namespace": "test",
+                        },
+                        "spec": {
+                            "containers": [
+                                {
+                                    "env": [
+                                        {
+                                            "name": "POSTGRES_SERVER_POSTGRES_HOST",
+                                            "value": "postgres-server-postgres.test.svc.cluster.local",
+                                        },
+                                        {"name": "POSTGRES_SERVER_POSTGRES_PORT", "value": "5432"},
+                                        {"name": "POSTGRES_SERVER_POSTGRES_SECURE", "value": "false"},
                                         {"name": "REST_SERVICE_PORT", "value": "8000"},
                                         {
                                             "name": "REST_SERVICE_HOST",
@@ -283,8 +650,12 @@ def project_bolt_resources():
                                         {"name": "REST_SERVICE_SECURE", "value": "false"},
                                         {"name": "REST_SERVICE_PATH", "value": "/"},
                                     ],
+                                    "envFrom": [
+                                        {"configMapRef": {"name": "resource-provider-resource", "optional": True}},
+                                        {"secretRef": {"name": "resource-provider-resource", "optional": False}},
+                                    ],
                                     "image": "hello-world:latest",
-                                    "name": "resource-providers",
+                                    "name": "resource",
                                     "ports": [{"containerPort": 8000, "name": "rest"}],
                                     "resources": {
                                         "limits": {
@@ -304,22 +675,22 @@ def project_bolt_resources():
                 "metadata": {
                     "annotations": {"ballista.build/service-json": '{"name":"rest","http":8000}'},
                     "labels": {
-                        "app.kubernetes.io/instance": "resource-providers-1",
+                        "app.kubernetes.io/instance": "resource-1",
                         "app.kubernetes.io/managed-by": "Ballista",
-                        "app.kubernetes.io/name": "resource-providers",
-                        "app.kubernetes.io/part-of": "project",
+                        "app.kubernetes.io/name": "resource",
+                        "app.kubernetes.io/part-of": "resource-provider",
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
                         "ballista.build/service": "rest",
                     },
-                    "name": "project-resource-providers-rest",
+                    "name": "resource-provider-resource-rest",
                     "namespace": "test",
                 },
                 "spec": {
                     "selector": {
-                        "app.kubernetes.io/name": "resource-providers",
-                        "app.kubernetes.io/part-of": "project",
+                        "app.kubernetes.io/name": "resource",
+                        "app.kubernetes.io/part-of": "resource-provider",
                         "ballista.build/environment": "test",
                     },
                     "ports": [{"port": 8000, "name": "rest", "targetPort": "rest"}],
@@ -330,16 +701,16 @@ def project_bolt_resources():
                 "kind": "Ingress",
                 "metadata": {
                     "labels": {
-                        "app.kubernetes.io/instance": "resource-providers-1",
+                        "app.kubernetes.io/instance": "resource-1",
                         "app.kubernetes.io/managed-by": "Ballista",
-                        "app.kubernetes.io/name": "resource-providers",
-                        "app.kubernetes.io/part-of": "project",
+                        "app.kubernetes.io/name": "resource",
+                        "app.kubernetes.io/part-of": "resource-provider",
                         "app.kubernetes.io/version": "1",
                         "ballista.build/environment": "test",
                         "ballista.build/environment-tier": "development",
                         "ballista.build/service": "rest",
                     },
-                    "name": "project-resource-providers-rest",
+                    "name": "resource-provider-resource-rest",
                     "namespace": "test",
                 },
                 "spec": {
@@ -351,7 +722,7 @@ def project_bolt_resources():
                                     {
                                         "backend": {
                                             "service": {
-                                                "name": "project-resource-providers-rest",
+                                                "name": "resource-provider-resource-rest",
                                                 "port": {"number": 8000},
                                             }
                                         },
@@ -364,7 +735,7 @@ def project_bolt_resources():
                     ]
                 },
             },
-        ]
+        ],
     }
 
 
@@ -378,7 +749,7 @@ async def test_generate_resources(
 ):
     environment, kubernetes_api_adapter = environment_with_kubernetes_api_adapter
 
-    bolt_name = request.node.callspec.params.get("bolt_yaml")
+    bolt_name = request.node.callspec.params.get("bolt_yaml").replace("-", "_")
     expected_bolt_resources: tuple[list[KubernetesResource], dict[str, list[KubernetesResource]]] = (
         request.getfixturevalue(f"{bolt_name}_bolt_resources")
     )

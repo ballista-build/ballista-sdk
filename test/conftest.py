@@ -36,83 +36,117 @@ artifacts:
         execution:
             provides:
                 healthchecks:
+                    alive:
+                        http:
+                            path: "/healthz"
+                            service: "http"
                     ready:
                         http:
                             path: "/healthz"
                             service: "http"
+                    started:
+                        http:
+                            path: "/healthz"
+                            service: "http"
                 services:
-                  - name: http
+                  - name: "http"
                     http: 80
             requires:
                 configs:
-                    - name: "option-a"
-                      type: "string"
+                      - name: "option-a"
+                        type: "string"
                 resources:
-                    - postgres:
-                        database:
-                            name: "testdatabase"
-                            name_alias: "BUG_DATABASE"
+                      - postgres:
+                            database:
+                                name: "testdatabase"
+                                name-alias: "ALIASED_DATABASE"
+                                host-alias: "RENAMED_HOST"
+                                port-alias: "OTHER_PORT"
+                                secure-alias: "RETITLED_SECURE"
                 secrets:
-                    - name: "secret-a"
-                      type: "string"
+                      - name: "secret-a"
+                        type: "string"
                 volumes:
-                    - name: "volume-a"
-                      capacity: 0.01
-                      path: "/var/volume-a"
-                      persistent: True
-                      title: "Volume A"
+                      - name: "volume-a"
+                        capacity: 0.01
+                        path: "/var/volume-a"
+                        persistent: True
+                        title: "Volume A"
         type:
             docker_image:
                 image: "hello-world:latest"
 project: "simple"
 version: "1"
 """,
+    "small-app": """
+api_version: v1
+artifacts:
+      - name: backend
+        execution:
+            provides:
+                services:
+                  - name: "api"
+                    http: 8000
+        type:
+            docker_image:
+                image: "hello-world:latest"
+      - name: ui
+        execution:
+            provides:
+                services:
+                  - name: "http"
+                    http: 80
+            requires:
+                services:
+                  - small-app:
+                        backend:
+                            api:
+                                host-alias: ALIASED_HOST
+                                port-alias: ALIASED_PORT
+                                secure-alias: ALIASED_SECURE
+        type:
+            docker_image:
+                image: "hello-world:latest"
+project: small-app
+version: "1.2.3"
+""",
     #     "typical": """
     # YAML
     # """,
-    "project": """
+    "resource-provider": """
 api_version: "v1"
 artifacts:
-      - name: "resource-providers"
+      - name: "resource"
         execution:
             provides:
                 resources:
                   - configs:
-                      - type: "string"
-                        description: "Host of Database server."
-                        name: "host"
-                        shared: True
-                        title: "Host"
-                      - type: "uint32"
-                        description: "Port Database server listens on."
-                        name: "port"
-                        shared: True
-                        title: "Port"
+                      - name: "test-string"
+                        description: "Test string config."
+                        title: "Test String"
+                        type: "string"
                     description: "Resource Description"
-                    name: "project-resource1"
                     instance_id_fields: ["name"]
-                    prefix: "RESOURCE1"
+                    linked:
+                        configs:
+                          - "test-uint32"
+                        secrets:
+                          - "test-bool"
+                        services:
+                          - postgres:
+                                server: postgres
+                    name: "resource"
+                    prefix: "RESOURCE"
                     requirements:
                         properties:
                             name:
                                 type: string
                         required: ["name"]
                     secrets:
-                      - type: "string"
-                        description: "Name of database"
-                        name: "name"
-                        shared: False
-                        title: "Database"
-                      - type: "string"
-                        description: "Login username to access database"
-                        name: "username"
-                        shared: False
-                        title: "Username"
-                      - type: "string"
-                        description: "Login password to access database"
-                        name: "password"
-                        shared: False
-                        title: "Password"
+                      - name: "name"
+                        description: "Name of resource"
+                        title: "Name"
+                        type: "string"
                     title: "Resource Provider Resource"
                     transport:
                         rest:
@@ -122,19 +156,43 @@ artifacts:
                   - name: "rest"
                     http: 8000
             requires:
+                configs:
+                  - name: "test-uint32"
+                    description: "Test unsigned int and linked config."
+                    title: "Test Number"
+                    type: "uint32"
+                secrets:
+                  - name: "test-bool"
+                    description: "Test bool and linked secret."
+                    title: "Test Bool"
+                    type: "bool"
                 services:
-                 - postgres:
-                     server: postgres
+                  - postgres:
+                        server: postgres
         type:
             docker_image:
                 image: "hello-world:latest"
-project: "project"
+      - name: "dependent"
+        execution:
+            requires:
+                resources:
+                  - resource-provider:
+                        resource:
+                            name: "mine"
+                            name-alias: DIFFERENT_NAME
+                            host-alias: DIFFERENT_HOST
+                            port-alias: DIFFERENT_PORT
+                            secure-alias: DIFFERENT_SECURE
+        type:
+            docker_image:
+                image: "hello-world:latest"
+project: "resource-provider"
 version: "1"
     """,
 }
 
 
-@pytest.fixture(scope="session", params=["simple", "project"])
+@pytest.fixture(scope="session", params=["simple", "small-app", "resource-provider"])
 def bolt_yaml(request) -> dict[str, str | dict]:
     return yaml.safe_load(TEST_BOLTS[request.param])
 

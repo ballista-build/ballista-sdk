@@ -4,10 +4,12 @@ from pydantic import BaseModel, Field
 
 from .artifacts import Artifact
 from .common import BaseNamedModel
+from .resources import VirtualProvidedResource
 from .services import VirtualProvidedService
 
 
 class BoltProvides(BaseModel, frozen=True):
+    resources: Annotated[list[VirtualProvidedResource], Field(description="Virtual resources.")] = []
     services: Annotated[list[VirtualProvidedService], Field(description="Virtual services")] = []
 
 

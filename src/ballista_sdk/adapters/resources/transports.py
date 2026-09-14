@@ -1,4 +1,4 @@
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from typing import Protocol
 
 import aiohttp
@@ -6,7 +6,6 @@ import aiohttp
 from ballista_sdk.adapters.exceptions import ProvidedResourceException
 from ballista_sdk.adapters.primitives import ProvidedResourceReference
 
-from ..exceptions import ArtifactResourceAlreadyExists, ArtifactResourceNotFound
 from .provider import (
     ArtifactReference,
     Environment,
@@ -28,7 +27,7 @@ from .pydantic import (
 class ResourceProviderTransport(ResourceProvider, Protocol):
     """Message transport to a remote `ResourceProvider` implementation.
 
-    Translates the `ResourceProvider` interface into remote calls, allowing an `InfrastructureAdapter` to communicate with a `ResourceProvider` elsewhere."""
+    Translates the `ResourceProvider` interface into remote calls, allowing an `InfrastructureAdapter` to communicate with a `ResourceProvider`."""
 
     provided_resource_reference: ProvidedResourceReference
 
@@ -38,61 +37,6 @@ class ExecResourceProviderTransport(ResourceProviderTransport):
     """Control resource lifecycle via command execution."""
 
     pass
-
-
-@dataclass
-class MemoryResourceProviderTransport(ResourceProviderTransport):
-    _resources: dict[Environment, dict[ArtifactReference, list[ResourceRequirement]]] = field(
-        default_factory=dict, init=False
-    )
-
-    async def get_status(self, environment: Environment) -> tuple[ResourceProviderStatus, str | None]:
-        return ResourceProviderStatus.AVAILABLE, None
-
-    # Resource
-    async def list_resources(self, environment: Environment, artifact: ArtifactReference) -> list:
-        return self._resources.get(environment, {}).get(artifact, [])
-
-    async def get_resource_status(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> tuple[ResourceStatus, str | None]:
-        if resource_requirement in self._resources.get(environment, {}).get(artifact, []):
-            return ResourceStatus.AVAILABLE, None
-        else:
-            return ResourceStatus.NOT_FOUND, None
-
-    async def provision_resource(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ):
-        if resource_requirement in self._resources.get(environment, {}).get(artifact, []):
-            raise ArtifactResourceAlreadyExists(provided_resource=self.provided_resource_reference, artifact=artifact)
-
-        self._resources.setdefault(environment, {}).setdefault(artifact, []).append(resource_requirement)
-
-    async def update_resource(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ):
-        if resource_requirement not in self._resources.get(environment, {}).get(artifact, []):
-            raise ArtifactResourceNotFound(provided_resource=self.provided_resource_reference, artifact=artifact)
-
-    # Resource Access
-    async def get_resource_access(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> ResourceAccess | None:
-        pass
-
-    async def grant_resource_access(
-        self,
-        environment: Environment,
-        artifact: ArtifactReference,
-        resource_requirement: ResourceRequirement,
-    ):
-        pass
-
-    async def revoke_resource_access(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ):
-        pass
 
 
 @dataclass
@@ -200,7 +144,7 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
     # Resource Access
     async def get_resource_access(
         self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> ResourceAccess | None:
+    ) -> ResourceAccess:
         raise ProvidedResourceException(self.provided_resource_reference)
 
     async def grant_resource_access(

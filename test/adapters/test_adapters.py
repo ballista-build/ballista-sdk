@@ -178,10 +178,19 @@ async def test_list_resource_requirements(
 ):
     environment, infrastructure_adapter = environment_with_infrastructure_adapter
     required_resources = list(
-        await infrastructure_adapter.list_resource_requirements([environment], project_names=["postgres"])
+        await infrastructure_adapter.list_resource_requirements([environment], project_names=["test-app"])
     )
 
     assert required_resources
+
+    for artifact_reference, provided_resource_reference, resource_status in required_resources:
+        assert artifact_reference and provided_resource_reference and resource_status
+        assert artifact_reference.project_name in {"test-app"}
+        assert artifact_reference.artifact_name in {"api"}
+        assert artifact_reference.version == "1.0.0"
+
+        assert provided_resource_reference.project_name in {"postgres"}
+        assert provided_resource_reference.resource_name in {"database"}
 
 
 async def test_list_service_requirements(
@@ -189,7 +198,7 @@ async def test_list_service_requirements(
 ):
     environment, infrastructure_adapter = environment_with_infrastructure_adapter
     required_services = list(
-        await infrastructure_adapter.list_service_requirements([environment], project_names=["postgres"])
+        await infrastructure_adapter.list_service_requirements([environment], project_names=["test-app"])
     )
 
     assert required_services
@@ -197,12 +206,11 @@ async def test_list_service_requirements(
     for (
         artifact_reference,
         provided_service_reference,
-        service_type,
     ) in required_services:
-        assert artifact_reference and provided_service_reference and service_type
-        assert artifact_reference.project_name in {"postgres"}
-        assert artifact_reference.artifact_name in {"resource-providers"}
-        assert artifact_reference.version == "18.1"
+        assert artifact_reference and provided_service_reference
+        assert artifact_reference.project_name in {"test-app"}
+        assert artifact_reference.artifact_name in {"api"}
+        assert artifact_reference.version == "1.0.0"
 
         assert provided_service_reference.project_name in {"postgres"}
         assert provided_service_reference.artifact_name in {"server"}

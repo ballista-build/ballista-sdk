@@ -42,7 +42,7 @@ class ResourceProvider[ResourceProviderResourceRequirement: ResourceRequirement]
     ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
         """Provisions a new resource. Grants ownership access to the referenced Artifact + Environment.
 
-        Data returned is saved as Configs and Secrets.
+        Returns settings that are saved as Artifact-bound Configs and Secrets.
 
         :raises ArtifactResourceAlreadyExists: Resource already exists and can't be provisioned.
         :raises ResourceProviderException: Resource could not be provisioned.
@@ -55,9 +55,10 @@ class ResourceProvider[ResourceProviderResourceRequirement: ResourceRequirement]
         artifact: ArtifactReference,
         resource_requirement: ResourceProviderResourceRequirement,
     ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
-        """Updates an existing resource. If the requirement changes are substantial, triggers a re-provisioning.
+        """Updates an existing resource. If the requirement changes are substantial, triggers a re-provisioning. `triggers_reprovision` returns if such an update would cause a reprovision.
 
         Resource can be updated while it is `PROVISIONING`, `AVAILABLE`, or `UNHEALTHY`.
+        Returns settings that are saved as Artifact-bound Configs and Secrets.
 
         :raises ArtifactResourceNotFound: Resource could not be found to update.
         :raises ResourceProviderException: Resource could not be updated."""
