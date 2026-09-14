@@ -504,7 +504,7 @@ def resource_provider_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"dependent","execution":{"requires":{"resources":[{"resource-provider":{"resource":{"name":"mine","name_alias":"DIFFERENT_NAME","host_alias":"DIFFERENT_HOST","port_alias":"DIFFERENT_PORT","secure_alias":"DIFFERENT_SECURE"}}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"dependent","execution":{"requires":{"resources":[{"resource-provider":{"resource":{"name":"mine","name-alias":"DIFFERENT_NAME","host-alias":"DIFFERENT_HOST","port-alias":"DIFFERENT_PORT","secure-alias":"DIFFERENT_SECURE"}}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "dependent-1",
@@ -549,11 +549,11 @@ def resource_provider_bolt_resources():
                                 {
                                     "env": [
                                         {
-                                            "name": "RESOURCE_HOST",
+                                            "name": "DIFFERENT_HOST",
                                             "value": "postgres-server-postgres.test.svc.cluster.local",
                                         },
-                                        {"name": "RESOURCE_PORT", "value": "5432"},
-                                        {"name": "RESOURCE_SECURE", "value": "false"},
+                                        {"name": "DIFFERENT_PORT", "value": "5432"},
+                                        {"name": "DIFFERENT_SECURE", "value": "false"},
                                     ],
                                     "envFrom": [
                                         {

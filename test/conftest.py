@@ -134,7 +134,7 @@ artifacts:
                           - "test-bool"
                         services:
                           - postgres:
-                                server: "postgres"
+                                server: postgres
                     name: "resource"
                     prefix: "RESOURCE"
                     requirements:
@@ -179,10 +179,10 @@ artifacts:
                   - resource-provider:
                         resource:
                             name: "mine"
-                            name_alias: DIFFERENT_NAME
-                            host_alias: DIFFERENT_HOST
-                            port_alias: DIFFERENT_PORT
-                            secure_alias: DIFFERENT_SECURE
+                            name-alias: DIFFERENT_NAME
+                            host-alias: DIFFERENT_HOST
+                            port-alias: DIFFERENT_PORT
+                            secure-alias: DIFFERENT_SECURE
         type:
             docker_image:
                 image: "hello-world:latest"

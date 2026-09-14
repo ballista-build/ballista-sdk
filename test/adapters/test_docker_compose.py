@@ -155,7 +155,7 @@ def resource_provider_docker_compose_project():
                         "reservations": {"cpus": "0.25", "memory": "0.1g"},
                     }
                 },
-                environment={"RESOURCE_HOST": "postgres", "RESOURCE_PORT": "5432", "RESOURCE_SECURE": "false"},
+                environment={"DIFFERENT_HOST": "postgres", "DIFFERENT_PORT": "5432", "DIFFERENT_SECURE": "false"},
                 env_file=[
                     {"format": "raw", "path": "resource-provider-dependent-configs.env", "required": False},
                     {"format": "raw", "path": "resource-provider-dependent-secrets.env", "required": True},
