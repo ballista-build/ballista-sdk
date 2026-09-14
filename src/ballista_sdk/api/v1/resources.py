@@ -238,6 +238,21 @@ class ResourceAccess(StrEnum):
 
 
 class ResourceRequirement(BaseOneOfModel):
+    """Requirement for a Resource.
+
+    Shorthand definitions possible when no required data:
+    ```
+    project: resource
+    ```
+
+    Complete definition when requirement requires data or for aliasing:
+    ```
+    project:
+        resource:
+            field-alias: ALIASED_FIELD
+    ```
+    """
+
     model_config = {"extra": "allow"}
 
     __pydantic_extra__: dict[str, str | dict[str, ResourceRequirementRequirement]]

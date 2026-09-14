@@ -30,6 +30,25 @@ class VirtualProvidedService(BaseModel):
 
 
 class ServiceRequirement(BaseOneOfModel):
+    """Requirement for a ProvidedService.
+
+    Short-hand definition:
+    ```
+    project:
+        artifact: service
+    ```
+
+    Complete definition allows aliasing:
+    ```yaml
+    project:
+        artifact:
+            service:
+                host-alias: ALIASED_HOST
+                port-alias: ALIASED_PORT
+                secure-alias: ALIASED_SECURE
+    ```
+    """
+
     model_config = {"extra": "allow"}
 
     __pydantic_extra__: dict[str, dict[str, dict[str, dict[str, str]] | str]]
