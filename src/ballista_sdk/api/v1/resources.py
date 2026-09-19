@@ -99,6 +99,10 @@ class ProvidedResource(BaseNamedModel):
         ),
     ] = None
 
+    def get_requirement_instance(self, requirement) -> list[str] | None:
+        if self.instance_id_fields:
+            return [str(getattr(requirement, field)) for field in self.instance_id_fields]
+
     def get_requirements_model(self, project_title: str) -> type[ResourceRequirementRequirement]:
         return _schema_to_model(
             self.prefix,

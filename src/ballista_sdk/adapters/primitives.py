@@ -68,9 +68,11 @@ class ResolvedProvidedService(NamedTuple):
 class BoundSetting(NamedTuple):
     """A Setting bound to an owner."""
 
+    artifact: ArtifactReference
     setting: Setting
-    artifact: ArtifactReference | None = None
-    """Artifact setting exists in."""
+    """Artifact setting."""
+
     provided_resource: ProvidedResourceReference | None = None
-    """Resource setting exists in."""
+    """Resource setting originated from."""
+
     resource_instance: Sequence[str] | None = None

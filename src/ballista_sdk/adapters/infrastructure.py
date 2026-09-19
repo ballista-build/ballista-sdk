@@ -12,6 +12,8 @@ from ballista_sdk.api.v1 import (
     ResourceStatus,
     ServiceRequirement,
     ServiceType,
+    SettingDataType,
+    SettingValue,
 )
 
 from .exceptions import ArtifactNotFound, BoltNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
@@ -26,7 +28,7 @@ from .primitives import (
 )
 from .repository import BoltRepository
 from .resources.transports import ResourceProviderTransport
-from .settings import SettingsAdapter
+from .settings import BoundSetting, SettingsAdapter
 
 
 class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[AdapterEnvironment], Protocol):
@@ -374,6 +376,98 @@ class BoltInspector:
                 service_name=service_requirement.service_name,
             )
         )
+
+
+def _destroy_resources(artifact: ArtifactReference, environment: Environment):
+    pass
+
+
+async def init_artifact_settings_to_write(
+    environment: Environment, bolt: Bolt, artifact: Artifact
+) -> list[tuple[BoundSetting, SettingValue]]:
+    if not artifact.execution:
+        return []
+
+    default_values = {
+        SettingDataType.BOOL: False,
+        SettingDataType.BYTES: b"",
+        SettingDataType.DOUBLE: 0.0,
+        SettingDataType.FLOAT: 0.0,
+        SettingDataType.INT32: 0,
+        SettingDataType.INT64: 0,
+        SettingDataType.STRING: "",
+        SettingDataType.UINT32: 0,
+        SettingDataType.UINT64: 0,
+    }
+
+    return [
+        (
+            BoundSetting(
+                ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version), setting
+            ),
+            default_values[setting.type],
+        )
+        for setting in artifact.execution.requires.secrets
+    ]
+
+
+async def get_resource_settings_to_write(
+    transport: ResourceProviderTransport,
+    environment: Environment,
+    artifact: ArtifactReference,
+    resolved_provided_resource: ResolvedProvidedResource,
+    resource_requirement,
+) -> list[tuple[BoundSetting, SettingValue]]:
+    provided_resource = resolved_provided_resource.provided_resource
+    provided_resource_reference = resolved_provided_resource.provided_resource_reference
+    resource_instance = provided_resource.get_requirement_instance(resource_requirement)
+
+    resource_status = await transport.get_resource_status(environment, artifact, resource_requirement)
+    if resource_status == ResourceStatus.NOT_FOUND:
+        config_values, secret_values = await transport.provision_resource(environment, artifact, resource_requirement)
+
+        # Verify all secrets are accounted for, as they ARE required.
+        missing_secrets = [s.name for s in provided_resource.secrets if secret_values.get(s.name) is None]
+        if missing_secrets:
+            raise Exception(f"NEEDED: f{missing_secrets}")
+
+    else:
+        config_values, secret_values = await transport.update_resource(environment, artifact, resource_requirement)
+
+    return [
+        (
+            BoundSetting(artifact, setting, provided_resource_reference, resource_instance),
+            values[setting.name],
+        )
+        for settings, values in [(provided_resource.configs, config_values), (provided_resource.secrets, secret_values)]
+        for setting in settings
+    ]
+
+
+async def resolve_artifact_resource_requirements(adapter: InfrastructureAdapter, environment: Environment, bolt: Bolt):
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource] = {}
+
+    for artifact in bolt.artifacts:
+        if not artifact.execution:
+            continue
+
+        for resource_requirement in artifact.execution.requires.resources:
+            provided_resource_reference = ProvidedResourceReference(
+                project_name=resource_requirement.project_name,
+                resource_name=resource_requirement.resource_name,
+            )
+
+            if provided_resource_reference not in resource_providers:
+                # Attempt to resolve from the Bolt first.
+                try:
+                    resolution = BoltInspector.resolve_resource_requirement([bolt], resource_requirement)
+
+                except ProvidedResourceNotFound:
+                    resolution = await adapter.resolve_resource_requirement(environment, resource_requirement)
+
+                resource_providers[provided_resource_reference] = resolution
+
+    return resource_providers
 
 
 async def resolve_artifact_requirements(
