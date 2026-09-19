@@ -39,9 +39,9 @@ coverage = [{ include-group = "tests" }, "coverage[toml]"]
 dev = [
     { include-group = "coverage" },
     "ruff",
-    "ty",
     "fastapi",
     "kubernetes-stubs-elephant-fork>=36.0,<37.0",
+    "pyrefly"
 ]
 
 [build-system]
