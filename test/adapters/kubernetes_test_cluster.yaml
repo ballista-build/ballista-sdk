@@ -217,7 +217,7 @@ spec:
             - secretRef:
                 name: postgres-resource-providers
                 optional: false
-          image: hello-world:latest
+          image: stefanwalther/docker-test
           imagePullPolicy: Always
           name: api
 ---
