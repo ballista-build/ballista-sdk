@@ -6,14 +6,13 @@ readme = "README.md"
 authors = [{ name = "August Bigelow", email = "dev@atbigelow.com" }]
 license = "MIT"
 license-files = ["LICENSE"]
-requires-python = ">=3.12"
+requires-python = ">=3.13"
 classifiers = [
-  "Development Status :: 2 - Pre-Alpha",
-  "Programming Language :: Python :: 3.12",
-  "Programming Language :: Python :: 3.13",
-  "Programming Language :: Python :: 3.14",
-  "Programming Language :: Python :: 3.15",
-  "Typing :: Typed",
+    "Development Status :: 2 - Pre-Alpha",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.15",
+    "Typing :: Typed",
 ]
 dependencies = [
     "aiohttp>=3.13.5",
@@ -41,7 +40,7 @@ dev = [
     "ruff",
     "fastapi",
     "kubernetes-stubs-elephant-fork>=36.0,<37.0",
-    "pyrefly"
+    "pyrefly",
 ]
 
 [build-system]
@@ -59,10 +58,34 @@ source = ["src"]
 asyncio_mode = "auto"
 markers = [
     "unit: Tests with no other dependent systems",
-    "integration: Tests requiring dependent systems"
+    "integration: Tests requiring dependent systems",
 ]
 verbosity_subtests = "0"
 
+
 [tool.ruff]
 line-length = 120
-target-version = "py312"
+target-version = "py313"
+
+[tool.ruff.lint]
+select = [
+    "D",   # enforce pydocstyle
+    "DOC", # enforce docs args and types
+]
+
+[tool.ruff.lint.pydocstyle]
+convention = "google" # Use Google-style docstrings
+
+[tool.ruff.lint.pylint]
+max-args = 5
+max-branches = 12
+max-returns = 6
+max-statements = 50
+
+[tool.ruff.lint.per-file-ignores]
+"test/**" = ["D"] # Ignore docstrings in tests
+
+
+[tool.pyrefly]
+preset = "strict"
+project-includes = ["**/*.py*", "**/*.ipynb"]

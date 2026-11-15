@@ -34,6 +34,7 @@ from ballista_sdk.api.v1 import (
     Artifact,
     ArtifactType,
     Bolt,
+    BoltProvides,
     DefaultExecutionParameters,
     Environment,
     EnvironmentTier,
@@ -90,7 +91,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
 
         environment_config = get_environment_config(environment)
 
-        execution_parameters = await self.determine_execution_parameters(bolt, environment)
+        execution_parameters = await self.get_execution_parameters(bolt, environment)
 
         bolt_resources, all_artifact_resources = self.generate_bolt_resources(
             bolt=bolt,
@@ -116,9 +117,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
             except Exception:
                 LOGGER.exception("Error applying resource.")
 
-    async def determine_execution_parameters(
-        self, bolt: Bolt, environment: KubernetesAPIEnvironment
-    ) -> ExecutionParameters:
+    async def get_execution_parameters(self, bolt: Bolt, environment: KubernetesAPIEnvironment) -> ExecutionParameters:
         api_client = await self._get_api_client(environment)
         corev1_api = client.CoreV1Api(api_client=api_client)
         appsv1_api = client.AppsV1Api(api_client=api_client)
@@ -447,6 +446,7 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
+        externalized: bool | None = None,
     ) -> list[ResolvedProvidedService]:
         provided_services = []
 
@@ -659,6 +659,57 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
 
         raise ArtifactNotFound(artifact_reference)
 
+    async def resolve_bolt_reference(
+        self, environment: KubernetesAPIEnvironment, bolt_reference: BoltReference
+    ) -> Bolt:
+        # Because we currently stripe a Bolt's Artifacts across multiple Deployments, we can reconstruct the Bolt from all of them.
+        # It's limited to only Artifacts that can be excecuted and have been deployed.
+        # Remove this when we use CRDs.
+
+        labels = [
+            f"{primitives.METADATA_LABEL_APP_MANAGED_BY}={primitives.METADATA_MANAGED_BY}",
+            f"{primitives.METADATA_LABEL_ENVIRONMENT}={environment.name}",
+            f"{primitives.METADATA_LABEL_APP_PART_OF}={bolt_reference.project_name}",
+            f"{primitives.METADATA_LABEL_APP_VERSION}={bolt_reference.version}",
+        ]
+
+        api_client = await self._get_api_client(environment)
+
+        api = client.AppsV1Api(api_client)
+        # Assemble Artifacts
+        artifacts = []
+        deployments = api.list_deployment_for_all_namespaces(label_selector=",".join(labels))
+
+        for deployment in deployments.items:
+            if not deployment.metadata or not deployment.metadata.labels or not deployment.metadata.annotations:
+                continue
+
+            annotation = deployment.metadata.annotations.get(primitives.METADATA_ANNOTATION_ARTIFACT)
+            if not annotation:
+                continue
+
+            try:
+                artifact = Artifact.model_validate_json(annotation)
+                artifacts.append(artifact)
+
+            except ValidationError:
+                pass
+
+        # Assemble VirtualProvidedServices
+        virtual_provided_services = []
+
+        if artifacts or virtual_provided_services:
+            bolt_provides = BoltProvides(services=virtual_provided_services)
+
+            return Bolt(
+                artifacts=artifacts,
+                project=bolt_reference.project_name,
+                provides=bolt_provides,
+                version=bolt_reference.version,
+            )
+
+        raise BoltNotFound(bolt_reference)
+
     async def resolve_service_address(
         self, environment: KubernetesAPIEnvironment, service_reference: ProvidedServiceReference
     ) -> str:
@@ -682,11 +733,6 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
 
         raise ProvidedServiceNotFound(service_reference)
 
-    async def resolve_bolt_reference(
-        self, environment: KubernetesAPIEnvironment, bolt_reference: BoltReference
-    ) -> Bolt:
-        raise BoltNotFound(bolt_reference)
-
     async def resolve_resource_requirement(
         self, environment: KubernetesAPIEnvironment, resource_requirement: ResourceRequirement
     ) -> ResolvedProvidedResource:
@@ -709,7 +755,11 @@ class KubernetesAPIInfrastructureAdapter(KubernetesInfrastructureAdapter[Kuberne
         )
 
     async def resolve_service_requirement(
-        self, environment: KubernetesAPIEnvironment, service_requirement: ServiceRequirement
+        self,
+        environment: KubernetesAPIEnvironment,
+        service_requirement: ServiceRequirement,
+        *,
+        externalized: bool = False,
     ) -> ResolvedProvidedService:
         requirement_project_name = service_requirement.project_name
         requirement_artifact_name = service_requirement.artifact_name

@@ -5,12 +5,10 @@ from .artifacts import (
     ArtifactTypeRequirement,
     BuildParameters,
     ConfigRequirement,
-    ResourceRequirement,
     SecretRequirement,
-    ServiceRequirement,
     VolumeRequirement,
 )
-from .bolts import Bolt, Project
+from .bolts import Bolt, BoltProvides, Project
 from .execution import (
     ArtifactExecutionParameters,
     ComputeExecutionParameters,
@@ -38,11 +36,13 @@ from .resources import (
     ProvidedResourceSetting,
     ProvidedResourceTransportMethod,
     ResourceAccess,
+    ResourceInstance,
     ResourceProviderStatus,
+    ResourceRequirement,
     ResourceStatus,
     RESTProvidedResourceTransport,
 )
-from .services import ProvidedService, ServiceType
+from .services import ProvidedService, ServiceRequirement, ServiceType
 from .settings import Config, Secret, Setting, SettingDataType, SettingValue
 from .workspace import Workspace
 
@@ -52,8 +52,8 @@ __all__ = [
     "ArtifactExecutionParameters",
     "ArtifactType",
     "ArtifactTypeRequirement",
-    "BaseProjectResourceRequirementName",
     "Bolt",
+    "BoltProvides",
     "BuildParameters",
     "ComputeExecutionParameters",
     "Config",
@@ -66,7 +66,6 @@ __all__ = [
     "ExternalizedServiceParameters",
     "GRPCHealthCheckAction",
     "HealthcheckProbe",
-    "HealthcheckRequirements",
     "HTTPHealthCheckAction",
     "Project",
     "ProvidedHealthchecks",
@@ -78,6 +77,7 @@ __all__ = [
     "ProvidedResourceTransportMethod",
     "ProvidedService",
     "ResourceAccess",
+    "ResourceInstance",
     "ResourceProviderStatus",
     "ResourceRequirement",
     "ResourceStatus",

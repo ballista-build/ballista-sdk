@@ -8,13 +8,20 @@ from ballista_sdk.api.v1 import (
     Bolt,
     Environment,
     ExecutionParameters,
+    ResourceInstance,
     ResourceRequirement,
     ResourceStatus,
     ServiceRequirement,
     ServiceType,
+    SettingValue,
 )
 
-from .exceptions import ArtifactNotFound, BoltNotFound, ProvidedResourceNotFound, ProvidedServiceNotFound
+from .exceptions import (
+    ArtifactNotFound,
+    BoltNotFound,
+    ProvidedResourceNotFound,
+    ProvidedServiceNotFound,
+)
 from .primitives import (
     ArtifactReference,
     BoltReference,
@@ -26,10 +33,10 @@ from .primitives import (
 )
 from .repository import BoltRepository
 from .resources.transports import ResourceProviderTransport
-from .settings import SettingsAdapter
+from .settings import SETTING_DEFAULT_VALUES, BoundSetting, SettingsAdapter
 
 
-class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[AdapterEnvironment], Protocol):
+class InfrastructureAdapter[E: Environment = Environment](BoltRepository[E], Protocol):
     """Infastructure adapter for executing Artifacts in Environments.
 
     InfrastructureAdapters encapsulate the following capabilities:
@@ -47,21 +54,21 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         """Settings adapter specifically to manage Secrets."""
         ...
 
-    async def get_execution_parameters(self, bolt: Bolt, environment: AdapterEnvironment) -> ExecutionParameters:
+    async def get_execution_parameters(self, bolt: Bolt, environment: E) -> ExecutionParameters:
         """Returns the ExecutionParameters used when deploying a specified Bolt and Environment."""
         ...
 
-    def get_development_environment(self, name: str, title: str) -> AdapterEnvironment:
+    def get_development_environment(self, name: str, title: str) -> E:
         """Get an Environment instance suited for development."""
         ...
 
-    async def interact(self, bolt: Bolt, environment: AdapterEnvironment):
+    async def interact(self, bolt: Bolt, environment: E):
         """Start an interactive development session that automatically builds, deploys, and tears down the Bolt."""
         ...
 
     async def list_provided_resources(
         self,
-        environments: Collection[AdapterEnvironment],
+        environments: Collection[E],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -72,19 +79,20 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
 
     async def list_provided_services(
         self,
-        environments: Collection[AdapterEnvironment],
+        environments: Collection[E],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
+        externalized: bool = False,
     ) -> Iterable[ResolvedProvidedService]:
         """List Services in the specified Environments."""
         ...
 
     async def list_resource_requirements(
         self,
-        environments: Collection[AdapterEnvironment],
+        environments: Collection[E],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -97,7 +105,7 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
 
     async def list_service_requirements(
         self,
-        environments: Collection[AdapterEnvironment],
+        environments: Collection[E],
         *,
         project_names: Collection[str] | None = None,
         artifact_names: Collection[str] | None = None,
@@ -110,20 +118,20 @@ class InfrastructureAdapter[AdapterEnvironment: Environment](BoltRepository[Adap
         ...
 
     async def resolve_resource_requirement(
-        self, environment: AdapterEnvironment, resource_requirement: ResourceRequirement
+        self, environment: E, resource_requirement: ResourceRequirement
     ) -> ResolvedProvidedResource:
         """Resolves a `ResourceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedResource` with an ArtifactReference. Raises UnknownResource if dependency cannot be met."""
         ...
 
     async def resolve_service_requirement(
-        self, environment: AdapterEnvironment, service_requirement: ServiceRequirement
+        self, environment: E, service_requirement: ServiceRequirement, *, externalized: bool = False
     ) -> ResolvedProvidedService:
         """Resolves a `ServiceRequirement` fulfilled in the specified `Environment`, returning a `ProvidedService` with an `ArtifactReference` and address to reach it. Raises UnknownService if dependency cannot be met."""
         ...
 
     async def transport_resource_provider(
-        self, environment: AdapterEnvironment, resolved_provided_resource: ResolvedProvidedResource
-    ) -> ResourceProviderTransport:
+        self, environment: E, resolved_provided_resource: ResolvedProvidedResource
+    ) -> ResourceProviderTransport[ResourceInstance]:
         """Transports a Resource Provider communication that is accessible to the adapter."""
         ...
 
@@ -141,7 +149,6 @@ class BoltInspector:
         executable: bool | None = None,
     ) -> list[ArtifactReference]:
         """List Artifacts in the specified Bolts."""
-
         return [
             ArtifactReference(
                 project_name=bolt.project,
@@ -210,44 +217,59 @@ class BoltInspector:
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
+        externalized: bool = False,
     ) -> list[ResolvedProvidedService]:
         """List ProvidedServices with the providing ArtifactReference in the specified Bolts."""
-        bolt_provided_virtual_services = [
-            ResolvedProvidedService(
-                provided_service=vps.service,
-                artifact_reference=ArtifactReference(
-                    project_name=bolt.project,
-                    artifact_name=vps.artifact,
-                    version=bolt.version,
-                ),
-                host=vps.service.name,
-            )
-            for bolt in bolts
-            if not project_names or bolt.project in project_names
-            for vps in bolt.provides.services
-            if (not artifact_names or vps.artifact in artifact_names)
-            and (not service_names or vps.service.name in service_names)
-        ]
+        bolt_provided_virtual_services = []
+        artifact_provided_services = []
 
-        artifact_provided_services = [
-            ResolvedProvidedService(
-                provided_service=service,
-                artifact_reference=ArtifactReference(
-                    project_name=bolt.project,
-                    artifact_name=artifact.name,
-                    version=bolt.version,
-                ),
-                host=service.name,
+        for bolt in bolts:
+            if project_names and bolt.project not in project_names:
+                continue
+
+            bolt_provided_virtual_services.extend(
+                [
+                    ResolvedProvidedService(
+                        provided_service=vps.service,
+                        artifact_reference=ArtifactReference(
+                            project_name=bolt.project,
+                            artifact_name=vps.artifact,
+                            version=bolt.version,
+                        ),
+                        host=vps.ipv4_address,
+                    )
+                    for vps in bolt.provides.services
+                    if (not artifact_names or vps.artifact in artifact_names)
+                    and (not service_names or vps.service.name in service_names)
+                ]
             )
-            for bolt in bolts
-            if not project_names or bolt.project in project_names
-            for artifact in bolt.artifacts
-            if artifact.execution
-            and artifact.execution.provides
-            and (not artifact_names or artifact.name in artifact_names)
-            for service in artifact.execution.provides.services
-            if not service_names or service.name in service_names
-        ]
+
+            if externalized:
+                # Skip artifact services, as we don't know how they are externalized
+                continue
+
+            for artifact in bolt.artifacts:
+                if artifact_names and artifact.name not in artifact_names:
+                    continue
+
+                if not artifact.execution or not artifact.execution.provides:
+                    continue
+
+                artifact_provided_services.extend(
+                    [
+                        ResolvedProvidedService(
+                            provided_service=service,
+                            artifact_reference=ArtifactReference(
+                                project_name=bolt.project,
+                                artifact_name=artifact.name,
+                                version=bolt.version,
+                            ),
+                            host=service.name,
+                        )
+                        for service in artifact.execution.provides.services
+                        if not service_names or service.name in service_names
+                    ]
+                )
 
         return bolt_provided_virtual_services + artifact_provided_services
 
@@ -264,7 +286,11 @@ class BoltInspector:
         """List required Resources with the ArtifactReference requiring it and the ProvidedResourceReference."""
         return [
             (
-                ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version),
+                ArtifactReference(
+                    project_name=bolt.project,
+                    artifact_name=artifact.name,
+                    version=bolt.version,
+                ),
                 ProvidedResourceReference(
                     project_name=resource_requirement.project_name,
                     resource_name=resource_requirement.resource_name,
@@ -296,7 +322,11 @@ class BoltInspector:
         """List required Services with the ArtifactReference requiring it and the ProvidedServiceReference."""
         return [
             (
-                ArtifactReference(project_name=bolt.project, artifact_name=artifact.name, version=bolt.version),
+                ArtifactReference(
+                    project_name=bolt.project,
+                    artifact_name=artifact.name,
+                    version=bolt.version,
+                ),
                 ProvidedServiceReference(
                     project_name=service_requirement.project_name,
                     artifact_name=service_requirement.artifact_name,
@@ -350,13 +380,18 @@ class BoltInspector:
 
         raise ProvidedResourceNotFound(
             ProvidedResourceReference(
-                project_name=resource_requirement.project_name, resource_name=resource_requirement.resource_name
+                project_name=resource_requirement.project_name,
+                resource_name=resource_requirement.resource_name,
             )
         )
 
     @classmethod
     def resolve_service_requirement(
-        cls, bolts: Iterable[Bolt], service_requirement: ServiceRequirement
+        cls,
+        bolts: Iterable[Bolt],
+        service_requirement: ServiceRequirement,
+        *,
+        externalized: bool = False,
     ) -> ResolvedProvidedService:
         """Resolves a `ServiceRequirement` in the specified `Environment`, returning a Service with the providing ArtifactReference. Raises UnknownService if dependency cannot be met."""
         for match in cls.list_provided_services(
@@ -364,6 +399,7 @@ class BoltInspector:
             project_names=[service_requirement.project_name],
             artifact_names=[service_requirement.artifact_name],
             service_names=[service_requirement.service_name],
+            externalized=externalized,
         ):
             return match
 
@@ -376,8 +412,105 @@ class BoltInspector:
         )
 
 
+def _destroy_resources(artifact: ArtifactReference, environment: Environment):
+    pass
+
+
+async def init_artifact_settings_to_write(
+    environment: Environment, bolt: Bolt, artifact: Artifact
+) -> list[tuple[BoundSetting, SettingValue]]:
+    if not artifact.execution:
+        return []
+
+    return [
+        (
+            BoundSetting(
+                ArtifactReference(
+                    project_name=bolt.project,
+                    artifact_name=artifact.name,
+                    version=bolt.version,
+                ),
+                setting,
+            ),
+            SETTING_DEFAULT_VALUES[setting.type],
+        )
+        for setting in artifact.execution.requires.secrets
+    ]
+
+
+# TODO: Put this somewhere else
+async def get_resource_settings_to_write(
+    transport: ResourceProviderTransport,
+    environment: Environment,
+    artifact: ArtifactReference,
+    resolved_provided_resource: ResolvedProvidedResource,
+    resource_requirement: ResourceRequirement,
+    *,
+    force_update: bool = False,
+) -> list[tuple[BoundSetting, SettingValue]]:
+    """Get BoundSettings and values to write."""
+    provided_resource = resolved_provided_resource.provided_resource
+    provided_resource_reference = resolved_provided_resource.provided_resource_reference
+    resource_instance = resource_requirement.resource_instance
+
+    resource_status = await transport.get_resource_status(environment, artifact, resource_instance)
+    if resource_status == ResourceStatus.NOT_FOUND:
+        # Resource not found, so provision it.
+        _, config_values, secret_values = await transport.provision_resource(environment, artifact, resource_instance)
+
+        # Verify all secrets are accounted for, as they ARE required.
+        missing_secrets = [s.name for s in provided_resource.secrets if secret_values.get(s.name) is None]
+        if missing_secrets:
+            raise Exception(f"NEEDED: f{missing_secrets}")
+
+    elif force_update:
+        # Resource exists; force an update.
+        _, config_values, secret_values = await transport.update_resource(environment, artifact, resource_instance)
+
+    else:
+        return []
+
+    return [
+        (
+            BoundSetting(artifact, setting, provided_resource_reference, resource_instance),
+            values[setting.name],
+        )
+        for settings, values in [
+            (provided_resource.configs, config_values),
+            (provided_resource.secrets, secret_values),
+        ]
+        for setting in settings
+    ]
+
+
+async def resolve_artifact_resource_requirements(adapter: InfrastructureAdapter, environment: Environment, bolt: Bolt):
+    resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource] = {}
+
+    for artifact in bolt.artifacts:
+        if not artifact.execution:
+            continue
+
+        for resource_requirement in artifact.execution.requires.resources:
+            provided_resource_reference = ProvidedResourceReference(
+                project_name=resource_requirement.project_name,
+                resource_name=resource_requirement.resource_name,
+            )
+
+            if provided_resource_reference not in resource_providers:
+                # Attempt to resolve from the Bolt first.
+                try:
+                    resolution = BoltInspector.resolve_resource_requirement([bolt], resource_requirement)
+
+                except ProvidedResourceNotFound:
+                    resolution = await adapter.resolve_resource_requirement(environment, resource_requirement)
+
+                resource_providers[provided_resource_reference] = resolution
+
+    return resource_providers
+
+
 async def resolve_artifact_requirements(
-    adapter: InfrastructureAdapter, environment: Environment, bolt: Bolt
+    adapter: InfrastructureAdapter, environment: Environment, bolt: Bolt, *, externalized: bool = False
 ) -> tuple[
     dict[ProvidedResourceReference, ResolvedProvidedResource],
     dict[ProvidedServiceReference, ResolvedProvidedService],
@@ -419,14 +552,18 @@ async def resolve_artifact_requirements(
             if provided_service_reference not in service_providers:
                 # Attempt to resolve from the Bolt first.
                 try:
-                    resolution = BoltInspector.resolve_service_requirement([bolt], service_requirement)
+                    resolution = BoltInspector.resolve_service_requirement(
+                        [bolt], service_requirement, externalized=externalized
+                    )
 
                 except ProvidedServiceNotFound:
-                    resolution = await adapter.resolve_service_requirement(environment, service_requirement)
+                    resolution = await adapter.resolve_service_requirement(
+                        environment, service_requirement, externalized=externalized
+                    )
 
                 service_providers[provided_service_reference] = resolution
 
     return resource_providers, service_providers
 
 
-EnvironmentWithAdapter = tuple[Environment, InfrastructureAdapter]
+type EnvironmentWithAdapter = tuple[Environment, InfrastructureAdapter]

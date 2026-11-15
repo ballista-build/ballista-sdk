@@ -1,5 +1,6 @@
+from collections.abc import AsyncGenerator
 from dataclasses import dataclass
-from typing import Protocol
+from typing import Any
 
 import aiohttp
 
@@ -10,13 +11,14 @@ from .provider import (
     ArtifactReference,
     Environment,
     ResourceAccess,
+    ResourceInstance,
     ResourceProvider,
     ResourceProviderStatus,
-    ResourceRequirement,
     ResourceStatus,
     SettingValue,
 )
 from .pydantic import (
+    ListResourcesResponseItem,
     ResourceProviderStatusResponse,
     ResourceStatusResponse,
     WriteResourceResponse,
@@ -24,23 +26,24 @@ from .pydantic import (
 
 
 @dataclass
-class ResourceProviderTransport(ResourceProvider, Protocol):
+class ResourceProviderTransport[R: ResourceInstance = ResourceInstance](ResourceProvider[R]):
     """Message transport to a remote `ResourceProvider` implementation.
 
-    Translates the `ResourceProvider` interface into remote calls, allowing an `InfrastructureAdapter` to communicate with a `ResourceProvider`."""
+    Translates the `ResourceProvider` interface into remote calls, allowing an `InfrastructureAdapter` to communicate with a `ResourceProvider`.
+    """
 
     provided_resource_reference: ProvidedResourceReference
 
 
 @dataclass
-class ExecResourceProviderTransport(ResourceProviderTransport):
+class ExecResourceProviderTransport[R: ResourceInstance = ResourceInstance](ResourceProviderTransport[R]):
     """Control resource lifecycle via command execution."""
 
     pass
 
 
 @dataclass
-class RESTResourceProviderTransport(ResourceProviderTransport):
+class RESTResourceProviderTransport[R: ResourceInstance = ResourceInstance](ResourceProviderTransport[R]):
     """Control resource lifecycle via REST API."""
 
     api_url: str
@@ -49,50 +52,42 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
     # TODO: It will probably make sense to have a shared instance of this for maximum pooling.
     # _aiohttp_session: aiohttp.ClientSession = field(default_factory=aiohttp.ClientSession)
 
-    def _request_headers(self):
-        # TODO: Auth and more
-        pass
-
     @property
     def _aiohttp_session(self) -> aiohttp.ClientSession:
-        return aiohttp.ClientSession()
+        return aiohttp.ClientSession(headers={"Authorization": "Bearer BALLISTA"})
 
-    def _request(
-        self,
-        method: str,
-        environment: Environment,
-        artifact: ArtifactReference | None = None,
-        resource_requirement: ResourceRequirement | None = None,
-    ):
-        if artifact:
-            json = resource_requirement.model_dump(mode="json") if resource_requirement else None
-
-            return self._aiohttp_session.request(
-                method,
-                f"{self.api_url}{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
-                json=json,
-            )
-
-        else:
-            return self._aiohttp_session.request(method, f"{environment.tier}/{environment.name}/")
-
-    def _environment_request(self, environment: Environment) -> dict:
-        return {"url": f"{environment.tier}/{environment.name}/"}
+    def _environment_request(self, environment: Environment) -> str:
+        return f"{self.api_url}{environment.tier}/{environment.name}/"
 
     def _artifact_request(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> dict:
-        json = resource_requirement.model_dump(mode="json") or None
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+    ) -> str:
+        return f"{self._environment_request(environment)}{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/"
 
-        return {
-            "url": f"{self.api_url}{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/",
-            "json": json,
-        }
+    def _artifact_resource_request(
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+    ) -> tuple[str, dict[str, Any] | None]:
+        json = resource.model_dump(mode="json") or None
+
+        return self._artifact_request(environment, artifact), json
+
+    def _access_request(
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+    ) -> str:
+        return self._artifact_request(environment, artifact)
 
     # Provider
     async def get_status(self, environment: Environment) -> tuple[ResourceProviderStatus, str | None]:
         try:
-            async with self._aiohttp_session.get(**self._environment_request(environment)) as aiohttp_response:
+            async with self._aiohttp_session.get(url=self._environment_request(environment)) as aiohttp_response:
                 response = ResourceProviderStatusResponse.model_validate_json(await aiohttp_response.read())
 
                 return response.status, response.detail
@@ -101,76 +96,108 @@ class RESTResourceProviderTransport(ResourceProviderTransport):
             return ResourceProviderStatus.UNAVAILABLE, None
 
     # Resource
-    async def list_resources(self, environment: Environment, artifact: ArtifactReference) -> list:
-        async with self._aiohttp_session.get("") as response:
-            pass
+    async def list_resources(
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        *,
+        page_number: int,
+        page_size: int,
+        resource: R | None = None,
+        minimum_access: ResourceAccess = ResourceAccess.NONE,
+    ) -> AsyncGenerator[tuple[R, ResourceStatus, ResourceAccess, str | None]]:
+        url = f"{self.api_url}{environment.tier}/{environment.name}/{artifact.project_name}/{artifact.artifact_name}/{artifact.version}/"
+        params = {"page_number": page_number, "page_size": page_size}
 
-        return []
+        try:
+            async with self._aiohttp_session.get(
+                url=self._artifact_request(environment, artifact),
+                params=params,
+            ) as aiohttp_response:
+                while line := await aiohttp_response.content.readline():
+                    response = ListResourcesResponseItem[R].model_validate_json(line)
+
+                    yield (
+                        response.resource,
+                        response.status,
+                        response.access,
+                        response.detail,
+                    )
+
+        except aiohttp.ClientError:
+            return
 
     async def get_resource_status(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> tuple[ResourceStatus, str | None]:
-        async with self._aiohttp_session.get(
-            **self._artifact_request(environment, artifact, resource_requirement)
-        ) as aiohttp_response:
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+    ) -> tuple[ResourceStatus, ResourceAccess, str | None]:
+        url, json = self._artifact_resource_request(environment, artifact, resource)
+
+        async with self._aiohttp_session.get(url=url, json=json) as aiohttp_response:
             response = ResourceStatusResponse.model_validate_json(await aiohttp_response.read())
 
-            return response.status, response.detail
+        return response.status, response.access, response.detail
 
     async def provision_resource(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
-        async with self._aiohttp_session.post(
-            **self._artifact_request(environment, artifact, resource_requirement)
-        ) as aiohttp_response:
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+    ) -> tuple[ResourceAccess, dict[str, SettingValue], dict[str, SettingValue]]:
+        url, json = self._artifact_resource_request(environment, artifact, resource)
+
+        async with self._aiohttp_session.post(url=url, json=json) as aiohttp_response:
             response = WriteResourceResponse.model_validate_json(await aiohttp_response.read())
 
-            return response.configs, response.secrets
-
-        raise ProvidedResourceException(self.resource_provider.provided_resource_reference)
+        return response.access, response.configs, response.secrets
 
     async def update_resource(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> tuple[dict[str, SettingValue], dict[str, SettingValue]]:
-        async with self._aiohttp_session.put(
-            **self._artifact_request(environment, artifact, resource_requirement)
-        ) as aiohttp_response:
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+    ) -> tuple[ResourceAccess, dict[str, SettingValue], dict[str, SettingValue]]:
+        url, json = self._artifact_resource_request(environment, artifact, resource)
+
+        async with self._aiohttp_session.put(url=url, json=json) as aiohttp_response:
             response = WriteResourceResponse.model_validate_json(await aiohttp_response.read())
 
-            return response.configs, response.secrets
+        return response.access, response.configs, response.secrets
 
-        raise ProvidedResourceException(self.resource_provider.provided_resource_reference)
+    async def triggers_reprovision(
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+    ) -> bool:
+        return False
 
-    # Resource Access
-    async def get_resource_access(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ) -> ResourceAccess:
-        raise ProvidedResourceException(self.provided_resource_reference)
-
-    async def grant_resource_access(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
+    async def destroy_resource(
+        self,
+        environment: Environment,
+        artifact: ArtifactReference,
+        resource: R,
+        *,
+        force: bool = False,
     ):
-        raise ProvidedResourceException(self.provided_resource_reference)
-
-    async def revoke_resource_access(
-        self, environment: Environment, artifact: ArtifactReference, resource_requirement: ResourceRequirement
-    ):
-        raise ProvidedResourceException(self.provided_resource_reference)
+        pass
 
 
-class GRPCResourceProviderTransport(ResourceProviderTransport):
+class GRPCResourceProviderTransport[R: ResourceInstance](ResourceProviderTransport[R]):
     """Control resource lifecycle via GRPC."""
 
     pass
 
 
-class TCPResourceProviderTransport(ResourceProviderTransport):
+class TCPResourceProviderTransport[R: ResourceInstance](ResourceProviderTransport[R]):
     """Control resource lifecycle via TCP socket."""
 
     pass
 
 
-class QueueResourceProviderTransport(ResourceProviderTransport):
+class QueueResourceProviderTransport[R: ResourceInstance](ResourceProviderTransport[R]):
     """Control resource lifecycle via message queue."""
 
     pass

@@ -590,7 +590,7 @@ def resource_provider_bolt_resources():
                 "kind": "Deployment",
                 "metadata": {
                     "annotations": {
-                        "ballista.build/artifact-json": '{"name":"resource","execution":{"provides":{"resources":[{"name":"resource","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"test-string","description":"Test string config.","title":"Test String","type":"string"}],"instance_id_fields":["name"],"linked":{"configs":["test-uint32"],"secrets":["test-bool"],"services":[{"postgres":{"server":"postgres"}}]},"prefix":"RESOURCE","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of resource","title":"Name","type":"string"}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]},"requires":{"configs":[{"name":"test-uint32","description":"Test unsigned int and linked config.","title":"Test Number","type":"uint32"}],"secrets":[{"name":"test-bool","description":"Test bool and linked secret.","title":"Test Bool","type":"bool"}],"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
+                        "ballista.build/artifact-json": '{"name":"resource","execution":{"provides":{"resources":[{"name":"resource","description":"Resource Description","title":"Resource Provider Resource","configs":[{"name":"test-string","description":"Test string config.","title":"Test String","type":"string"}],"linked":{"configs":["test-uint32"],"secrets":["test-bool"],"services":[{"postgres":{"server":"postgres"}}]},"prefix":"RESOURCE","requirements":{"properties":{"name":{"type":"string"}},"required":["name"]},"secrets":[{"name":"name","description":"Name of resource","title":"Name","type":"string"}],"transport":{"rest":{"service":"rest","path":"/resources"}}}],"services":[{"name":"rest","http":8000}]},"requires":{"configs":[{"name":"test-uint32","description":"Test unsigned int and linked config.","title":"Test Number","type":"uint32"}],"secrets":[{"name":"test-bool","description":"Test bool and linked secret.","title":"Test Bool","type":"bool"}],"services":[{"postgres":{"server":"postgres"}}]}},"type":{"docker_image":{"image":"hello-world:latest"}}}'
                     },
                     "labels": {
                         "app.kubernetes.io/instance": "resource-1",
@@ -770,13 +770,13 @@ async def test_generate_resources(
 
 
 @pytest.mark.integration
-async def test_determine_execution_parameters(
+async def test_get_execution_parameters(
     bolt: Bolt,
     environment_with_kubernetes_api_adapter: tuple[KubernetesAPIEnvironment, KubernetesAPIInfrastructureAdapter],
 ):
     environment, kubernetes_api_adapter = environment_with_kubernetes_api_adapter
 
-    execution_parameters = await kubernetes_api_adapter.determine_execution_parameters(bolt, environment)
+    execution_parameters = await kubernetes_api_adapter.get_execution_parameters(bolt, environment)
 
     expected_execution_parameters = ExecutionParameters.model_validate(
         {"environments": {"test": {"external_service": {"host": "ballista.build", "secure": True}}}}

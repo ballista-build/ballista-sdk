@@ -21,14 +21,28 @@ def simple_docker_compose_project():
     return DockerComposeProject(
         name="simple",
         networks={
-            "project-simple": {"internal": True, "name": "project-simple"},
             "env-test": {"internal": True, "name": "env-test"},
             "external-test.ballista.build": {"name": "external-test.ballista.build"},
         },
         services={
+            "ballista-resource-postgres-database": DockerComposeService(
+                depends_on={"postgres-resource-providers": {"condition": "service_healthy"}},
+                provider={
+                    "options": {
+                        "artifact-name": "api",
+                        "artifact-project": "simple",
+                        "artifact-version": "1",
+                        "resource-project": "postgres",
+                        "requirement": '{"name":"testdatabase","name-alias":"ALIASED_DATABASE","host-alias":"RENAMED_HOST","port-alias":"OTHER_PORT","secure-alias":"RETITLED_SECURE"}',
+                        "resource-name": "database",
+                    },
+                    "type": "ballista",
+                },
+            ),
             "simple-api": DockerComposeService(
                 container_name="simple-api",
                 depends_on={
+                    "ballista-resource-postgres-database": {"condition": "service_healthy"},
                     "postgres-resource-providers": {"condition": "service_healthy"},
                     "postgres-server": {"condition": "service_healthy"},
                 },
@@ -58,7 +72,6 @@ def simple_docker_compose_project():
                 },
                 image="hello-world:latest",
                 networks={
-                    "project-simple": {},
                     "env-test": {},
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },
@@ -84,7 +97,6 @@ def small_app_docker_compose_project() -> DockerComposeProject:
         networks={
             "env-test": {"internal": True, "name": "env-test"},
             "external-test.ballista.build": {"name": "external-test.ballista.build"},
-            "project-small-app": {"internal": True, "name": "project-small-app"},
         },
         services={
             "small-app-backend": DockerComposeService(
@@ -102,7 +114,6 @@ def small_app_docker_compose_project() -> DockerComposeProject:
                 networks={
                     "env-test": {},
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
-                    "project-small-app": {},
                 },
                 ports=[{"name": "api", "published": "8000", "target": "8000"}],
             ),
@@ -125,7 +136,6 @@ def small_app_docker_compose_project() -> DockerComposeProject:
                 networks={
                     "env-test": {},
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
-                    "project-small-app": {},
                 },
                 ports=[{"name": "http", "published": "80", "target": "80"}],
             ),
@@ -140,12 +150,26 @@ def resource_provider_docker_compose_project():
         networks={
             "env-test": {"internal": True, "name": "env-test"},
             "external-test.ballista.build": {"name": "external-test.ballista.build"},
-            "project-resource-provider": {"internal": True, "name": "project-resource-provider"},
         },
         services={
+            "ballista-resource-resource-provider-resource": DockerComposeService(
+                depends_on={"resource-provider-resource": {"condition": "service_healthy"}},
+                provider={
+                    "options": {
+                        "artifact-name": "dependent",
+                        "artifact-project": "resource-provider",
+                        "artifact-version": "1",
+                        "requirement": '{"name":"mine","name-alias":"DIFFERENT_NAME","host-alias":"DIFFERENT_HOST","port-alias":"DIFFERENT_PORT","secure-alias":"DIFFERENT_SECURE"}',
+                        "resource-name": "resource",
+                        "resource-project": "resource-provider",
+                    },
+                    "type": "ballista",
+                },
+            ),
             "resource-provider-dependent": DockerComposeService(
                 container_name="resource-provider-dependent",
                 depends_on={
+                    "ballista-resource-resource-provider-resource": {"condition": "service_healthy"},
                     "postgres-server": {"condition": "service_healthy"},
                     "resource-provider-resource": {"condition": "service_healthy"},
                 },
@@ -161,7 +185,7 @@ def resource_provider_docker_compose_project():
                     {"format": "raw", "path": "resource-provider-dependent-secrets.env", "required": True},
                 ],
                 image="hello-world:latest",
-                networks={"env-test": {}, "project-resource-provider": {}},
+                networks={"env-test": {}},
             ),
             "resource-provider-resource": DockerComposeService(
                 container_name="resource-provider-resource",
@@ -187,7 +211,6 @@ def resource_provider_docker_compose_project():
                 ],
                 image="hello-world:latest",
                 networks={
-                    "project-resource-provider": {},
                     "env-test": {},
                     "external-test.ballista.build": {"aliases": ["test.ballista.build"]},
                 },

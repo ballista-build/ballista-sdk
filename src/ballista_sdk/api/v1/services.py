@@ -40,7 +40,7 @@ class ProvidedService(BaseNamedModel):
 
 
 class VirtualProvidedService(BaseModel):
-    """A static IPv4 address for a ProvidedService, pretending to be executed in an Artifact."""
+    """A static IPv4 address for a ProvidedService, pretending to be executed in an Artifact. The address is expected to be an external address."""
 
     artifact: str
     ipv4_address: str

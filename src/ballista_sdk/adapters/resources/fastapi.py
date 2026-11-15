@@ -7,20 +7,19 @@ try:
 except ImportError:
     HAS_FASTAPI = False
 
-from typing import Annotated
+from typing import Annotated, AsyncGenerator
 
 from ballista_sdk.adapters.primitives import ArtifactReference
-from ballista_sdk.api.v1 import Environment, EnvironmentTier
+from ballista_sdk.api.v1 import Environment, EnvironmentTier, ResourceInstance
 
-from ..exceptions import ArtifactResourceAlreadyExists, ArtifactResourceNotFound
+from ..exceptions import ResourceAlreadyExists, ResourceNotFound
 from .provider import (
     ResourceAccess,
     ResourceProvider,
     ResourceProviderStatus,
-    ResourceRequirement,
     ResourceStatus,
 )
-from .pydantic import ResourceAccessResponse, ResourceProviderStatusResponse, ResourceStatusResponse
+from .pydantic import ListResourcesResponseItem, ResourceProviderStatusResponse, ResourceStatusResponse
 
 
 def _get_environment(environment_tier: EnvironmentTier, environment_name: str) -> Environment:
@@ -43,21 +42,23 @@ DepArtifact = Annotated[ArtifactReference, Depends(_get_artifact_reference)]
 
 # Map a ResourceProvider to a FastAPI APIRouter implementing the Ballista Resource Provider REST API
 # TODO: Update this to use PEP 747 TypeForm!
-def resource_provider_to_apirouter[Requirement: ResourceRequirement](
+def resource_provider_to_apirouter[R: ResourceInstance](
     resource_name: str,
-    resource_requirement_type: type[Requirement],
-    resource_provider: ResourceProvider,
+    resource_instance_type: type[R],
+    resource_provider: ResourceProvider[R],
 ) -> APIRouter:
+    """Creates a FastAPI APIRouter that is bound to a specific Ballista ResourceProvider."""
     # Base router for resource name plus environment info.
     provider_router = APIRouter(
         prefix=f"/{resource_name}" + "/{environment_tier}/{environment_name}",
         tags=[resource_name],
     )
 
-    @provider_router.get("/")
+    # TODO: AUTH
+
+    @provider_router.get("")
     async def get_status(environment: DepEnvironment, response: Response) -> ResourceProviderStatusResponse:
         """Get the status of the Resource Provider APIs."""
-
         status, message = await resource_provider.get_status(environment)
 
         if status != ResourceProviderStatus.AVAILABLE:
@@ -68,91 +69,69 @@ def resource_provider_to_apirouter[Requirement: ResourceRequirement](
     # Resource router
     resource_router = APIRouter(prefix="/{artifact_project_name}/{artifact_name}/{artifact_version}")
 
-    @resource_router.get("/")
+    @resource_router.get("/resources")
+    async def list_resources(
+        environment: DepEnvironment,
+        artifact: DepArtifact,
+        page_number: int = 1,
+        page_size: int = 20,
+    ) -> AsyncGenerator[ListResourcesResponseItem[resource_instance_type]]:
+        result = resource_provider.list_resources(
+            environment,
+            artifact,
+            page_number=page_number,
+            page_size=page_size,
+            minimum_access=ResourceAccess.OWNER,
+        )
+
+        async for list_resource, list_status, list_access, list_detail in result:
+            yield ListResourcesResponseItem(
+                resource=list_resource,
+                status=list_status,
+                access=list_access,
+                detail=list_detail,
+            )
+
+    @resource_router.get("")
     async def get_resource_status(
         environment: DepEnvironment,
         artifact: DepArtifact,
-        resource_requirement: Annotated[resource_requirement_type, Query()],
+        resource: Annotated[resource_instance_type, Query()],
         response: Response,
     ) -> ResourceStatusResponse:
-        status, message = await resource_provider.get_resource_status(environment, artifact, resource_requirement)
+        status, access, message = await resource_provider.get_resource_status(environment, artifact, resource)
 
         if status == ResourceStatus.NOT_FOUND:
             response.status_code = fastapi_status.HTTP_404_NOT_FOUND
         elif status != ResourceStatus.AVAILABLE:
             response.status_code = fastapi_status.HTTP_503_SERVICE_UNAVAILABLE
 
-        return ResourceStatusResponse(status=status, detail=message)
+        return ResourceStatusResponse(status=status, access=access, detail=message)
 
-    @resource_router.post("/")
-    async def provision_resource(
-        environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
-    ):
-        """Provisions a new resource. Grants ownership access to the Project + Artifact."""
-
+    @resource_router.post("")
+    async def provision_resource(environment: DepEnvironment, artifact: DepArtifact, resource: R):
+        """Provisions a new resource."""
         try:
-            await resource_provider.provision_resource(environment, artifact, resource_requirement)
+            await resource_provider.provision_resource(environment, artifact, resource)
 
-        except ArtifactResourceAlreadyExists as e:
+        except ResourceAlreadyExists[R] as e:
             raise fastapi_exceptions.HTTPException(status_code=fastapi_status.HTTP_409_CONFLICT, detail=str(e))
 
         except Exception as e:
             pass
 
-    @resource_router.put("/")
-    async def update_resource(
-        environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
-    ):
+    @resource_router.put("")
+    async def update_resource(environment: DepEnvironment, artifact: DepArtifact, resource: resource_instance_type):
         try:
-            await resource_provider.update_resource(environment, artifact, resource_requirement)
+            await resource_provider.update_resource(environment, artifact, resource)
 
-        except ArtifactResourceNotFound as e:
+        except ResourceNotFound[R] as e:
             raise fastapi_exceptions.HTTPException(status_code=fastapi_status.HTTP_404_NOT_FOUND, detail=str(e))
 
-    @resource_router.delete("/")
-    async def destroy_resource(
-        environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
-    ):
+    @resource_router.delete("")
+    async def destroy_resource(environment: DepEnvironment, artifact: DepArtifact, resource: resource_instance_type):
         pass
 
-    @resource_router.post("/copy/")
-    async def copy_resource(
-        environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
-    ):
-        pass
-
-    # Resource Access
-    access_router = APIRouter(prefix="/access")
-
-    @access_router.get("/")
-    async def get_resource_access(
-        environment: DepEnvironment,
-        artifact: DepArtifact,
-        resource_requirement: Annotated[resource_requirement_type, Query()],
-        response: Response,
-    ) -> ResourceAccessResponse:
-        """Get an Artifact's `ResourceAccess` level to a Resource."""
-
-        access = await resource_provider.get_resource_access(environment, artifact, resource_requirement)
-
-        if access == ResourceAccess.NONE:
-            response.status_code = fastapi_status.HTTP_404_NOT_FOUND
-
-        return ResourceAccessResponse(access=access)
-
-    @access_router.post("/")
-    async def grant_resource_access(
-        environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
-    ):
-        pass
-
-    @access_router.delete("/")
-    async def revoke_resource_access(
-        environment: DepEnvironment, artifact: DepArtifact, resource_requirement: resource_requirement_type
-    ):
-        pass
-
-    resource_router.include_router(access_router)
     provider_router.include_router(resource_router)
 
     return provider_router

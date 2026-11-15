@@ -410,7 +410,7 @@ def _generate_deployment(
         container["resources"] = pod_resources
 
     # Required Resources
-    resource_settings = []
+    resource_settings: list[Setting] = []
     resource_service_requirements = []
     for resource_requirement in artifact_execution.requires.resources:
         provided_resource_reference = ProvidedResourceReference(
@@ -422,7 +422,7 @@ def _generate_deployment(
         resource_settings.extend(provided_resource.secrets)
 
         requirement_prefix = resource_requirement.prefix or provided_resource.prefix
-        resource_requirement_requirement = resource_requirement.resource_requirement
+        resource_requirement_requirement = resource_requirement.resource_instance
         aliased_data = resource_requirement_requirement.__pydantic_extra__ or {}
 
         # Re-alias the linked services

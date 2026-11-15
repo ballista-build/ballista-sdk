@@ -93,7 +93,25 @@ def postgres_bolt() -> Bolt:
                             ],
                             "services": [{"name": "rest", "http": 8000}],
                         },
-                        "requires": {"services": [{"postgres": {"server": "postgres"}}]},
+                        "requires": {
+                            "secrets": [
+                                {
+                                    "alias": "POSTGRES_USERNAME",
+                                    "description": "Username for service account.",
+                                    "name": "username",
+                                    "title": "Service Account Username",
+                                    "type": "string",
+                                },
+                                {
+                                    "alias": "POSTGRES_PASSWORD",
+                                    "description": "Password for service account.",
+                                    "name": "password",
+                                    "title": "Service Account Password",
+                                    "type": "string",
+                                },
+                            ],
+                            "services": [{"postgres": {"server": "postgres"}}],
+                        },
                     },
                     "type": {"docker_image": {"image": ""}},
                 },
