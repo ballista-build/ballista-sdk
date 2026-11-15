@@ -26,8 +26,8 @@ class ProvidedResourceRequirementSchema(Schema, frozen=True):
     pass
 
 
-class ResourceRequirementRequirement(BaseModel):
-    """Requirement data for a ResourceRequirement."""
+class ResourceInstance(BaseModel):
+    """Instance of data for a ResourceRequirement."""
 
     model_config = {"extra": "allow"}
 
@@ -71,13 +71,6 @@ class ProvidedResource(BaseNamedModel):
         list[ProvidedResourceConfig],
         Field(description="Configs that are provisioned and provided to the Artifact."),
     ] = []
-    instance_id_fields: Annotated[
-        list[str],
-        Field(
-            description="List of field names from Requirements schema that determine resource uniqueness.",
-            title="instance_id Fields",
-        ),
-    ] = []
     linked: Annotated[ProvidedResourceLinkedItems, Field(default_factory=ProvidedResourceLinkedItems)]
     prefix: Annotated[str, Field(description="Default prefix of values received by Artifact.")]
     requirements: Annotated[
@@ -99,23 +92,20 @@ class ProvidedResource(BaseNamedModel):
         ),
     ] = None
 
-    def get_requirement_instance(self, requirement) -> list[str] | None:
-        if self.instance_id_fields:
-            return [str(getattr(requirement, field)) for field in self.instance_id_fields]
-
-    def get_requirements_model(self, project_title: str) -> type[ResourceRequirementRequirement]:
+    def get_instance_model(self, project_title: str) -> type[ResourceInstance]:
         return _schema_to_model(
             self.prefix,
             self.requirements,
             self.configs + self.secrets,
-            f"{project_title}{self.name}ResourceRequirement",
+            f"{project_title}{self.name}ResourceInstance",
         )
 
 
 class VirtualProvidedResource(BaseModel):
-    """A static IPv4 address for a ProvidedResource, pretending to be executed in an Artifact.
+    """A static IPv4 address for a ProvidedResource, pretending to be executed in an Artifact. The address is expected to be external.
 
-    The ProvidedResource.transport is required."""
+    The ProvidedResource.transport is required.
+    """
 
     artifact: str
     ipv4_address: str
@@ -133,7 +123,7 @@ DATATYPE_MAP = {
 
 def _schema_to_model(
     prefix: str, schema: Schema, settings: list[ProvidedResourceSetting], model_name: str
-) -> type[ResourceRequirementRequirement]:
+) -> type[ResourceInstance]:
     type = schema.type or DataType.OBJECT
     if type == DataType.NULL:
         raise ValueError()
@@ -169,7 +159,7 @@ def _schema_to_model(
                 str | None, Field(description=f'Alias the "{setting.name}" envvar.', default=None)
             ]
 
-        return create_model(model_name, **fields, __base__=ResourceRequirementRequirement)
+        return create_model(model_name, **fields, __base__=ResourceInstance)
 
     else:
         raise ValueError("NYI")
@@ -259,7 +249,7 @@ class ResourceRequirement(BaseOneOfModel):
 
     model_config = {"extra": "allow"}
 
-    __pydantic_extra__: dict[str, str | dict[str, ResourceRequirementRequirement]]
+    __pydantic_extra__: dict[str, str | dict[str, ResourceInstance]]
 
     @property
     def prefix(self) -> None:
@@ -284,7 +274,7 @@ class ResourceRequirement(BaseOneOfModel):
         raise Exception(self.__pydantic_extra__)
 
     @property
-    def resource_requirement(self) -> ResourceRequirementRequirement:
+    def resource_instance(self) -> ResourceInstance:
         if self.__pydantic_extra__:
             for resources in self.__pydantic_extra__.values():
                 if isinstance(resources, dict):
@@ -293,6 +283,6 @@ class ResourceRequirement(BaseOneOfModel):
 
                     raise ValueError(self.__pydantic_extra__)
 
-                return ResourceRequirementRequirement()
+                return ResourceInstance()
 
         raise Exception(self.__pydantic_extra__)

@@ -1,7 +1,0 @@
-{
-  "languages": {
-    "Python": {
-      "language_servers": ["pyrefly", "ruff"],
-    },
-  },
-}

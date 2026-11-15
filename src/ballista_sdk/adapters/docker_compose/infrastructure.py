@@ -72,9 +72,11 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         # Create a temporary file filled with docker compose YAML and use that to call docker compose commands
         with tempfile.NamedTemporaryFile() as f:
             docker_compose_dict = docker_compose_project.model_dump(exclude_none=True, exclude_unset=True)
+            # print(yaml.dump(docker_compose_dict, indent=2))
             yaml.dump(docker_compose_dict, stream=f, encoding="utf-8", indent=2)
 
             args = ["docker", "compose", "--project-directory", os.getcwd(), "--file", f.name, *commands]
+
             subprocess.run(args)
 
     async def deploy(self, bolt: Bolt, environment: Environment):
@@ -82,7 +84,8 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
         execution_parameters = await self.get_execution_parameters(bolt, environment)
 
-        docker_compose_project = self.generate_docker_compose_project_from_bolt(
+        # This generated Docker Compose Project will have depends_on entries for resources
+        deploy_project = self.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,
             execution_parameters=execution_parameters,
@@ -90,9 +93,22 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             service_providers=service_providers,
         )
 
+        deploy_dict = deploy_project.model_dump()
+
+        # Just go ahead and brute force start all our "platform" bolts.
+        for platform_bolt in self._bolts:
+            platform_project = self.generate_docker_compose_project_from_bolt(
+                environment=environment,
+                bolt=platform_bolt,
+                execution_parameters=execution_parameters,
+                resource_providers=resource_providers,
+                service_providers=service_providers,
+            )
+            raise Exception(deploy_dict | platform_project.model_dump())
+
         commands = ["up", "--detach", "--remove-orphans"]
 
-        self._call_compose(docker_compose_project, commands)
+        self._call_compose(deploy_project, commands)
 
     async def get_execution_parameters(self, bolt: Bolt, environment: Environment) -> ExecutionParameters:
         return self.execution_parameters
@@ -105,7 +121,8 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
         execution_parameters = await self.get_execution_parameters(bolt, environment)
 
-        docker_compose_project = self.generate_docker_compose_project_from_bolt(
+        # This generated Docker Compose Project will have depends_on entries for resources
+        deploy_project = self.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,
             execution_parameters=execution_parameters,
@@ -113,9 +130,17 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             service_providers=service_providers,
         )
 
-        commands = ["up", "--build", "--watch", "--remove-orphans"]
+        # Just go ahead and brute force start all our "platform" bolts.
+        platform_bolts = self._bolts  # self._bolts
+        for platform_bolt in platform_bolts:
+            self.add_bolt_to_compose_project(
+                deploy_project, environment, platform_bolt, execution_parameters, resource_providers, service_providers
+            )
 
-        self._call_compose(docker_compose_project, commands)
+        commands = ["up", "--build", "--remove-orphans"]
+        # commands = ["events"]
+
+        self._call_compose(deploy_project, commands)
 
     def _destroy_resources(self, artifact: ArtifactReference, environment: Environment):
         pass
@@ -155,7 +180,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
             self.configs_adapter.write(
                 environment,
-                BoundSetting(config, artifact=artifact, provided_resource=provided_resource_reference),
+                BoundSetting(setting=config, artifact=artifact, provided_resource=provided_resource_reference),
                 configs[config.name],
             )
 
@@ -168,7 +193,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
 
             self.secrets_adapter.write(
                 environment,
-                BoundSetting(secret, artifact=artifact, provided_resource=provided_resource_reference),
+                BoundSetting(setting=secret, artifact=artifact, provided_resource=provided_resource_reference),
                 secrets[secret.name],
             )
 
@@ -224,12 +249,70 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         artifact_names: Collection[str] | None = None,
         service_names: Collection[str] | None = None,
         service_types: Collection[ServiceType] | None = None,
+        externalized: bool = False,
     ) -> list[ResolvedProvidedService]:
         """List Provided Services with a providing ArtifactReference in the specified Environment."""
 
-        return BoltInspector.list_provided_services(
-            self._bolts, project_names=project_names, artifact_names=artifact_names, service_names=service_names
-        )
+        # Only supports a single environment
+        environment = next(iter(environments))
+        bolt_provided_virtual_services = []
+        artifact_provided_services = []
+
+        for bolt in self._bolts:
+            if project_names and bolt.project not in project_names:
+                continue
+
+            bolt_provided_virtual_services.extend(
+                [
+                    ResolvedProvidedService(
+                        provided_service=vps.service,
+                        artifact_reference=ArtifactReference(
+                            project_name=bolt.project,
+                            artifact_name=vps.artifact,
+                            version=bolt.version,
+                        ),
+                        host=vps.ipv4_address,
+                    )
+                    for vps in bolt.provides.services
+                    if (not artifact_names or vps.artifact in artifact_names)
+                    and (not service_names or vps.service.name in service_names)
+                ]
+            )
+
+            execution_parameters = await self.get_execution_parameters(bolt, environment)
+            print("params", execution_parameters)
+            for artifact in bolt.artifacts:
+                if artifact_names and artifact.name not in artifact_names:
+                    continue
+
+                if not artifact.execution or not artifact.execution.provides:
+                    continue
+
+                artifact_execution_parameters = execution_parameters.params_for_artifact(environment, bolt, artifact)
+
+                for service in artifact.execution.provides.services:
+                    if service_names and service.name not in service_names:
+                        continue
+
+                    host = service.name
+                    if externalized:
+                        externalization = artifact_execution_parameters.external_services.get(service.name)
+                        if externalization is None or not externalization.host:
+                            continue
+
+                        host = externalization.host
+
+                    artifact_provided_services.append(
+                        ResolvedProvidedService(
+                            provided_service=service,
+                            artifact_reference=ArtifactReference(
+                                project_name=bolt.project, artifact_name=artifact.name, version=bolt.version
+                            ),
+                            host=host,
+                        )
+                    )
+
+        return bolt_provided_virtual_services + artifact_provided_services
 
     async def list_resource_requirements(
         self,
@@ -272,10 +355,27 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             service_types=service_types,
         )
 
+    async def get_bolts_for_resources(self, environment: Environment, bolt):
+        bolts = []
+
+        deque = []
+        for a in bolt.artifacts:
+            pass
+
+        return bolts
+
+    async def provision_resources(self, environment: Environment, artifact, resource_requirement) -> list:
+        # Turn on loaded bolts that are needed for resource providers
+        # Call
+        return []
+
     async def resolve_artifact_reference(
         self, environment: Environment, artifact_reference: ArtifactReference
     ) -> Artifact:
         return BoltInspector.resolve_artifact_reference(self._bolts, artifact_reference)
+
+    async def resolve_bolt_reference(self, environment: Environment, bolt_reference: BoltReference) -> Bolt:
+        return BoltInspector.resolve_bolt_reference(self._bolts, bolt_reference)
 
     async def resolve_resource_requirement(
         self, environment: Environment, resource_requirement: ResourceRequirement
@@ -295,7 +395,7 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         )
 
     async def resolve_service_requirement(
-        self, environment: Environment, service_requirement: ServiceRequirement
+        self, environment: Environment, service_requirement: ServiceRequirement, *, externalized: bool = False
     ) -> ResolvedProvidedService:
         # Get the project_name of the requirement points to and compare our services
         requirement_project_name = service_requirement.project_name
@@ -307,9 +407,13 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             project_names=[requirement_project_name],
             artifact_names=[requirement_artifact_name],
             service_names=[requirement_service_name],
+            externalized=externalized,
         )
-        for resolved_provided_service in provided_services:
-            return resolved_provided_service
+
+        print("provided services", provided_services)
+
+        if provided_services and (provided_service := next(iter(provided_services))):
+            return provided_service
 
         raise ProvidedServiceNotFound(
             ProvidedServiceReference(
@@ -323,7 +427,9 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
         resource_providers, service_providers = await resolve_artifact_requirements(self, environment, bolt)
 
         execution_parameters = await self.get_execution_parameters(bolt, environment)
-        docker_compose_project = self.generate_docker_compose_project_from_bolt(
+
+        # This generated Docker Compose Project will have depends_on entries for resources
+        deploy_project = self.generate_docker_compose_project_from_bolt(
             environment=environment,
             bolt=bolt,
             execution_parameters=execution_parameters,
@@ -331,7 +437,14 @@ class DockerComposeInfrastructureAdapter(InfrastructureAdapter, DockerComposeInf
             service_providers=service_providers,
         )
 
-        self._call_compose(docker_compose_project, ["down"])
+        # Just go ahead and brute force start all our "platform" bolts.
+        platform_bolts = self._bolts
+        for platform_bolt in platform_bolts:
+            self.add_bolt_to_compose_project(
+                deploy_project, environment, platform_bolt, execution_parameters, resource_providers, service_providers
+            )
+
+        self._call_compose(deploy_project, ["down"])
 
     async def transport_resource_provider(
         self, environment: Environment, resolved_provided_resource: ResolvedProvidedResource

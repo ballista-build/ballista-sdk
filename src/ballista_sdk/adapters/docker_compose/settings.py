@@ -16,6 +16,10 @@ from ballista_sdk.api.v1 import (
 from .generation import generate_artifact_setting_envfile_filename, generate_resource_setting_envfile_filename
 
 
+def _envize(v: str) -> str:
+    return v.upper().replace("-", "_")
+
+
 @dataclass
 class DockerComposeSettingsAdapter(SettingsAdapter):
     _loaded: dict[str, dict[str, str]] = field(default_factory=dict)
@@ -52,7 +56,7 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
         if obj is None:
             raise ValueError()
 
-        obj.pop(bound_setting.setting.name, None)
+        obj.pop(_envize(bound_setting.setting.name), None)
         self._pending_writes[filename] = obj
 
     def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
@@ -62,7 +66,7 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
         if obj is None:
             return False
 
-        return bound_setting.setting.name in obj
+        return _envize(bound_setting.setting.name) in obj
 
     def _read_object(self, filename: str) -> dict[str, str] | None:
         if os.path.exists(filename):
@@ -80,7 +84,7 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
         filename = self._get_bound_setting_env_filename(environment, bound_setting)
 
         obj = self._read_cached_object(filename)
-        if obj is None or (value := obj[bound_setting.setting.name]) is None:
+        if obj is None or (value := obj[_envize(bound_setting.setting.name)]) is None:
             raise ValueError()
 
         match bound_setting.setting.type:
@@ -114,6 +118,6 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
             encoded_value = base64.b64encode(cast(bytes, value)).decode()
         else:
             encoded_value = str(value)
-        obj[bound_setting.setting.name] = encoded_value
+        obj[_envize(bound_setting.setting.name)] = encoded_value
 
         self._pending_writes[filename] = obj

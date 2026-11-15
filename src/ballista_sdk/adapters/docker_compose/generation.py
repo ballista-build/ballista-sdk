@@ -62,7 +62,7 @@ class DockerComposeProject(BaseModel):
     name: str
     networks: dict[str, dict[str, Any]]
     secrets: dict[str, Any] = {}
-    services: dict[str, DockerComposeService]
+    services: dict[str, DockerComposeService] = {}
     volumes: dict[str, DockerComposeProjectVolume] = {}
 
 
@@ -105,28 +105,24 @@ class DockerComposeInfrastructureGenerator:
             setting.sensitive,
         )
 
-    def generate_docker_compose_project_from_bolt(
+    def add_bolt_to_compose_project(
         self,
+        compose_project: DockerComposeProject,
         environment: Environment,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
         resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
         service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
-    ) -> DockerComposeProject:
-        """Generate a docker compose project."""
-
-        networks = {f"env-{environment.name}": {"internal": True, "name": f"env-{environment.name}"}}
-        compose_project = DockerComposeProject(name=bolt.project, networks=networks, services={}, volumes={})
+    ):
+        networks = compose_project.networks
+        services = compose_project.services
+        volumes = compose_project.volumes
 
         for artifact in bolt.artifacts:
             if not (artifact_execution := artifact.execution):
                 continue
 
             artifact_ref_name = f"{bolt.project}-{artifact.name}"
-
-            project_network_name = f"project-{bolt.project}"
-            if project_network_name not in networks:
-                compose_project.networks[project_network_name] = {"internal": True, "name": project_network_name}
 
             # We can generate this artifact!
             artifact_execution_parameters = execution_parameters.params_for_artifact(
@@ -142,24 +138,81 @@ class DockerComposeInfrastructureGenerator:
                 service_providers=service_providers,
             )
 
+            # Create a "provider service" entry for every Resource Requirement
+            for req in artifact_execution.requires.resources:
+                _, resource_provider_artifact_reference = resource_providers[
+                    ProvidedResourceReference(project_name=req.project_name, resource_name=req.resource_name)
+                ]
+
+                provider_service_name = f"ballista-resource-{req.project_name}-{req.resource_name}"
+                compose_service.depends_on[provider_service_name] = {"condition": "service_healthy"}
+                services[provider_service_name] = DockerComposeService(
+                    depends_on={
+                        f"{resource_provider_artifact_reference.project_name}-{resource_provider_artifact_reference.artifact_name}": {
+                            "condition": "service_healthy"
+                        }
+                    },
+                    provider={
+                        "type": "ballista",
+                        "options": {
+                            # ArtifactReference info, unpacked
+                            "artifact-project": bolt.project,
+                            "artifact-name": artifact.name,
+                            "artifact-version": bolt.version,
+                            # Resource Provider info
+                            "resource-project": req.project_name,
+                            "resource-name": req.resource_name,
+                            # compose only allows strings, so we have to encode to JSON
+                            "requirement": req.resource_instance.model_dump_json(exclude_unset=True),
+                        },
+                    },
+                )
+
             for service in artifact_execution.provides.services:
                 external_service_parameters = artifact_execution_parameters.external_services.get(service.name)
                 if external_service_parameters and external_service_parameters.host is not None:
                     network_name = f"external-{external_service_parameters.host}"
 
-                    if network_name not in compose_project.networks:
-                        compose_project.networks = compose_project.networks | {network_name: {"name": network_name}}
+                    if network_name not in networks:
+                        networks[network_name] = {"name": network_name}
 
-            compose_project.services[artifact_ref_name] = compose_service
+            services[artifact_ref_name] = compose_service
 
-            compose_project.volumes = compose_project.volumes | {
-                f"{artifact_ref_name}-{volume.name}": DockerComposeProjectVolume(
-                    driver="local",
-                    name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
-                )
-                for volume in artifact_execution.requires.volumes
-                if volume.persistent
-            }
+            volumes.update(
+                {
+                    f"{artifact_ref_name}-{volume.name}": DockerComposeProjectVolume(
+                        driver="local",
+                        name=volume.title.replace(" ", "-") if volume.title else volume.name.replace(" ", "-"),
+                    )
+                    for volume in artifact_execution.requires.volumes
+                    if volume.persistent
+                }
+            )
+
+        compose_project.networks = networks
+        compose_project.services = services
+        compose_project.volumes = volumes
+
+    def generate_docker_compose_project_from_bolt(
+        self,
+        environment: Environment,
+        bolt: Bolt,
+        execution_parameters: ExecutionParameters,
+        resource_providers: dict[ProvidedResourceReference, ResolvedProvidedResource],
+        service_providers: dict[ProvidedServiceReference, ResolvedProvidedService],
+    ) -> DockerComposeProject:
+        """Generate a docker compose project."""
+
+        compose_project = DockerComposeProject(
+            name=bolt.project,
+            networks={f"env-{environment.name}": {"internal": True, "name": f"env-{environment.name}"}},
+            services={},
+            volumes={},
+        )
+
+        self.add_bolt_to_compose_project(
+            compose_project, environment, bolt, execution_parameters, resource_providers, service_providers
+        )
 
         return compose_project
 
@@ -175,12 +228,11 @@ class DockerComposeInfrastructureGenerator:
     ) -> DockerComposeService:
         """Generate a docker compose Service definition for an ExecutableArtifact."""
 
+        env_network_name = f"env-{environment.name}"
         artifact_ref_name = _get_artifact_ref_name(bolt, artifact)
         artifact_reference = ArtifactReference(bolt.project, artifact.name, bolt.version)
 
-        compose_service = DockerComposeService(
-            container_name=artifact_ref_name, networks={f"project-{bolt.project}": {}, f"env-{environment.name}": {}}
-        )
+        compose_service = DockerComposeService(container_name=artifact_ref_name, networks={})
 
         # Virtual Provided Services
         extra_hosts = {vps.service.name: vps.ipv4_address for vps in bolt.provides.services}
@@ -206,7 +258,7 @@ class DockerComposeInfrastructureGenerator:
 
         # TODO: Hoist these out so they can be provider services
         # Resource Requirements
-        resource_settings = []
+        resource_settings: list[Setting] = []
         resource_service_requirements = []
         depends_keys = set()
         for resource_requirement in artifact_execution.requires.resources:
@@ -219,7 +271,7 @@ class DockerComposeInfrastructureGenerator:
             resource_settings.extend(provided_resource.secrets)
 
             requirement_prefix = resource_requirement.prefix or provided_resource.prefix
-            resource_requirement_requirement = resource_requirement.resource_requirement
+            resource_requirement_requirement = resource_requirement.resource_instance
             aliased_data = resource_requirement_requirement.__pydantic_extra__ or {}
 
             # Re-alias the linked services
@@ -243,6 +295,9 @@ class DockerComposeInfrastructureGenerator:
                     for service_requirement in provided_resource.linked.services
                 ]
             )
+
+            if env_network_name not in compose_service.networks:
+                compose_service.networks[env_network_name] = {}
 
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
@@ -280,6 +335,9 @@ class DockerComposeInfrastructureGenerator:
                 }
             )
 
+            if env_network_name not in compose_service.networks:
+                compose_service.networks[env_network_name] = {}
+
             depends_keys.add(f"{provider_artifact_reference.project_name}-{provider_artifact_reference.artifact_name}")
 
         compose_service.depends_on = {key: {"condition": "service_healthy"} for key in depends_keys}
@@ -294,6 +352,8 @@ class DockerComposeInfrastructureGenerator:
                 continue
 
             services_provided[service.name] = service
+            if env_network_name not in compose_service.networks:
+                compose_service.networks[env_network_name] = {}
 
             key = service.name.upper().replace("-", "_") + "_SERVICE"
             host = "localhost"

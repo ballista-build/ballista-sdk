@@ -1,10 +1,14 @@
 from dataclasses import dataclass
 
+from ballista_sdk.api.v1 import ResourceInstance
+
 from .primitives import ArtifactReference, BoltReference, ProvidedResourceReference, ProvidedServiceReference
 
 
 @dataclass
 class BoltException(Exception):
+    """Base for Bolt exceptions."""
+
     bolt: BoltReference
 
 
@@ -22,6 +26,8 @@ class BoltArtifactTypesUnavailable(BoltException):
 
 @dataclass
 class ArtifactException(Exception):
+    """Base for Artifact exceptions."""
+
     artifact: ArtifactReference
 
 
@@ -54,19 +60,21 @@ class ProvidedServiceNotFound(ProvidedServiceException):
 
 
 @dataclass
-class ArtifactResourceException(ProvidedResourceException, ArtifactException):
-    """Exceptions for Artifact Resources."""
+class ResourceException[R: ResourceInstance = ResourceInstance](ProvidedResourceException):
+    """Exceptions for Resources."""
+
+    resource: R
+
+
+class ResourceAlreadyExists[R: ResourceInstance = ResourceInstance](ResourceException[R]):
+    """Resource already exists."""
 
     pass
 
 
-class ArtifactResourceAlreadyExists(ArtifactResourceException):
-    """Artifact Resource already exists."""
+class ResourceNotFound[R: ResourceInstance = ResourceInstance](ResourceException[R]):
+    """Resource not found."""
 
-    pass
-
-
-class ArtifactResourceNotFound(ArtifactResourceException):
     pass
 
 

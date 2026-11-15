@@ -53,7 +53,7 @@ class Environment(BaseNamedModel):
     tier: EnvironmentTier
     """Tier of Environment."""
 
-    config: dict | None = None
+    config: BaseModel | None = None
     """Configuration for environment, adapter specific."""
 
 

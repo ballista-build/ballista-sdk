@@ -1,15 +1,18 @@
-from collections.abc import Sequence
+"""Internal primitives."""
+
 from typing import NamedTuple
 
-from ballista_sdk.api.v1 import ProvidedResource, ProvidedService, Setting
+from ballista_sdk.api.v1 import ProvidedResource, ProvidedService, ResourceInstance, Setting
 
 
 class ProjectReference(NamedTuple):
+    """Reference to a Project by its unique name."""
+
     project_name: str
 
 
 class BoltReference(NamedTuple):
-    """Reference to a Bolt by its name and version."""
+    """Reference to a Bolt by its unique Project name and version."""
 
     project_name: str
     version: str
@@ -75,4 +78,4 @@ class BoundSetting(NamedTuple):
     provided_resource: ProvidedResourceReference | None = None
     """Resource setting originated from."""
 
-    resource_instance: Sequence[str] | None = None
+    resource: ResourceInstance | None = None

@@ -8,6 +8,8 @@ from .common import BaseNamedModel
 
 
 class SettingDataType(StrEnum):
+    """Type of data contained in a setting."""
+
     BOOL = auto()
     """A boolean."""
     BYTES = auto()
@@ -28,7 +30,7 @@ class SettingDataType(StrEnum):
     """Unsigned 64-bit integer."""
 
 
-SettingValue = bool | bytes | float | str
+type SettingValue = bool | bytes | float | str
 """Supported setting value types."""
 
 
@@ -48,4 +50,4 @@ class Secret(BaseSetting):
         return True
 
 
-Setting = Config | Secret
+type Setting = Config | Secret

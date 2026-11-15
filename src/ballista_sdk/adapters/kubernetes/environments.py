@@ -11,7 +11,7 @@ class KubernetesAPIEnvironment(Environment):
     """An Environment that can be used by KubernetesAPI adapters."""
 
     kubeconfig_file: str | None
-    """Path to a kubeconfig file."""
+    """Path to a kubeconfig file the Environment was sourced from."""
 
     kubeconfig_context: str | None
     """Context in a kubeconfig."""
