@@ -5,33 +5,33 @@ from ballista_sdk.api.v1 import Environment, SettingDataType, SettingValue
 from .primitives import BoundSetting
 
 
-class SettingsOperation(Protocol):
-    def delete(self, environment: Environment, bound_setting: BoundSetting):
+class SettingsOperation[E: Environment = Environment](Protocol):
+    def delete(self, environment: E, bound_setting: BoundSetting):
         """Delete a setting."""
         ...
 
-    def exists(self, environment: Environment, bound_setting: BoundSetting) -> bool:
+    def exists(self, environment: E, bound_setting: BoundSetting) -> bool:
         """Checks if a setting exists."""
         ...
 
-    def read(self, environment: Environment, bound_setting: BoundSetting) -> SettingValue:
+    def read(self, environment: E, bound_setting: BoundSetting) -> SettingValue:
         """Read the value for a setting. Raises Exception if it doesn't exist."""
         ...
 
-    def write(self, environment: Environment, bound_setting: BoundSetting, value: SettingValue):
+    def write(self, environment: E, bound_setting: BoundSetting, value: SettingValue):
         """Write a value for a setting."""
         ...
 
 
-class SettingsAdapter(Protocol):
+class SettingsAdapter[E: Environment = Environment](Protocol):
     @property
     def verify_before_deploy(self) -> bool:
         """Check for required Settings before a deployment."""
         ...
 
-    def __enter__(self) -> SettingsOperation: ...
+    def __enter__(self) -> SettingsOperation[E]: ...
 
-    def __exit__(self, *args) -> bool | None: ...
+    def __exit__(self, exc_type, exc_value, traceback) -> bool | None: ...
 
 
 SETTING_DEFAULT_VALUES = {

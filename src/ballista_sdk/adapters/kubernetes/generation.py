@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from collections import OrderedDict
 from dataclasses import dataclass
-from typing import Any, ClassVar, Protocol, Sequence
+from typing import Any, ClassVar, Protocol, Self, Sequence
 
 from ballista_sdk.adapters.infrastructure import InfrastructureAdapter
 from ballista_sdk.adapters.primitives import (
@@ -153,13 +153,13 @@ class KubernetesResourcesGenerator(Protocol):
 
 # TODO: Break out into a "Default" adapter?
 @dataclass
-class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](InfrastructureAdapter[AdapterEnvironment]):
+class KubernetesInfrastructureAdapter[E: Environment = Environment](InfrastructureAdapter[E]):
     """Infrastructure Adapter for Kubernetes."""
 
     _generators: ClassVar[list[KubernetesResourcesGenerator]] = []
 
     @classmethod
-    def add_generator(cls: type[KubernetesInfrastructureAdapter], method: KubernetesResourcesGenerator):
+    def add_generator(cls: type[Self], method: KubernetesResourcesGenerator):
         """Add KubernetesResourceGenerator to be included when generating."""
         cls._generators.append(method)
         return method
@@ -184,7 +184,7 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
 
     def generate_bolt_resources(
         self,
-        environment: AdapterEnvironment,
+        environment: E,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
@@ -221,7 +221,7 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
 
     def generate_artifact_resources(
         self,
-        environment: AdapterEnvironment,
+        environment: E,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         execution_parameters: ExecutionParameters,
@@ -253,7 +253,7 @@ class KubernetesInfrastructureAdapter[AdapterEnvironment: Environment](Infrastru
 
     def _get_docker_image_name(
         self,
-        environment: AdapterEnvironment,
+        environment: E,
         environment_config: KubernetesEnvironmentConfig,
         bolt: Bolt,
         artifact: Artifact,

@@ -32,7 +32,7 @@ class DockerComposeSettingsAdapter(SettingsAdapter):
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args) -> bool | None:
+    def __exit__(self, exc_type, exc_value, traceback) -> bool | None:
         for filename, obj in self._pending_writes.items():
             self._write_object(filename, obj)
 

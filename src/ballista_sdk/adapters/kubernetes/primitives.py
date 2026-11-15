@@ -1,4 +1,4 @@
-"""Primitives"""
+"""Primitives for Kubernetes InfrastructureAdapter."""
 
 from typing import Any, NotRequired, TypedDict
 

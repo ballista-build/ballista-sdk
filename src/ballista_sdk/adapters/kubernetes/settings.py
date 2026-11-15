@@ -1,12 +1,14 @@
 import base64
-from abc import ABC, abstractmethod
+from abc import ABCMeta, abstractmethod
 from dataclasses import dataclass, field
-from typing import Literal, Self, cast
+from typing import Literal, Self, cast, override
 
 from kubernetes import client
 from kubernetes.client.exceptions import ApiException
 
+from ballista_sdk.adapters import SettingsAdapter
 from ballista_sdk.adapters.primitives import ArtifactReference, BoundSetting, ProvidedResourceReference
+from ballista_sdk.adapters.settings import SettingsOperation
 from ballista_sdk.api.v1 import (
     Environment,
     Setting,
@@ -24,7 +26,9 @@ from .generation import generate_artifact_settings_refname, generate_resource_se
 
 
 @dataclass
-class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
+class BaseKubernetesAPISettingsAdapter[SettingKind](
+    SettingsAdapter[KubernetesAPIEnvironment], SettingsOperation[KubernetesAPIEnvironment], metaclass=ABCMeta
+):
     """SettingsAdapter using the Kubernetes API."""
 
     _loaded: dict[tuple[KubernetesAPIEnvironment, str, str], SettingKind] = field(default_factory=dict, init=False)
@@ -39,7 +43,7 @@ class BaseKubernetesAPISettingsAdapter[SettingKind: object](ABC):
     def __enter__(self) -> Self:
         return self
 
-    def __exit__(self, *args) -> bool | None:
+    def __exit__(self, exc_type, exc_value, traceback) -> bool | None:
         for pending, obj in self._pending_writes.items():
             self._write_object(*pending, obj)
 
@@ -212,6 +216,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
             metadata=self._get_bound_setting_metadata(environment, environment_config, bound_setting),
         )
 
+    @override
     def _read_object(
         self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
     ) -> client.V1ConfigMap | None:
@@ -222,6 +227,7 @@ class KubernetesAPIConfigsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Conf
         except ApiException:
             return None
 
+    @override
     def _write_object(
         self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: client.V1ConfigMap
     ):
@@ -301,6 +307,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
             type="Opaque",
         )
 
+    @override
     def _read_object(
         self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str
     ) -> client.V1Secret | None:
@@ -312,6 +319,7 @@ class KubernetesAPISecretsAdapter(BaseKubernetesAPISettingsAdapter[client.V1Secr
         except ApiException:
             return None
 
+    @override
     def _write_object(self, environment: KubernetesAPIEnvironment, namespace: str, ref_name: str, obj: client.V1Secret):
         api_client = get_environment_apiclient(environment)
 

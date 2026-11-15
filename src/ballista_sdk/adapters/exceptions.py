@@ -60,19 +60,19 @@ class ProvidedServiceNotFound(ProvidedServiceException):
 
 
 @dataclass
-class ResourceException[R: ResourceInstance = ResourceInstance](ProvidedResourceException):
+class ResourceException[R: ResourceInstance = ResourceInstance](ProvidedResourceException, ArtifactException):
     """Exceptions for Resources."""
 
     resource: R
 
 
-class ResourceAlreadyExists[R: ResourceInstance = ResourceInstance](ResourceException[R]):
+class ResourceAlreadyExists[R: ResourceInstance = ResourceInstance](ResourceException[R], ArtifactException):
     """Resource already exists."""
 
     pass
 
 
-class ResourceNotFound[R: ResourceInstance = ResourceInstance](ResourceException[R]):
+class ResourceNotFound[R: ResourceInstance = ResourceInstance](ResourceException[R], ArtifactException):
     """Resource not found."""
 
     pass

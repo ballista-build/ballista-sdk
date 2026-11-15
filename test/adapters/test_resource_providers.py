@@ -70,7 +70,9 @@ class MockResourceProvider(ResourceProvider):
     ) -> tuple[ResourceAccess, dict[str, SettingValue], dict[str, SettingValue]]:
         key = self._get_key(environment, artifact, resource)
         if key in self._resources:
-            raise ResourceAlreadyExists(ProvidedResourceReference(self.project_name, self.resource_name), resource)
+            raise ResourceAlreadyExists(
+                artifact, ProvidedResourceReference(self.project_name, self.resource_name), resource
+            )
 
         access = ResourceAccess.OWNER
         self._resources[key] = (ResourceStatus.PROVISIONING, access)
@@ -85,7 +87,7 @@ class MockResourceProvider(ResourceProvider):
         if found_resource := self._resources.get(key):
             return found_resource[1], {}, {}
 
-        raise ResourceNotFound(ProvidedResourceReference(self.project_name, self.resource_name), resource)
+        raise ResourceNotFound(artifact, ProvidedResourceReference(self.project_name, self.resource_name), resource)
 
     async def triggers_reprovision(
         self, environment: Environment, artifact: ArtifactReference, resource: ResourceInstance
@@ -102,7 +104,7 @@ class MockResourceProvider(ResourceProvider):
     ):
         key = self._get_key(environment, artifact, resource)
         if not (found_resource := self._resources.get(key)):
-            raise ResourceNotFound(ProvidedResourceReference(self.project_name, self.resource_name), resource)
+            raise ResourceNotFound(artifact, ProvidedResourceReference(self.project_name, self.resource_name), resource)
 
         status, access = found_resource
         if status not in _DESTROYABLE_STATUS:
